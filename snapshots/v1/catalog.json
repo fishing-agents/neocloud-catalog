@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
-  "version": "2026-08-26T15:59:44Z",
-  "generated_at": "2026-08-26T15:59:44.760548205Z",
+  "version": "2026-08-26T16:01:13Z",
+  "generated_at": "2026-08-26T16:01:13.750364876Z",
   "models": [
     {
       "slug": "llama-3.1-8b",
@@ -120,14 +120,7 @@
   "fits": [
     {
       "model_slug": "gemma-2-9b",
-      "device_family": "A100-40",
-      "max_context": 8192,
-      "vram_required_gb": 18,
-      "tokens_per_sec": 800
-    },
-    {
-      "model_slug": "gemma-2-9b",
-      "device_family": "A100-80",
+      "device_family": "A100",
       "max_context": 8192,
       "vram_required_gb": 18,
       "tokens_per_sec": 1200
@@ -159,6 +152,13 @@
       "max_context": 8192,
       "vram_required_gb": 18,
       "tokens_per_sec": 640
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "MI300X",
+      "max_context": 8192,
+      "vram_required_gb": 18,
+      "tokens_per_sec": 2320
     },
     {
       "model_slug": "gemma-2-9b",
@@ -175,15 +175,15 @@
       "tokens_per_sec": 1810
     },
     {
-      "model_slug": "llama-3.1-8b",
-      "device_family": "A100-40",
+      "model_slug": "llama-3.1-70b",
+      "device_family": "MI300X",
       "max_context": 131072,
-      "vram_required_gb": 16,
-      "tokens_per_sec": 800
+      "vram_required_gb": 140,
+      "tokens_per_sec": 2320
     },
     {
       "model_slug": "llama-3.1-8b",
-      "device_family": "A100-80",
+      "device_family": "A100",
       "max_context": 131072,
       "vram_required_gb": 16,
       "tokens_per_sec": 1200
@@ -218,6 +218,13 @@
     },
     {
       "model_slug": "llama-3.1-8b",
+      "device_family": "MI300X",
+      "max_context": 131072,
+      "vram_required_gb": 16,
+      "tokens_per_sec": 2320
+    },
+    {
+      "model_slug": "llama-3.1-8b",
       "device_family": "RTX-4090",
       "max_context": 131072,
       "vram_required_gb": 16,
@@ -231,15 +238,15 @@
       "tokens_per_sec": 1810
     },
     {
-      "model_slug": "qwen-2.5-14b",
-      "device_family": "A100-40",
-      "max_context": 131072,
-      "vram_required_gb": 28,
-      "tokens_per_sec": 800
+      "model_slug": "mixtral-8x7b",
+      "device_family": "MI300X",
+      "max_context": 32768,
+      "vram_required_gb": 94,
+      "tokens_per_sec": 2320
     },
     {
       "model_slug": "qwen-2.5-14b",
-      "device_family": "A100-80",
+      "device_family": "A100",
       "max_context": 131072,
       "vram_required_gb": 28,
       "tokens_per_sec": 1200
@@ -257,6 +264,13 @@
       "max_context": 131072,
       "vram_required_gb": 28,
       "tokens_per_sec": 1810
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "MI300X",
+      "max_context": 131072,
+      "vram_required_gb": 28,
+      "tokens_per_sec": 2320
     }
   ]
 }
