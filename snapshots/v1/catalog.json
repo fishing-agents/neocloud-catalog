@@ -1,0 +1,262 @@
+{
+  "schema_version": "1.0.0",
+  "version": "2026-08-26T15:59:44Z",
+  "generated_at": "2026-08-26T15:59:44.760548205Z",
+  "models": [
+    {
+      "slug": "llama-3.1-8b",
+      "name": "Llama 3.1 8B",
+      "family": "llama",
+      "params_b": 8,
+      "default_context": 8192,
+      "context_max": 131072,
+      "quantizations": [
+        {
+          "name": "fp16",
+          "weights_gb": 16
+        },
+        {
+          "name": "fp8",
+          "weights_gb": 8
+        }
+      ],
+      "kv_bytes_per_token": 512,
+      "tags": [
+        "general",
+        "instruct"
+      ]
+    },
+    {
+      "slug": "llama-3.1-70b",
+      "name": "Llama 3.1 70B",
+      "family": "llama",
+      "params_b": 70,
+      "default_context": 8192,
+      "context_max": 131072,
+      "quantizations": [
+        {
+          "name": "fp16",
+          "weights_gb": 140
+        },
+        {
+          "name": "fp8",
+          "weights_gb": 70
+        }
+      ],
+      "kv_bytes_per_token": 4096,
+      "tags": [
+        "general",
+        "instruct"
+      ]
+    },
+    {
+      "slug": "mixtral-8x7b",
+      "name": "Mixtral 8x7B",
+      "family": "mixtral",
+      "params_b": 47,
+      "default_context": 32768,
+      "context_max": 32768,
+      "quantizations": [
+        {
+          "name": "fp16",
+          "weights_gb": 94
+        },
+        {
+          "name": "fp8",
+          "weights_gb": 47
+        }
+      ],
+      "kv_bytes_per_token": 2048,
+      "tags": [
+        "expert"
+      ]
+    },
+    {
+      "slug": "gemma-2-9b",
+      "name": "Gemma 2 9B",
+      "family": "gemma",
+      "params_b": 9,
+      "default_context": 8192,
+      "context_max": 8192,
+      "quantizations": [
+        {
+          "name": "fp16",
+          "weights_gb": 18
+        },
+        {
+          "name": "fp8",
+          "weights_gb": 9
+        }
+      ],
+      "kv_bytes_per_token": 512,
+      "tags": [
+        "instruct"
+      ]
+    },
+    {
+      "slug": "qwen-2.5-14b",
+      "name": "Qwen 2.5 14B",
+      "family": "qwen",
+      "params_b": 14,
+      "default_context": 32768,
+      "context_max": 131072,
+      "quantizations": [
+        {
+          "name": "fp16",
+          "weights_gb": 28
+        },
+        {
+          "name": "fp8",
+          "weights_gb": 14
+        }
+      ],
+      "kv_bytes_per_token": 1024,
+      "tags": [
+        "general",
+        "instruct"
+      ]
+    }
+  ],
+  "fits": [
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "A100-40",
+      "max_context": 8192,
+      "vram_required_gb": 18,
+      "tokens_per_sec": 800
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "A100-80",
+      "max_context": 8192,
+      "vram_required_gb": 18,
+      "tokens_per_sec": 1200
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "A10G",
+      "max_context": 8192,
+      "vram_required_gb": 18,
+      "tokens_per_sec": 640
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "H100",
+      "max_context": 8192,
+      "vram_required_gb": 18,
+      "tokens_per_sec": 1200
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "H200",
+      "max_context": 8192,
+      "vram_required_gb": 18,
+      "tokens_per_sec": 1810
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "L4",
+      "max_context": 8192,
+      "vram_required_gb": 18,
+      "tokens_per_sec": 640
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "RTX-4090",
+      "max_context": 8192,
+      "vram_required_gb": 18,
+      "tokens_per_sec": 640
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "H200",
+      "max_context": 131072,
+      "vram_required_gb": 140,
+      "tokens_per_sec": 1810
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "A100-40",
+      "max_context": 131072,
+      "vram_required_gb": 16,
+      "tokens_per_sec": 800
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "A100-80",
+      "max_context": 131072,
+      "vram_required_gb": 16,
+      "tokens_per_sec": 1200
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "A10G",
+      "max_context": 131072,
+      "vram_required_gb": 16,
+      "tokens_per_sec": 640
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "H100",
+      "max_context": 131072,
+      "vram_required_gb": 16,
+      "tokens_per_sec": 1200
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "H200",
+      "max_context": 131072,
+      "vram_required_gb": 16,
+      "tokens_per_sec": 1810
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "L4",
+      "max_context": 131072,
+      "vram_required_gb": 16,
+      "tokens_per_sec": 640
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "RTX-4090",
+      "max_context": 131072,
+      "vram_required_gb": 16,
+      "tokens_per_sec": 640
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "H200",
+      "max_context": 32768,
+      "vram_required_gb": 94,
+      "tokens_per_sec": 1810
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "A100-40",
+      "max_context": 131072,
+      "vram_required_gb": 28,
+      "tokens_per_sec": 800
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "A100-80",
+      "max_context": 131072,
+      "vram_required_gb": 28,
+      "tokens_per_sec": 1200
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "H100",
+      "max_context": 131072,
+      "vram_required_gb": 28,
+      "tokens_per_sec": 1200
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "H200",
+      "max_context": 131072,
+      "vram_required_gb": 28,
+      "tokens_per_sec": 1810
+    }
+  ]
+}

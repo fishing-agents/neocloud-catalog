@@ -1,0 +1,9 @@
+[
+  {"name": "A10G", "memory_gb": 24},
+  {"name": "L4", "memory_gb": 24},
+  {"name": "RTX-4090", "memory_gb": 24},
+  {"name": "A100-40", "memory_gb": 40},
+  {"name": "A100-80", "memory_gb": 80},
+  {"name": "H100", "memory_gb": 80},
+  {"name": "H200", "memory_gb": 141}
+]
