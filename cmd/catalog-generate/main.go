@@ -1,6 +1,6 @@
 // Command catalog-generate is the outsourced generation pipeline: it reads the
 // curated sources in data/, derives the fit matrix, and emits the versioned
-// snapshot at snapshots/v1/catalog.json that the module embeds and neocloud
+// snapshot at snapshots/v2/catalog.json that the module embeds and neocloud
 // ingests. Re-run it after any change to data/ to bump the snapshot.
 package main
 
@@ -38,13 +38,13 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll("snapshots/v1", 0o755); err != nil {
+	if err := os.MkdirAll("snapshots/v2", 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile("snapshots/v1/catalog.json", append(out, '\n'), 0o644); err != nil {
+	if err := os.WriteFile("snapshots/v2/catalog.json", append(out, '\n'), 0o644); err != nil {
 		return err
 	}
-	fmt.Printf("wrote snapshots/v1/catalog.json (version=%s models=%d fits=%d digest=%s)\n",
+	fmt.Printf("wrote snapshots/v2/catalog.json (version=%s models=%d fits=%d digest=%s)\n",
 		snap.Version, len(snap.Models), len(snap.Fits), snap.Digest())
 	return nil
 }

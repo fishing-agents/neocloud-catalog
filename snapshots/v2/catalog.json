@@ -1,0 +1,712 @@
+{
+  "schema_version": "2.0.0",
+  "version": "2026-10-02T11:23:42Z",
+  "generated_at": "2026-10-02T11:23:42.467896851Z",
+  "models": [
+    {
+      "slug": "llama-3.1-8b",
+      "name": "Llama 3.1 8B",
+      "family": "llama",
+      "params_b": 8,
+      "default_context": 8192,
+      "context_max": 131072,
+      "quantizations": [
+        {
+          "name": "bf16",
+          "weights_gb": 16.1
+        },
+        {
+          "name": "fp8",
+          "weights_gb": 9.1
+        }
+      ],
+      "architecture": {
+        "layers": 32,
+        "attention_heads": 32,
+        "kv_heads": 8,
+        "head_dim": 128
+      },
+      "kv_bytes_per_token": 131072,
+      "tags": [
+        "general",
+        "instruct"
+      ]
+    },
+    {
+      "slug": "llama-3.1-70b",
+      "name": "Llama 3.1 70B",
+      "family": "llama",
+      "params_b": 70,
+      "default_context": 8192,
+      "context_max": 131072,
+      "quantizations": [
+        {
+          "name": "bf16",
+          "weights_gb": 141.1
+        },
+        {
+          "name": "fp8",
+          "weights_gb": 72.7
+        }
+      ],
+      "architecture": {
+        "layers": 80,
+        "attention_heads": 64,
+        "kv_heads": 8,
+        "head_dim": 128
+      },
+      "kv_bytes_per_token": 327680,
+      "tags": [
+        "general",
+        "instruct"
+      ]
+    },
+    {
+      "slug": "mixtral-8x7b",
+      "name": "Mixtral 8x7B",
+      "family": "mixtral",
+      "params_b": 47,
+      "default_context": 32768,
+      "context_max": 32768,
+      "quantizations": [
+        {
+          "name": "bf16",
+          "weights_gb": 93.4
+        },
+        {
+          "name": "fp8",
+          "weights_gb": 47.5
+        }
+      ],
+      "architecture": {
+        "layers": 32,
+        "attention_heads": 32,
+        "kv_heads": 8,
+        "head_dim": 128
+      },
+      "kv_bytes_per_token": 131072,
+      "tags": [
+        "expert"
+      ]
+    },
+    {
+      "slug": "gemma-2-9b",
+      "name": "Gemma 2 9B",
+      "family": "gemma",
+      "params_b": 9,
+      "default_context": 8192,
+      "context_max": 8192,
+      "quantizations": [
+        {
+          "name": "bf16",
+          "weights_gb": 18.5
+        },
+        {
+          "name": "fp8",
+          "weights_gb": 10.2
+        }
+      ],
+      "architecture": {
+        "layers": 42,
+        "attention_heads": 16,
+        "kv_heads": 8,
+        "head_dim": 256
+      },
+      "kv_bytes_per_token": 344064,
+      "tags": [
+        "instruct"
+      ]
+    },
+    {
+      "slug": "qwen-2.5-14b",
+      "name": "Qwen 2.5 14B",
+      "family": "qwen",
+      "params_b": 14,
+      "default_context": 32768,
+      "context_max": 131072,
+      "quantizations": [
+        {
+          "name": "bf16",
+          "weights_gb": 29.5
+        },
+        {
+          "name": "fp8",
+          "weights_gb": 16.3
+        }
+      ],
+      "architecture": {
+        "layers": 48,
+        "attention_heads": 40,
+        "kv_heads": 8,
+        "head_dim": 128
+      },
+      "kv_bytes_per_token": 196608,
+      "tags": [
+        "general",
+        "instruct"
+      ]
+    }
+  ],
+  "fits": [
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "A100",
+      "quantization": "bf16",
+      "gpu_count": 1,
+      "max_context": 8192,
+      "vram_required_gb": 21.32
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "A100",
+      "quantization": "fp8",
+      "gpu_count": 1,
+      "max_context": 8192,
+      "vram_required_gb": 13.02
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "A10G",
+      "quantization": "bf16",
+      "gpu_count": 1,
+      "max_context": 8192,
+      "vram_required_gb": 21.32
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "A10G",
+      "quantization": "fp8",
+      "gpu_count": 1,
+      "max_context": 8192,
+      "vram_required_gb": 13.02
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "H100",
+      "quantization": "bf16",
+      "gpu_count": 1,
+      "max_context": 8192,
+      "vram_required_gb": 21.32
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "H100",
+      "quantization": "fp8",
+      "gpu_count": 1,
+      "max_context": 8192,
+      "vram_required_gb": 13.02
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "H200",
+      "quantization": "bf16",
+      "gpu_count": 1,
+      "max_context": 8192,
+      "vram_required_gb": 21.32
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "H200",
+      "quantization": "fp8",
+      "gpu_count": 1,
+      "max_context": 8192,
+      "vram_required_gb": 13.02
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "L4",
+      "quantization": "bf16",
+      "gpu_count": 1,
+      "max_context": 8192,
+      "vram_required_gb": 21.32
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "L4",
+      "quantization": "fp8",
+      "gpu_count": 1,
+      "max_context": 8192,
+      "vram_required_gb": 13.02
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "MI300X",
+      "quantization": "bf16",
+      "gpu_count": 1,
+      "max_context": 8192,
+      "vram_required_gb": 21.32
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "MI300X",
+      "quantization": "fp8",
+      "gpu_count": 1,
+      "max_context": 8192,
+      "vram_required_gb": 13.02
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "RTX-4090",
+      "quantization": "bf16",
+      "gpu_count": 1,
+      "max_context": 8192,
+      "vram_required_gb": 21.32
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "RTX-4090",
+      "quantization": "fp8",
+      "gpu_count": 1,
+      "max_context": 8192,
+      "vram_required_gb": 13.02
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "A100",
+      "quantization": "bf16",
+      "gpu_count": 2,
+      "max_context": 8850,
+      "vram_required_gb": 144
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "A100",
+      "quantization": "fp8",
+      "gpu_count": 2,
+      "max_context": 131072,
+      "vram_required_gb": 115.65
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "A10G",
+      "quantization": "bf16",
+      "gpu_count": 8,
+      "max_context": 96740,
+      "vram_required_gb": 172.8
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "A10G",
+      "quantization": "fp8",
+      "gpu_count": 4,
+      "max_context": 41809,
+      "vram_required_gb": 86.4
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "H100",
+      "quantization": "bf16",
+      "gpu_count": 2,
+      "max_context": 8850,
+      "vram_required_gb": 144
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "H100",
+      "quantization": "fp8",
+      "gpu_count": 2,
+      "max_context": 131072,
+      "vram_required_gb": 115.65
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "H200",
+      "quantization": "bf16",
+      "gpu_count": 2,
+      "max_context": 131072,
+      "vram_required_gb": 184.05
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "H200",
+      "quantization": "fp8",
+      "gpu_count": 1,
+      "max_context": 131072,
+      "vram_required_gb": 115.65
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "L4",
+      "quantization": "bf16",
+      "gpu_count": 8,
+      "max_context": 96740,
+      "vram_required_gb": 172.8
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "L4",
+      "quantization": "fp8",
+      "gpu_count": 4,
+      "max_context": 41809,
+      "vram_required_gb": 86.4
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "MI300X",
+      "quantization": "bf16",
+      "gpu_count": 1,
+      "max_context": 96740,
+      "vram_required_gb": 172.8
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "MI300X",
+      "quantization": "fp8",
+      "gpu_count": 1,
+      "max_context": 131072,
+      "vram_required_gb": 115.65
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "RTX-4090",
+      "quantization": "bf16",
+      "gpu_count": 8,
+      "max_context": 96740,
+      "vram_required_gb": 172.8
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "RTX-4090",
+      "quantization": "fp8",
+      "gpu_count": 4,
+      "max_context": 41809,
+      "vram_required_gb": 86.4
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "A100",
+      "quantization": "bf16",
+      "gpu_count": 1,
+      "max_context": 131072,
+      "vram_required_gb": 33.28
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "A100",
+      "quantization": "fp8",
+      "gpu_count": 1,
+      "max_context": 131072,
+      "vram_required_gb": 26.28
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "A10G",
+      "quantization": "bf16",
+      "gpu_count": 1,
+      "max_context": 41961,
+      "vram_required_gb": 21.6
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "A10G",
+      "quantization": "fp8",
+      "gpu_count": 1,
+      "max_context": 95367,
+      "vram_required_gb": 21.6
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "H100",
+      "quantization": "bf16",
+      "gpu_count": 1,
+      "max_context": 131072,
+      "vram_required_gb": 33.28
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "H100",
+      "quantization": "fp8",
+      "gpu_count": 1,
+      "max_context": 131072,
+      "vram_required_gb": 26.28
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "H200",
+      "quantization": "bf16",
+      "gpu_count": 1,
+      "max_context": 131072,
+      "vram_required_gb": 33.28
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "H200",
+      "quantization": "fp8",
+      "gpu_count": 1,
+      "max_context": 131072,
+      "vram_required_gb": 26.28
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "L4",
+      "quantization": "bf16",
+      "gpu_count": 1,
+      "max_context": 41961,
+      "vram_required_gb": 21.6
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "L4",
+      "quantization": "fp8",
+      "gpu_count": 1,
+      "max_context": 95367,
+      "vram_required_gb": 21.6
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "MI300X",
+      "quantization": "bf16",
+      "gpu_count": 1,
+      "max_context": 131072,
+      "vram_required_gb": 33.28
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "MI300X",
+      "quantization": "fp8",
+      "gpu_count": 1,
+      "max_context": 131072,
+      "vram_required_gb": 26.28
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "RTX-4090",
+      "quantization": "bf16",
+      "gpu_count": 1,
+      "max_context": 41961,
+      "vram_required_gb": 21.6
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "RTX-4090",
+      "quantization": "fp8",
+      "gpu_count": 1,
+      "max_context": 95367,
+      "vram_required_gb": 21.6
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "A100",
+      "quantization": "bf16",
+      "gpu_count": 2,
+      "max_context": 32768,
+      "vram_required_gb": 97.7
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "A100",
+      "quantization": "fp8",
+      "gpu_count": 1,
+      "max_context": 32768,
+      "vram_required_gb": 51.8
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "A10G",
+      "quantization": "bf16",
+      "gpu_count": 8,
+      "max_context": 32768,
+      "vram_required_gb": 97.7
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "A10G",
+      "quantization": "fp8",
+      "gpu_count": 4,
+      "max_context": 32768,
+      "vram_required_gb": 51.8
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "H100",
+      "quantization": "bf16",
+      "gpu_count": 2,
+      "max_context": 32768,
+      "vram_required_gb": 97.7
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "H100",
+      "quantization": "fp8",
+      "gpu_count": 1,
+      "max_context": 32768,
+      "vram_required_gb": 51.8
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "H200",
+      "quantization": "bf16",
+      "gpu_count": 1,
+      "max_context": 32768,
+      "vram_required_gb": 97.7
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "H200",
+      "quantization": "fp8",
+      "gpu_count": 1,
+      "max_context": 32768,
+      "vram_required_gb": 51.8
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "L4",
+      "quantization": "bf16",
+      "gpu_count": 8,
+      "max_context": 32768,
+      "vram_required_gb": 97.7
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "L4",
+      "quantization": "fp8",
+      "gpu_count": 4,
+      "max_context": 32768,
+      "vram_required_gb": 51.8
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "MI300X",
+      "quantization": "bf16",
+      "gpu_count": 1,
+      "max_context": 32768,
+      "vram_required_gb": 97.7
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "MI300X",
+      "quantization": "fp8",
+      "gpu_count": 1,
+      "max_context": 32768,
+      "vram_required_gb": 51.8
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "RTX-4090",
+      "quantization": "bf16",
+      "gpu_count": 8,
+      "max_context": 32768,
+      "vram_required_gb": 97.7
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "RTX-4090",
+      "quantization": "fp8",
+      "gpu_count": 4,
+      "max_context": 32768,
+      "vram_required_gb": 51.8
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "A100",
+      "quantization": "bf16",
+      "gpu_count": 1,
+      "max_context": 131072,
+      "vram_required_gb": 55.27
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "A100",
+      "quantization": "fp8",
+      "gpu_count": 1,
+      "max_context": 131072,
+      "vram_required_gb": 42.07
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "A10G",
+      "quantization": "bf16",
+      "gpu_count": 2,
+      "max_context": 69681,
+      "vram_required_gb": 43.2
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "A10G",
+      "quantization": "fp8",
+      "gpu_count": 2,
+      "max_context": 131072,
+      "vram_required_gb": 42.07
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "H100",
+      "quantization": "bf16",
+      "gpu_count": 1,
+      "max_context": 131072,
+      "vram_required_gb": 55.27
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "H100",
+      "quantization": "fp8",
+      "gpu_count": 1,
+      "max_context": 131072,
+      "vram_required_gb": 42.07
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "H200",
+      "quantization": "bf16",
+      "gpu_count": 1,
+      "max_context": 131072,
+      "vram_required_gb": 55.27
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "H200",
+      "quantization": "fp8",
+      "gpu_count": 1,
+      "max_context": 131072,
+      "vram_required_gb": 42.07
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "L4",
+      "quantization": "bf16",
+      "gpu_count": 2,
+      "max_context": 69681,
+      "vram_required_gb": 43.2
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "L4",
+      "quantization": "fp8",
+      "gpu_count": 2,
+      "max_context": 131072,
+      "vram_required_gb": 42.07
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "MI300X",
+      "quantization": "bf16",
+      "gpu_count": 1,
+      "max_context": 131072,
+      "vram_required_gb": 55.27
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "MI300X",
+      "quantization": "fp8",
+      "gpu_count": 1,
+      "max_context": 131072,
+      "vram_required_gb": 42.07
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "RTX-4090",
+      "quantization": "bf16",
+      "gpu_count": 2,
+      "max_context": 69681,
+      "vram_required_gb": 43.2
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "RTX-4090",
+      "quantization": "fp8",
+      "gpu_count": 2,
+      "max_context": 131072,
+      "vram_required_gb": 42.07
+    }
+  ]
+}

@@ -7,11 +7,25 @@
     "default_context": 8192,
     "context_max": 131072,
     "quantizations": [
-      {"name": "fp16", "weights_gb": 16},
-      {"name": "fp8", "weights_gb": 8}
+      {
+        "name": "bf16",
+        "weights_gb": 16.1
+      },
+      {
+        "name": "fp8",
+        "weights_gb": 9.1
+      }
     ],
-    "kv_bytes_per_token": 512,
-    "tags": ["general", "instruct"]
+    "tags": [
+      "general",
+      "instruct"
+    ],
+    "architecture": {
+      "layers": 32,
+      "attention_heads": 32,
+      "kv_heads": 8,
+      "head_dim": 128
+    }
   },
   {
     "slug": "llama-3.1-70b",
@@ -21,11 +35,25 @@
     "default_context": 8192,
     "context_max": 131072,
     "quantizations": [
-      {"name": "fp16", "weights_gb": 140},
-      {"name": "fp8", "weights_gb": 70}
+      {
+        "name": "bf16",
+        "weights_gb": 141.1
+      },
+      {
+        "name": "fp8",
+        "weights_gb": 72.7
+      }
     ],
-    "kv_bytes_per_token": 4096,
-    "tags": ["general", "instruct"]
+    "tags": [
+      "general",
+      "instruct"
+    ],
+    "architecture": {
+      "layers": 80,
+      "attention_heads": 64,
+      "kv_heads": 8,
+      "head_dim": 128
+    }
   },
   {
     "slug": "mixtral-8x7b",
@@ -35,11 +63,24 @@
     "default_context": 32768,
     "context_max": 32768,
     "quantizations": [
-      {"name": "fp16", "weights_gb": 94},
-      {"name": "fp8", "weights_gb": 47}
+      {
+        "name": "bf16",
+        "weights_gb": 93.4
+      },
+      {
+        "name": "fp8",
+        "weights_gb": 47.5
+      }
     ],
-    "kv_bytes_per_token": 2048,
-    "tags": ["expert"]
+    "tags": [
+      "expert"
+    ],
+    "architecture": {
+      "layers": 32,
+      "attention_heads": 32,
+      "kv_heads": 8,
+      "head_dim": 128
+    }
   },
   {
     "slug": "gemma-2-9b",
@@ -49,11 +90,24 @@
     "default_context": 8192,
     "context_max": 8192,
     "quantizations": [
-      {"name": "fp16", "weights_gb": 18},
-      {"name": "fp8", "weights_gb": 9}
+      {
+        "name": "bf16",
+        "weights_gb": 18.5
+      },
+      {
+        "name": "fp8",
+        "weights_gb": 10.2
+      }
     ],
-    "kv_bytes_per_token": 512,
-    "tags": ["instruct"]
+    "tags": [
+      "instruct"
+    ],
+    "architecture": {
+      "layers": 42,
+      "attention_heads": 16,
+      "kv_heads": 8,
+      "head_dim": 256
+    }
   },
   {
     "slug": "qwen-2.5-14b",
@@ -63,10 +117,24 @@
     "default_context": 32768,
     "context_max": 131072,
     "quantizations": [
-      {"name": "fp16", "weights_gb": 28},
-      {"name": "fp8", "weights_gb": 14}
+      {
+        "name": "bf16",
+        "weights_gb": 29.5
+      },
+      {
+        "name": "fp8",
+        "weights_gb": 16.3
+      }
     ],
-    "kv_bytes_per_token": 1024,
-    "tags": ["general", "instruct"]
+    "tags": [
+      "general",
+      "instruct"
+    ],
+    "architecture": {
+      "layers": 48,
+      "attention_heads": 40,
+      "kv_heads": 8,
+      "head_dim": 128
+    }
   }
 ]
