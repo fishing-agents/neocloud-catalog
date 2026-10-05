@@ -1,7 +1,7 @@
 {
-  "schema_version": "2.0.0",
-  "version": "2026-10-02T11:23:42Z",
-  "generated_at": "2026-10-02T11:23:42.467896851Z",
+  "schema_version": "3.0.0",
+  "version": "2026-10-05T14:22:45Z",
+  "generated_at": "2026-10-05T14:22:45.483974679Z",
   "models": [
     {
       "slug": "llama-3.1-8b",
@@ -13,11 +13,35 @@
       "quantizations": [
         {
           "name": "bf16",
-          "weights_gb": 16.1
+          "weights_gb": 16.1,
+          "sources": [
+            {
+              "type": "huggingface",
+              "repo": "meta-llama/Llama-3.1-8B-Instruct",
+              "revision": "0e9e39f249a16976918f6564b8830bc894c89659"
+            },
+            {
+              "type": "modelscope",
+              "repo": "LLM-Research/Meta-Llama-3.1-8B-Instruct",
+              "revision": "359efdbb8af05b788a4ad4185215c6b8caa9052c"
+            }
+          ]
         },
         {
           "name": "fp8",
-          "weights_gb": 9.1
+          "weights_gb": 9.1,
+          "sources": [
+            {
+              "type": "huggingface",
+              "repo": "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8",
+              "revision": "870a1177ed082c0ba5dbefd62573ab8f91803f6a"
+            },
+            {
+              "type": "modelscope",
+              "repo": "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8",
+              "revision": "de1aed904a8260414a02d0e97816990f9979499b"
+            }
+          ]
         }
       ],
       "architecture": {
@@ -30,6 +54,52 @@
       "tags": [
         "general",
         "instruct"
+      ],
+      "license": "llama3.1",
+      "gated": true,
+      "presets": [
+        {
+          "name": "vllm-bf16",
+          "quantization": "bf16",
+          "backend": "vllm",
+          "backend_version": "v0.31.0",
+          "args": [
+            "--enable-auto-tool-choice",
+            "--tool-call-parser",
+            "llama3_json"
+          ]
+        },
+        {
+          "name": "sglang-bf16",
+          "quantization": "bf16",
+          "backend": "sglang",
+          "backend_version": "v0.5.21",
+          "args": [
+            "--tool-call-parser",
+            "llama3"
+          ]
+        },
+        {
+          "name": "vllm-fp8",
+          "quantization": "fp8",
+          "backend": "vllm",
+          "backend_version": "v0.31.0",
+          "args": [
+            "--enable-auto-tool-choice",
+            "--tool-call-parser",
+            "llama3_json"
+          ]
+        },
+        {
+          "name": "sglang-fp8",
+          "quantization": "fp8",
+          "backend": "sglang",
+          "backend_version": "v0.5.21",
+          "args": [
+            "--tool-call-parser",
+            "llama3"
+          ]
+        }
       ]
     },
     {
@@ -42,11 +112,35 @@
       "quantizations": [
         {
           "name": "bf16",
-          "weights_gb": 141.1
+          "weights_gb": 141.1,
+          "sources": [
+            {
+              "type": "huggingface",
+              "repo": "meta-llama/Llama-3.1-70B-Instruct",
+              "revision": "1605565b47bb9346c5515c34102e054115b4f98b"
+            },
+            {
+              "type": "modelscope",
+              "repo": "LLM-Research/Meta-Llama-3.1-70B-Instruct",
+              "revision": "81a95863b03ec58284e1913dae2c6e980e5999a9"
+            }
+          ]
         },
         {
           "name": "fp8",
-          "weights_gb": 72.7
+          "weights_gb": 72.7,
+          "sources": [
+            {
+              "type": "huggingface",
+              "repo": "RedHatAI/Meta-Llama-3.1-70B-Instruct-FP8",
+              "revision": "f8d0de9953e442c2fd4da32a1d4da8afb8c9452e"
+            },
+            {
+              "type": "modelscope",
+              "repo": "RedHatAI/Meta-Llama-3.1-70B-Instruct-FP8",
+              "revision": "9fbbe9f0e7924896732f24430a5cbc62f7fde8ef"
+            }
+          ]
         }
       ],
       "architecture": {
@@ -59,6 +153,52 @@
       "tags": [
         "general",
         "instruct"
+      ],
+      "license": "llama3.1",
+      "gated": true,
+      "presets": [
+        {
+          "name": "vllm-bf16",
+          "quantization": "bf16",
+          "backend": "vllm",
+          "backend_version": "v0.31.0",
+          "args": [
+            "--enable-auto-tool-choice",
+            "--tool-call-parser",
+            "llama3_json"
+          ]
+        },
+        {
+          "name": "sglang-bf16",
+          "quantization": "bf16",
+          "backend": "sglang",
+          "backend_version": "v0.5.21",
+          "args": [
+            "--tool-call-parser",
+            "llama3"
+          ]
+        },
+        {
+          "name": "vllm-fp8",
+          "quantization": "fp8",
+          "backend": "vllm",
+          "backend_version": "v0.31.0",
+          "args": [
+            "--enable-auto-tool-choice",
+            "--tool-call-parser",
+            "llama3_json"
+          ]
+        },
+        {
+          "name": "sglang-fp8",
+          "quantization": "fp8",
+          "backend": "sglang",
+          "backend_version": "v0.5.21",
+          "args": [
+            "--tool-call-parser",
+            "llama3"
+          ]
+        }
       ]
     },
     {
@@ -71,11 +211,35 @@
       "quantizations": [
         {
           "name": "bf16",
-          "weights_gb": 93.4
+          "weights_gb": 93.4,
+          "sources": [
+            {
+              "type": "huggingface",
+              "repo": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+              "revision": "eba92302a2861cdc0098cc54bc9f17cb2c47eb61"
+            },
+            {
+              "type": "modelscope",
+              "repo": "AI-ModelScope/Mixtral-8x7B-Instruct-v0.1",
+              "revision": "069d3336b779fe44f34a17ec5a5e20afbcb58688"
+            }
+          ]
         },
         {
           "name": "fp8",
-          "weights_gb": 47.5
+          "weights_gb": 47,
+          "sources": [
+            {
+              "type": "huggingface",
+              "repo": "RedHatAI/Mixtral-8x7B-Instruct-v0.1-FP8",
+              "revision": "9a978d5cc7dabc37b3d13d6501426081c99c4cbd"
+            },
+            {
+              "type": "modelscope",
+              "repo": "RedHatAI/Mixtral-8x7B-Instruct-v0.1-FP8",
+              "revision": "7e5b8705712719ef6c3be224cfa9375ddc37d678"
+            }
+          ]
         }
       ],
       "architecture": {
@@ -87,6 +251,33 @@
       "kv_bytes_per_token": 131072,
       "tags": [
         "expert"
+      ],
+      "license": "apache-2.0",
+      "presets": [
+        {
+          "name": "vllm-bf16",
+          "quantization": "bf16",
+          "backend": "vllm",
+          "backend_version": "v0.31.0"
+        },
+        {
+          "name": "sglang-bf16",
+          "quantization": "bf16",
+          "backend": "sglang",
+          "backend_version": "v0.5.21"
+        },
+        {
+          "name": "vllm-fp8",
+          "quantization": "fp8",
+          "backend": "vllm",
+          "backend_version": "v0.31.0"
+        },
+        {
+          "name": "sglang-fp8",
+          "quantization": "fp8",
+          "backend": "sglang",
+          "backend_version": "v0.5.21"
+        }
       ]
     },
     {
@@ -99,11 +290,35 @@
       "quantizations": [
         {
           "name": "bf16",
-          "weights_gb": 18.5
+          "weights_gb": 18.5,
+          "sources": [
+            {
+              "type": "huggingface",
+              "repo": "google/gemma-2-9b-it",
+              "revision": "11c9b309abf73637e4b6f9a3fa1e92e615547819"
+            },
+            {
+              "type": "modelscope",
+              "repo": "LLM-Research/gemma-2-9b-it",
+              "revision": "bf37eab02659820031ec6326194edb45a99230fd"
+            }
+          ]
         },
         {
           "name": "fp8",
-          "weights_gb": 10.2
+          "weights_gb": 10.2,
+          "sources": [
+            {
+              "type": "huggingface",
+              "repo": "RedHatAI/gemma-2-9b-it-FP8",
+              "revision": "702a3fb558bc9751e65f23fd86c8707bdb72bce2"
+            },
+            {
+              "type": "modelscope",
+              "repo": "RedHatAI/gemma-2-9b-it-FP8",
+              "revision": "4efa06e6b97ddb65a81eac0d4067dc803209b1ed"
+            }
+          ]
         }
       ],
       "architecture": {
@@ -115,6 +330,34 @@
       "kv_bytes_per_token": 344064,
       "tags": [
         "instruct"
+      ],
+      "license": "gemma",
+      "gated": true,
+      "presets": [
+        {
+          "name": "vllm-bf16",
+          "quantization": "bf16",
+          "backend": "vllm",
+          "backend_version": "v0.31.0"
+        },
+        {
+          "name": "sglang-bf16",
+          "quantization": "bf16",
+          "backend": "sglang",
+          "backend_version": "v0.5.21"
+        },
+        {
+          "name": "vllm-fp8",
+          "quantization": "fp8",
+          "backend": "vllm",
+          "backend_version": "v0.31.0"
+        },
+        {
+          "name": "sglang-fp8",
+          "quantization": "fp8",
+          "backend": "sglang",
+          "backend_version": "v0.5.21"
+        }
       ]
     },
     {
@@ -127,11 +370,35 @@
       "quantizations": [
         {
           "name": "bf16",
-          "weights_gb": 29.5
+          "weights_gb": 29.5,
+          "sources": [
+            {
+              "type": "huggingface",
+              "repo": "Qwen/Qwen2.5-14B-Instruct",
+              "revision": "cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8"
+            },
+            {
+              "type": "modelscope",
+              "repo": "Qwen/Qwen2.5-14B-Instruct",
+              "revision": "3957bf39753cf01f98f6560295c4811c2b5df001"
+            }
+          ]
         },
         {
           "name": "fp8",
-          "weights_gb": 16.3
+          "weights_gb": 16.3,
+          "sources": [
+            {
+              "type": "huggingface",
+              "repo": "RedHatAI/Qwen2.5-14B-Instruct-FP8-dynamic",
+              "revision": "2afe81d548be7a003a3c790b77e124d4b25fdac9"
+            },
+            {
+              "type": "modelscope",
+              "repo": "RedHatAI/Qwen2.5-14B-Instruct-FP8-dynamic",
+              "revision": "cfdaa12de1b88c71ce4559a7fc5be5adcc279d49"
+            }
+          ]
         }
       ],
       "architecture": {
@@ -144,6 +411,51 @@
       "tags": [
         "general",
         "instruct"
+      ],
+      "license": "apache-2.0",
+      "presets": [
+        {
+          "name": "vllm-bf16",
+          "quantization": "bf16",
+          "backend": "vllm",
+          "backend_version": "v0.31.0",
+          "args": [
+            "--enable-auto-tool-choice",
+            "--tool-call-parser",
+            "hermes"
+          ]
+        },
+        {
+          "name": "sglang-bf16",
+          "quantization": "bf16",
+          "backend": "sglang",
+          "backend_version": "v0.5.21",
+          "args": [
+            "--tool-call-parser",
+            "qwen25"
+          ]
+        },
+        {
+          "name": "vllm-fp8",
+          "quantization": "fp8",
+          "backend": "vllm",
+          "backend_version": "v0.31.0",
+          "args": [
+            "--enable-auto-tool-choice",
+            "--tool-call-parser",
+            "hermes"
+          ]
+        },
+        {
+          "name": "sglang-fp8",
+          "quantization": "fp8",
+          "backend": "sglang",
+          "backend_version": "v0.5.21",
+          "args": [
+            "--tool-call-parser",
+            "qwen25"
+          ]
+        }
       ]
     }
   ],
@@ -498,7 +810,7 @@
       "quantization": "fp8",
       "gpu_count": 1,
       "max_context": 32768,
-      "vram_required_gb": 51.8
+      "vram_required_gb": 51.3
     },
     {
       "model_slug": "mixtral-8x7b",
@@ -514,7 +826,7 @@
       "quantization": "fp8",
       "gpu_count": 4,
       "max_context": 32768,
-      "vram_required_gb": 51.8
+      "vram_required_gb": 51.3
     },
     {
       "model_slug": "mixtral-8x7b",
@@ -530,7 +842,7 @@
       "quantization": "fp8",
       "gpu_count": 1,
       "max_context": 32768,
-      "vram_required_gb": 51.8
+      "vram_required_gb": 51.3
     },
     {
       "model_slug": "mixtral-8x7b",
@@ -546,7 +858,7 @@
       "quantization": "fp8",
       "gpu_count": 1,
       "max_context": 32768,
-      "vram_required_gb": 51.8
+      "vram_required_gb": 51.3
     },
     {
       "model_slug": "mixtral-8x7b",
@@ -562,7 +874,7 @@
       "quantization": "fp8",
       "gpu_count": 4,
       "max_context": 32768,
-      "vram_required_gb": 51.8
+      "vram_required_gb": 51.3
     },
     {
       "model_slug": "mixtral-8x7b",
@@ -578,7 +890,7 @@
       "quantization": "fp8",
       "gpu_count": 1,
       "max_context": 32768,
-      "vram_required_gb": 51.8
+      "vram_required_gb": 51.3
     },
     {
       "model_slug": "mixtral-8x7b",
@@ -594,7 +906,7 @@
       "quantization": "fp8",
       "gpu_count": 4,
       "max_context": 32768,
-      "vram_required_gb": 51.8
+      "vram_required_gb": 51.3
     },
     {
       "model_slug": "qwen-2.5-14b",
@@ -707,6 +1019,56 @@
       "gpu_count": 2,
       "max_context": 131072,
       "vram_required_gb": 42.07
+    }
+  ],
+  "backends": [
+    {
+      "name": "vllm",
+      "versions": [
+        {
+          "version": "v0.31.0",
+          "image": "vllm/vllm-openai:v0.31.0",
+          "command": [
+            "vllm",
+            "serve",
+            "{{model_path}}",
+            "--served-model-name",
+            "{{model}}",
+            "--port",
+            "{{port}}"
+          ],
+          "health_path": "/health",
+          "vendors": [
+            "nvidia"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sglang",
+      "versions": [
+        {
+          "version": "v0.5.21",
+          "image": "lmsysorg/sglang:v0.5.21",
+          "command": [
+            "python3",
+            "-m",
+            "sglang.launch_server",
+            "--model-path",
+            "{{model_path}}",
+            "--served-model-name",
+            "{{model}}",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "{{port}}"
+          ],
+          "health_path": "/health",
+          "vendors": [
+            "nvidia"
+          ]
+        }
+      ]
     }
   ]
 }

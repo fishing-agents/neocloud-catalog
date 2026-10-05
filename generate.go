@@ -1,6 +1,8 @@
 package catalog
 
 import (
+	"errors"
+	"fmt"
 	"math"
 	"sort"
 )
@@ -18,13 +20,13 @@ type FamilyCapability struct {
 	MemoryGB float64 `json:"memory_gb"`
 }
 
-// Generate derives the fit matrix. For each model, quantization, and family it
-// emits the smallest legal GPU count whose memory budget holds the weights plus
-// the model's default context; max context is what the remaining budget holds,
-// capped at the model's ceiling. Pure and deterministic, so the snapshot digest
-// is stable for identical input.
-func Generate(templates []ModelTemplate, families []FamilyCapability) CatalogSnapshot {
-	snap := CatalogSnapshot{SchemaVersion: SchemaVersion, Models: make([]ModelTemplate, len(templates)), Fits: []ModelFit{}}
+// Generate validates the curated input and derives the fit matrix. For each
+// model, quantization, and family it emits the smallest legal GPU count whose
+// memory budget holds the weights plus the model's default context; max context
+// is what the remaining budget holds, capped at the model's ceiling. Pure and
+// deterministic, so the snapshot digest is stable for identical input.
+func Generate(templates []ModelTemplate, families []FamilyCapability, backends []Backend) (CatalogSnapshot, error) {
+	snap := CatalogSnapshot{SchemaVersion: SchemaVersion, Models: make([]ModelTemplate, len(templates)), Fits: []ModelFit{}, Backends: backends}
 	for i, t := range templates {
 		t.KVBytesPerToken = t.Architecture.KVBytesPerToken()
 		snap.Models[i] = t
@@ -49,7 +51,59 @@ func Generate(templates []ModelTemplate, families []FamilyCapability) CatalogSna
 		}
 		return a.Quantization < b.Quantization
 	})
-	return snap
+	if err := snap.Validate(); err != nil {
+		return CatalogSnapshot{}, err
+	}
+	return snap, nil
+}
+
+// Validate checks that every model source has a known type and is pinned, and
+// that every preset names a quantization of its model and an existing backend
+// version. Embedders can run it on a snapshot fetched from an upstream.
+func (s CatalogSnapshot) Validate() error {
+	versions := map[[2]string]bool{}
+	for _, b := range s.Backends {
+		for _, v := range b.Versions {
+			versions[[2]string{b.Name, v.Version}] = true
+		}
+	}
+	var errs []error
+	for _, m := range s.Models {
+		quants := map[string]bool{}
+		for _, q := range m.Quantizations {
+			quants[q.Name] = true
+			for _, src := range q.Sources {
+				if err := src.validate(); err != nil {
+					errs = append(errs, fmt.Errorf("%s %s: %w", m.Slug, q.Name, err))
+				}
+			}
+		}
+		presets := map[string]bool{}
+		for _, p := range m.Presets {
+			switch {
+			case presets[p.Name]:
+				errs = append(errs, fmt.Errorf("%s: duplicate preset %q", m.Slug, p.Name))
+			case !quants[p.Quantization]:
+				errs = append(errs, fmt.Errorf("%s: preset %q: unknown quantization %q", m.Slug, p.Name, p.Quantization))
+			case !versions[[2]string{p.Backend, p.BackendVersion}]:
+				errs = append(errs, fmt.Errorf("%s: preset %q: unknown backend version %s %s", m.Slug, p.Name, p.Backend, p.BackendVersion))
+			}
+			presets[p.Name] = true
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func (src ModelSource) validate() error {
+	switch {
+	case src.Type != SourceHuggingFace && src.Type != SourceModelScope && src.Type != SourceOCI && src.Type != SourceLocal:
+		return fmt.Errorf("source %q: unknown type %q", src.Repo, src.Type)
+	case src.Repo == "":
+		return fmt.Errorf("%s source: repo required", src.Type)
+	case src.Revision == "" && src.Type != SourceLocal:
+		return fmt.Errorf("%s source %q: revision required", src.Type, src.Repo)
+	}
+	return nil
 }
 
 func fit(t ModelTemplate, q Quantization, fam FamilyCapability) (ModelFit, bool) {

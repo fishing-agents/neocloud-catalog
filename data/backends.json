@@ -1,0 +1,26 @@
+[
+  {
+    "name": "vllm",
+    "versions": [
+      {
+        "version": "v0.31.0",
+        "image": "vllm/vllm-openai:v0.31.0",
+        "command": ["vllm", "serve", "{{model_path}}", "--served-model-name", "{{model}}", "--port", "{{port}}"],
+        "health_path": "/health",
+        "vendors": ["nvidia"]
+      }
+    ]
+  },
+  {
+    "name": "sglang",
+    "versions": [
+      {
+        "version": "v0.5.21",
+        "image": "lmsysorg/sglang:v0.5.21",
+        "command": ["python3", "-m", "sglang.launch_server", "--model-path", "{{model_path}}", "--served-model-name", "{{model}}", "--host", "0.0.0.0", "--port", "{{port}}"],
+        "health_path": "/health",
+        "vendors": ["nvidia"]
+      }
+    ]
+  }
+]

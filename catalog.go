@@ -14,11 +14,63 @@ import (
 
 // SchemaVersion is the versioned wire format. Bump it on any breaking change to
 // the snapshot shape so embedders can gate on it.
-const SchemaVersion = "2.0.0"
+const SchemaVersion = "3.0.0"
 
+// Quantization is one published checkpoint of a model. Sources lists where its
+// weights can be fetched, in preference order.
 type Quantization struct {
-	Name      string  `json:"name"`
-	WeightsGB float64 `json:"weights_gb"`
+	Name      string        `json:"name"`
+	WeightsGB float64       `json:"weights_gb"`
+	Sources   []ModelSource `json:"sources,omitempty"`
+}
+
+// Model source types.
+const (
+	SourceHuggingFace = "huggingface"
+	SourceModelScope  = "modelscope"
+	SourceOCI         = "oci"
+	SourceLocal       = "local"
+)
+
+// ModelSource locates a checkpoint's weights. Repo is the repository id
+// (huggingface, modelscope), the OCI reference without tag or digest (oci), or
+// a path on the nodes (local). Revision pins the content: a commit or tag
+// (huggingface, modelscope) or a manifest digest (oci). Files optionally limits
+// the download to these paths.
+type ModelSource struct {
+	Type     string   `json:"type"`
+	Repo     string   `json:"repo"`
+	Revision string   `json:"revision,omitempty"`
+	Files    []string `json:"files,omitempty"`
+}
+
+// Preset is a deployable template: a model at one quantization served by one
+// backend version with these arguments. Vendors limits it to GPU vendors (empty
+// means any the backend supports); the fit matrix supplies the GPU count.
+type Preset struct {
+	Name           string   `json:"name"`
+	Quantization   string   `json:"quantization"`
+	Backend        string   `json:"backend"`
+	BackendVersion string   `json:"backend_version"`
+	Args           []string `json:"args,omitempty"`
+	Vendors        []string `json:"vendors,omitempty"`
+}
+
+// Backend is an inference server (vLLM, SGLang, ...) and its released versions.
+type Backend struct {
+	Name     string           `json:"name"`
+	Versions []BackendVersion `json:"versions"`
+}
+
+// BackendVersion pins a backend release to a container image. Command may use
+// the placeholders {{model_path}}, {{model}} and {{port}}; HealthPath is the
+// HTTP readiness path on that port.
+type BackendVersion struct {
+	Version    string   `json:"version"`
+	Image      string   `json:"image"`
+	Command    []string `json:"command"`
+	HealthPath string   `json:"health_path"`
+	Vendors    []string `json:"vendors"`
 }
 
 // Architecture is the subset of a model's config that sizes its KV cache and
@@ -50,6 +102,11 @@ type ModelTemplate struct {
 	Architecture    Architecture   `json:"architecture"`
 	KVBytesPerToken float64        `json:"kv_bytes_per_token"`
 	Tags            []string       `json:"tags,omitempty"`
+	// License is the SPDX id or name of the model licence; Gated marks sources
+	// that need an authenticated, licence-accepted account to download.
+	License string   `json:"license,omitempty"`
+	Gated   bool     `json:"gated,omitempty"`
+	Presets []Preset `json:"presets,omitempty"`
 }
 
 // kvBytesPerToken prefers the stored value (snapshots assembled elsewhere may
@@ -84,6 +141,7 @@ type CatalogSnapshot struct {
 	GeneratedAt   time.Time       `json:"generated_at"`
 	Models        []ModelTemplate `json:"models"`
 	Fits          []ModelFit      `json:"fits"`
+	Backends      []Backend       `json:"backends"`
 }
 
 // VRAMRequired computes the VRAM a model needs at a given context for the named
@@ -119,6 +177,7 @@ func (s CatalogSnapshot) Digest() string {
 		Version       string          `json:"version"`
 		Models        []ModelTemplate `json:"models"`
 		Fits          []ModelFit      `json:"fits"`
-	}{s.SchemaVersion, s.Version, s.Models, s.Fits})
+		Backends      []Backend       `json:"backends"`
+	}{s.SchemaVersion, s.Version, s.Models, s.Fits, s.Backends})
 	return hex.EncodeToString(h.Sum(nil))
 }
