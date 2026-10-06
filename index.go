@@ -21,15 +21,22 @@ type Index struct {
 // ErrBadSignature means the index signature does not verify with the key.
 var ErrBadSignature = errors.New("catalog: index signature does not verify")
 
-// SignIndex sets the index signature: Ed25519 over the digest, base64 (std).
+// signed is what the signature covers: schema version, version and digest, so a
+// replayed or edited index cannot claim another version for a snapshot.
+func (ix Index) signed() []byte {
+	return []byte(ix.SchemaVersion + "\n" + ix.Version + "\n" + ix.Digest)
+}
+
+// SignIndex sets the index signature: Ed25519 over the schema version, version
+// and digest, base64 (std).
 func SignIndex(ix *Index, priv ed25519.PrivateKey) {
-	ix.Signature = base64.StdEncoding.EncodeToString(ed25519.Sign(priv, []byte(ix.Digest)))
+	ix.Signature = base64.StdEncoding.EncodeToString(ed25519.Sign(priv, ix.signed()))
 }
 
 // VerifyIndex checks the index signature against the publisher's public key.
 func VerifyIndex(ix Index, pub ed25519.PublicKey) error {
 	sig, err := base64.StdEncoding.DecodeString(ix.Signature)
-	if err != nil || !ed25519.Verify(pub, []byte(ix.Digest), sig) {
+	if err != nil || !ed25519.Verify(pub, ix.signed(), sig) {
 		return ErrBadSignature
 	}
 	return nil

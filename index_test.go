@@ -24,11 +24,17 @@ func TestSignIndexVerifies(t *testing.T) {
 	tampered.Digest = "bbbb"
 	garbled := ix
 	garbled.Signature = "not base64"
+	newerClaim := ix
+	newerClaim.Version = "v2"
+	otherSchema := ix
+	otherSchema.SchemaVersion = "9.0.0"
 	for name, c := range map[string]struct {
 		ix  Index
 		pub ed25519.PublicKey
 	}{
 		"tampered digest": {tampered, pub},
+		"edited version":  {newerClaim, pub},
+		"edited schema":   {otherSchema, pub},
 		"other key":       {ix, otherPub},
 		"garbled":         {garbled, pub},
 		"unsigned":        {Index{Digest: ix.Digest}, pub},
