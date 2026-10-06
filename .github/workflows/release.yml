@@ -1,0 +1,55 @@
+# Publishes the committed snapshot as a cosign-signed OCI artifact on GHCR.
+# Signing is keyless: the signature binds the manifest digest to this workflow's
+# identity, https://github.com/<owner>/neocloud-catalog/.github/workflows/release.yml@refs/tags/<tag>,
+# which is what neocloud's catalog.identity pins.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      REPO: ghcr.io/${{ github.repository_owner }}/neocloud-catalog
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Snapshot is reproducible
+        run: |
+          go test ./...
+          go run ./cmd/catalog-generate
+          git diff --exit-code snapshots/
+      - uses: oras-project/setup-oras@v1
+      - uses: sigstore/cosign-installer@v3
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Push the artifact
+        id: push
+        working-directory: snapshots/v3
+        run: |
+          version=$(jq -r .version catalog.json)
+          digest=$(oras push "$REPO:$GITHUB_REF_NAME,v3" \
+            --artifact-type application/vnd.neocloud.catalog.v3+json \
+            --annotation "org.opencontainers.image.version=$version" \
+            --annotation "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --format go-template='{{.digest}}' \
+            catalog.json:application/vnd.neocloud.catalog.v3+json)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - name: Sign
+        run: |
+          cosign login ghcr.io -u "${{ github.actor }}" -p "${{ secrets.GITHUB_TOKEN }}"
+          cosign sign --yes "$REPO@${{ steps.push.outputs.digest }}"
+      - name: Verify as neocloud does
+        run: |
+          cosign verify "$REPO@${{ steps.push.outputs.digest }}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity "$GITHUB_SERVER_URL/$GITHUB_WORKFLOW_REF" >/dev/null

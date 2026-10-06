@@ -31,5 +31,3 @@ go.work.sum
 # .idea/
 # .vscode/
 
-# Signed index: a release artifact, written by catalog-generate --sign-key
-snapshots/v3/index.json

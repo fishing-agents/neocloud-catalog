@@ -19,8 +19,8 @@ itself.
   (model x family x quantization -> GPU count, max context, VRAM),
   `CatalogSnapshot`, `VRAMRequired` (weights + KV for any context), `Fit`,
   `Digest` (sha256 of the snapshot content, the pin clients use).
-- `index.go` - `Index`, the signed pointer to a snapshot (Ed25519 over the
-  digest): `SignIndex`, `VerifyIndex`.
+- `artifact.go` - the published OCI artifact contract (`ArtifactType`,
+  `VersionAnnotation`) and `ParseVersion`, the order clients refresh by.
 - `data/` - the curated sources. `models.json` holds each model's published
   architecture (from its config), checkpoint size and sources per quantization,
   license, gated flag and presets; `backends.json` the inference servers (vLLM,
@@ -38,8 +38,9 @@ itself.
   ceiling. No throughput figures: the catalog states only what it can derive.
 - `snapshots/v3/catalog.json` - the committed, generated snapshot the module
   embeds (schema 3.0.0). `SnapshotV3()` returns it.
-- `cmd/catalog-generate` - the pipeline CLI: reads `data/`, writes the snapshot
-  and, with `--sign-key`, the signed index.
+- `cmd/catalog-generate` - the pipeline CLI: reads `data/` and writes the
+  snapshot.
+- `.github/workflows/release.yml` - publishes and signs the snapshot on a tag.
 
 ## Snapshot contract
 
@@ -49,10 +50,14 @@ changes; `Digest` is the content hash clients pin and the ETag for conditional
 gets. The `/v1/model-catalog` endpoint in neocloud serves the same shape and
 semantics.
 
-Upstream refresh: clients fetch `index.json`, verify its signature with the
-publisher's public key, fetch `snapshot_url` (relative to the index), and accept
-the snapshot only if its digest matches the index and its schema major is 3.
-Anything else keeps the last good snapshot.
+Upstream refresh: the snapshot is published as a single-layer OCI artifact
+(`application/vnd.neocloud.catalog.v3+json`, version in the
+`org.opencontainers.image.version` manifest annotation), signed with cosign. A
+client resolves the reference to a manifest digest, verifies the Sigstore bundle
+attached as an OCI referrer against that digest and the publisher's identity,
+refuses a version not newer than the one in use, pulls the layer, and accepts
+the snapshot only if its version matches the annotation and its schema major is
+3. Anything else keeps the last good snapshot.
 
 ## Curate
 
@@ -79,19 +84,33 @@ This validates `data/`, rewrites `snapshots/v3/catalog.json` and prints the
 digest. Unchanged content keeps the committed version and digest. Commit the
 snapshot; the module's embedded snapshot is picked up at build.
 
-## Release signing
+## Release
 
-The release job signs the index; the private key never enters the repository.
+Push a `v*` tag on a commit whose committed snapshot is current. The release
+workflow checks that regenerating reproduces the snapshot, pushes it to
+`ghcr.io/fishing-agents/neocloud-catalog` under the git tag and the moving `v3`
+tag, and signs the manifest with cosign keyless. There is no signing key: the
+signature binds the digest to the workflow identity
+`https://github.com/fishing-agents/neocloud-catalog/.github/workflows/release.yml@refs/tags/<tag>`,
+recorded in the public Rekor log.
 
-1. Once, create the key (a 32-byte Ed25519 seed, hex) and store it in the
-   release job's secret store: `openssl rand -hex 32 > catalog-sign.key`.
-2. On a release, check out the tagged commit, write the secret to a file and
-   run `go run ./cmd/catalog-generate --sign-key <file>`. The snapshot stays
-   byte-identical to the committed one; `snapshots/v3/index.json` (gitignored)
-   is written with the digest signature, and the public key is printed (hex).
-3. Publish `index.json` and `catalog.json` side by side, for example as
-   release assets. neocloud's `[catalog] url` is the index URL and
-   `[catalog] public_key` the printed public key.
+neocloud trusts it with:
+
+```toml
+[catalog]
+ref = "ghcr.io/fishing-agents/neocloud-catalog:v3"
+identity_issuer = "https://token.actions.githubusercontent.com"
+identity = '^https://github\.com/fishing-agents/neocloud-catalog/\.github/workflows/release\.yml@refs/tags/v.*$'
+```
+
+Pin the identity to this exact workflow file: an org-wide pattern would trust
+any workflow in any repository of the org. Check a release by hand:
+
+```sh
+cosign verify ghcr.io/fishing-agents/neocloud-catalog:v3 \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github\.com/fishing-agents/neocloud-catalog/\.github/workflows/release\.yml@refs/tags/v.*$'
+```
 
 ## Test
 
