@@ -68,7 +68,7 @@ func run(signKey string) error {
 	snap.Version, snap.GeneratedAt = prev.Version, prev.GeneratedAt
 	if prev.Version == "" || snap.Digest() != prev.Digest() {
 		snap.GeneratedAt = time.Now().UTC()
-		snap.Version = snap.GeneratedAt.Format("2006-01-02T15:04:05Z")
+		snap.Version = snap.GeneratedAt.Format(catalog.VersionLayout)
 	}
 	if err := writeJSON(snapshotPath, snap); err != nil {
 		return err

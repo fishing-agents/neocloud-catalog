@@ -15,7 +15,7 @@ func TestSignIndexVerifies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ix := Index{SchemaVersion: SchemaVersion, Version: "v1", Digest: "aaaa", SnapshotURL: "catalog.json"}
+	ix := Index{SchemaVersion: SchemaVersion, Version: "2026-10-06T00:00:00Z", Digest: "aaaa", SnapshotURL: "catalog.json"}
 	SignIndex(&ix, priv)
 	if err := VerifyIndex(ix, pub); err != nil {
 		t.Fatalf("signed index: %v", err)
@@ -25,7 +25,7 @@ func TestSignIndexVerifies(t *testing.T) {
 	garbled := ix
 	garbled.Signature = "not base64"
 	newerClaim := ix
-	newerClaim.Version = "v2"
+	newerClaim.Version = "2026-10-07T00:00:00Z"
 	otherSchema := ix
 	otherSchema.SchemaVersion = "9.0.0"
 	for name, c := range map[string]struct {
@@ -42,5 +42,10 @@ func TestSignIndexVerifies(t *testing.T) {
 		if err := VerifyIndex(c.ix, c.pub); !errors.Is(err, ErrBadSignature) {
 			t.Errorf("%s: err = %v, want ErrBadSignature", name, err)
 		}
+	}
+	freeForm := Index{SchemaVersion: SchemaVersion, Version: "v10", Digest: "aaaa", SnapshotURL: "catalog.json"}
+	SignIndex(&freeForm, priv)
+	if err := VerifyIndex(freeForm, pub); err == nil {
+		t.Error("signed index with a free-form version verified; string ordering would accept v10 < v9")
 	}
 }

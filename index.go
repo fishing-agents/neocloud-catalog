@@ -4,6 +4,8 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"errors"
+	"fmt"
+	"time"
 )
 
 // Index is the signed pointer an upstream publishes next to a snapshot. Clients
@@ -20,6 +22,9 @@ type Index struct {
 
 // ErrBadSignature means the index signature does not verify with the key.
 var ErrBadSignature = errors.New("catalog: index signature does not verify")
+
+// VersionLayout is the catalog version format: the generation time in UTC.
+const VersionLayout = "2006-01-02T15:04:05Z"
 
 // signed is what the signature covers: schema version, version and digest, so a
 // replayed or edited index cannot claim another version for a snapshot.
@@ -38,6 +43,11 @@ func VerifyIndex(ix Index, pub ed25519.PublicKey) error {
 	sig, err := base64.StdEncoding.DecodeString(ix.Signature)
 	if err != nil || !ed25519.Verify(pub, ix.signed(), sig) {
 		return ErrBadSignature
+	}
+	// Consumers order catalogs by comparing versions as strings, which holds
+	// only for this fixed-width UTC layout.
+	if _, err := time.Parse(VersionLayout, ix.Version); err != nil {
+		return fmt.Errorf("index version %q is not in the %s layout", ix.Version, VersionLayout)
 	}
 	return nil
 }
