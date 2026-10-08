@@ -15,7 +15,7 @@ func TestRunKeepsVersion(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, "snapshots/v3"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, f := range []string{"models.json", "families.json", "backends.json"} {
+	for _, f := range []string{"models.json", "families.json", "backends.json", "node_types.json"} {
 		b, err := os.ReadFile(filepath.Join("../../data", f))
 		if err != nil {
 			t.Fatal(err)

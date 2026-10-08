@@ -1,0 +1,74 @@
+[
+  {
+    "id": "aws/g5.12xlarge",
+    "family": "A10G",
+    "gpus": 4,
+    "source": "https://aws.amazon.com/ec2/instance-types/g5/"
+  },
+  {
+    "id": "aws/g5.xlarge",
+    "family": "A10G",
+    "gpus": 1,
+    "source": "https://aws.amazon.com/ec2/instance-types/g5/"
+  },
+  {
+    "id": "aws/g6.12xlarge",
+    "family": "L4",
+    "gpus": 4,
+    "source": "https://aws.amazon.com/ec2/instance-types/g6/"
+  },
+  {
+    "id": "aws/g6.xlarge",
+    "family": "L4",
+    "gpus": 1,
+    "source": "https://aws.amazon.com/ec2/instance-types/g6/"
+  },
+  {
+    "id": "aws/p4de.24xlarge",
+    "family": "A100",
+    "gpus": 8,
+    "source": "https://aws.amazon.com/ec2/instance-types/p4/"
+  },
+  {
+    "id": "aws/p5.48xlarge",
+    "family": "H100",
+    "gpus": 8,
+    "source": "https://aws.amazon.com/ec2/instance-types/p5/"
+  },
+  {
+    "id": "aws/p5e.48xlarge",
+    "family": "H200",
+    "gpus": 8,
+    "source": "https://aws.amazon.com/ec2/instance-types/p5/"
+  },
+  {
+    "id": "azure/Standard_ND96isr_H100_v5",
+    "family": "H100",
+    "gpus": 8,
+    "source": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/ndh100v5-series"
+  },
+  {
+    "id": "azure/Standard_ND96isr_MI300X_v5",
+    "family": "MI300X",
+    "gpus": 8,
+    "source": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/ndmi300xv5-series"
+  },
+  {
+    "id": "gcp/a2-ultragpu-8g",
+    "family": "A100",
+    "gpus": 8,
+    "source": "https://docs.cloud.google.com/compute/docs/accelerator-optimized-machines"
+  },
+  {
+    "id": "gcp/a3-highgpu-8g",
+    "family": "H100",
+    "gpus": 8,
+    "source": "https://docs.cloud.google.com/compute/docs/accelerator-optimized-machines"
+  },
+  {
+    "id": "gcp/g2-standard-4",
+    "family": "L4",
+    "gpus": 1,
+    "source": "https://docs.cloud.google.com/compute/docs/accelerator-optimized-machines"
+  }
+]

@@ -38,6 +38,13 @@ func run() error {
 	if err := loadJSON("data/backends.json", &backends); err != nil {
 		return err
 	}
+	var cloud []catalog.NodeType
+	if err := loadJSON("data/node_types.json", &cloud); err != nil {
+		return err
+	}
+	if _, err := catalog.NodeTypeVocabulary(families, cloud); err != nil {
+		return err
+	}
 	snap, err := catalog.Generate(templates, families, backends)
 	if err != nil {
 		return err
