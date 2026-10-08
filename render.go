@@ -30,7 +30,8 @@ func Render(m ModelTemplate, p Preset, bv BackendVersion, fit ModelFit, draft *D
 // RenderRole renders a preset into the arguments that follow its backend
 // version's command, in a stable order: context, parallelism, KV cache dtype,
 // prefix caching, parsers, chat template, speculative decoding, topology, extra
-// args. Tensor parallel is the preset's, else the fit's GPU count. role is
+// args. Tensor parallel is the role's GPU count on a disaggregated side, else
+// the preset's, else the fit's GPU count. role is
 // "prefill" or "decode" for one side of a disaggregated preset and empty
 // otherwise; nodeRank is the node of a multi-node preset, whose arguments carry
 // the placeholders {{master_addr}} and {{master_port}} for the caller to fill.
@@ -58,9 +59,16 @@ func render(p Preset, f FlagTable, fit ModelFit, draft *DraftModel, role string,
 		// count does not say how to split it.
 		return nil, errors.New("pipeline parallel needs an explicit tensor_parallel")
 	}
+	tp := cmp.Or(p.TensorParallel, fit.GPUCount)
+	switch role {
+	case "prefill":
+		tp = p.Topology.Prefill
+	case "decode":
+		tp = p.Topology.Decode
+	}
 	// Without a tensor-parallel flag (llama.cpp) the engine splits layers over
 	// the GPUs it is given, so only an explicit preset value is refused.
-	switch tp := cmp.Or(p.TensorParallel, fit.GPUCount); {
+	switch {
 	case tp <= 1:
 	case f.TensorParallel != "":
 		a.set(f.TensorParallel, strconv.Itoa(tp))
@@ -158,35 +166,40 @@ func (a *argv) speculative(style string, s Speculative, draft *DraftModel) error
 	if s.Tokens < 1 {
 		return errors.New("speculative tokens must be positive")
 	}
-	repo := ""
-	if s.DraftModel != "" {
-		if draft == nil || draft.Slug != s.DraftModel {
-			return fmt.Errorf("draft model %q not given", s.DraftModel)
-		}
-		repo = draft.Source.Repo
+	flag, vllm := strings.CutPrefix(style, "json:")
+	var method string
+	switch {
+	case vllm:
+		method = vllmSpecMethods[s.Method]
+	case style == "sglang":
+		method = sglangSpecMethods[s.Method]
+	default:
+		return errors.New("cannot express speculative decoding")
 	}
-	if flag, ok := strings.CutPrefix(style, "json:"); ok {
-		method, ok := vllmSpecMethods[s.Method]
-		if !ok {
-			return fmt.Errorf("has no speculative method %q", s.Method)
-		}
-		cfg := map[string]any{"method": method, "num_speculative_tokens": s.Tokens}
-		if repo != "" {
-			cfg["model"] = repo
+	if method == "" {
+		return fmt.Errorf("has no speculative method %q", s.Method)
+	}
+	// Every mapped method loads draft weights; vLLM refuses to start without
+	// them (config/speculative.py).
+	if s.DraftModel == "" {
+		return fmt.Errorf("speculative method %q needs a draft model", s.Method)
+	}
+	if draft == nil || draft.Slug != s.DraftModel {
+		return fmt.Errorf("draft model %q not given", s.DraftModel)
+	}
+	src := draft.Source
+	if vllm {
+		cfg := map[string]any{"method": method, "model": src.Repo, "num_speculative_tokens": s.Tokens}
+		if src.Revision != "" {
+			cfg["revision"] = src.Revision
 		}
 		a.setJSON(flag, cfg)
 		return nil
 	}
-	if style != "sglang" {
-		return errors.New("cannot express speculative decoding")
-	}
-	alg, ok := sglangSpecMethods[s.Method]
-	if !ok {
-		return fmt.Errorf("has no speculative method %q", s.Method)
-	}
-	a.set("--speculative-algorithm", alg)
-	if repo != "" {
-		a.set("--speculative-draft-model-path", repo)
+	a.set("--speculative-algorithm", method)
+	a.set("--speculative-draft-model-path", src.Repo)
+	if src.Revision != "" {
+		a.set("--speculative-draft-model-revision", src.Revision)
 	}
 	// A top-1 chain verifies its steps plus one token; SGLang forces that
 	// draft-token count whenever topk is 1.
