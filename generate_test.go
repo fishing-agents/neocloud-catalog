@@ -496,7 +496,7 @@ func TestValidateRejectsInconsistentPresetsAndDrafts(t *testing.T) {
 }
 
 // Regenerating the committed data must reproduce the embedded snapshot: the
-// generator is deterministic and snapshots/v3 is not stale.
+// generator is deterministic and snapshots/v4 is not stale.
 func TestCommittedSnapshotMatchesData(t *testing.T) {
 	var families []Family
 	var nodeTypes []NodeType
@@ -517,12 +517,12 @@ func TestCommittedSnapshotMatchesData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	committed, err := SnapshotV3()
+	committed, err := SnapshotV4()
 	if err != nil {
 		t.Fatal(err)
 	}
 	snap.Version = committed.Version
 	if snap.Digest() != committed.Digest() {
-		t.Fatal("snapshots/v3/catalog.json is stale: run go run ./cmd/catalog-generate")
+		t.Fatal("snapshots/v4/catalog.json is stale: run go run ./cmd/catalog-generate")
 	}
 }

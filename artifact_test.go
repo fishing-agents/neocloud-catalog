@@ -19,7 +19,7 @@ func TestParseVersion(t *testing.T) {
 }
 
 func TestSnapshotVersionParses(t *testing.T) {
-	snap, err := SnapshotV3()
+	snap, err := SnapshotV4()
 	if err != nil {
 		t.Fatal(err)
 	}

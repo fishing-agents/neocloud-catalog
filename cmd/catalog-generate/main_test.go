@@ -12,7 +12,7 @@ func TestRunKeepsVersion(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, "data"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(dir, "snapshots/v3"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "snapshots/v4"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	for _, f := range []string{"models.json", "draft_models.json", "families.json", "backends.json", "node_types.json"} {

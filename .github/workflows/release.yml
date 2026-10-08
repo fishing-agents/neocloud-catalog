@@ -38,15 +38,15 @@ jobs:
         run: echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
       - name: Push the artifact
         id: push
-        working-directory: snapshots/v3
+        working-directory: snapshots/v4
         run: |
           version=$(jq -r .version catalog.json)
-          digest=$(oras push "$REPO:$GITHUB_REF_NAME,v3" \
-            --artifact-type application/vnd.neocloud.catalog.v3+json \
+          digest=$(oras push "$REPO:$GITHUB_REF_NAME,v4" \
+            --artifact-type application/vnd.neocloud.catalog.v4+json \
             --annotation "org.opencontainers.image.version=$version" \
             --annotation "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
             --format go-template='{{.digest}}' \
-            catalog.json:application/vnd.neocloud.catalog.v3+json)
+            catalog.json:application/vnd.neocloud.catalog.v4+json)
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
       - name: Sign
         run: |
@@ -70,7 +70,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           tar -C dist -czf "neocloud-catalog-exports-$GITHUB_REF_NAME.tar.gz" .
-          gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes "Catalog $(jq -r .version snapshots/v3/catalog.json)" \
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes "Catalog $(jq -r .version snapshots/v4/catalog.json)" \
             "neocloud-catalog-exports-$GITHUB_REF_NAME.tar.gz" dist/SHA256SUMS dist/SHA256SUMS.sigstore.json dist/gpustack/model-catalog.yaml
       - uses: actions/upload-pages-artifact@v4
         with:

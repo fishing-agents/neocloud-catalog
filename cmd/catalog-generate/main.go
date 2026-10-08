@@ -1,6 +1,6 @@
 // Command catalog-generate is the outsourced generation pipeline: it reads the
 // curated sources in data/, validates them, derives the fit matrix, and emits
-// the versioned snapshot at snapshots/v3/catalog.json that the module embeds and
+// the versioned snapshot at snapshots/v4/catalog.json that the module embeds and
 // neocloud ingests. Re-run it after any change to data/ to bump the snapshot.
 // Publishing and signing happen in the release workflow, not here.
 package main
@@ -16,7 +16,7 @@ import (
 	catalog "github.com/fishman/neocloud-catalog"
 )
 
-const snapshotPath = "snapshots/v3/catalog.json"
+const snapshotPath = "snapshots/v4/catalog.json"
 
 func main() {
 	if err := run(); err != nil {

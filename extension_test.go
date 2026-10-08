@@ -227,3 +227,30 @@ func TestMergeRefuses(t *testing.T) {
 		}
 	}
 }
+
+// The embedded file is walked rather than SnapshotV4's decoded value: decoding
+// would drop an "extensions" key on an object whose type has no such field
+// (node types).
+func TestPublicSnapshotHasNoExtensions(t *testing.T) {
+	var v any
+	if err := json.Unmarshal(snapshotJSON, &v); err != nil {
+		t.Fatal(err)
+	}
+	var walk func(path string, v any)
+	walk = func(path string, v any) {
+		switch v := v.(type) {
+		case map[string]any:
+			for k, e := range v {
+				if k == "extensions" {
+					t.Errorf("public snapshot has extensions at %s", path)
+				}
+				walk(path+"."+k, e)
+			}
+		case []any:
+			for i, e := range v {
+				walk(fmt.Sprintf("%s[%d]", path, i), e)
+			}
+		}
+	}
+	walk("$", v)
+}

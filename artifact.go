@@ -12,8 +12,11 @@ import (
 // that verifies the signature against the manifest digest also trusts the
 // annotation and the layer digest.
 const (
-	ArtifactType      = "application/vnd.neocloud.catalog.v3+json"
-	VersionAnnotation = "org.opencontainers.image.version"
+	ArtifactType = "application/vnd.neocloud.catalog.v4+json"
+	// OverlayArtifactType is the artifact and layer type of a published
+	// Overlay, pushed to a private registry and signed by its own identity.
+	OverlayArtifactType = "application/vnd.neocloud.catalog-overlay.v4+json"
+	VersionAnnotation   = "org.opencontainers.image.version"
 	// VersionLayout is the snapshot version format: the generation time in UTC.
 	VersionLayout = "2006-01-02T15:04:05Z"
 )

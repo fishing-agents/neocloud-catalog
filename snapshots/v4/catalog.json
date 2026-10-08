@@ -1,0 +1,2959 @@
+{
+  "schema_version": "4.0.0",
+  "version": "2026-10-08T10:48:26Z",
+  "generated_at": "2026-10-08T10:48:26.272478823Z",
+  "families": [
+    {
+      "name": "A100",
+      "vendor": "nvidia",
+      "architecture": "ampere",
+      "compute_capability": "8.0",
+      "dtypes": [
+        "fp16",
+        "bf16"
+      ],
+      "memory_gb": 80,
+      "memory_bandwidth_gbs": 2039,
+      "tflops": {
+        "bf16": 312,
+        "fp16": 312
+      },
+      "interconnect": "nvlink",
+      "interconnect_gbs": 600,
+      "sources": [
+        "https://epoch.ai/data/machine-learning-hardware",
+        "https://www.nvidia.com/content/dam/en-zz/Solutions/Data-Center/a100/pdf/nvidia-a100-datasheet-us-nvidia-1758950-r4-web.pdf",
+        "https://developer.nvidia.com/cuda/gpus",
+        "https://github.com/vllm-project/vllm/blob/v0.31.0/vllm/platforms/cuda.py"
+      ]
+    },
+    {
+      "name": "A10G",
+      "vendor": "nvidia",
+      "architecture": "ampere",
+      "compute_capability": "8.6",
+      "dtypes": [
+        "fp16",
+        "bf16"
+      ],
+      "memory_gb": 24,
+      "memory_bandwidth_gbs": 600,
+      "interconnect": "pcie",
+      "interconnect_gbs": 64,
+      "sources": [
+        "https://epoch.ai/data/machine-learning-hardware",
+        "https://www.nvidia.com/en-us/data-center/products/a10-gpu/",
+        "https://developer.nvidia.com/cuda/gpus",
+        "https://github.com/vllm-project/vllm/blob/v0.31.0/vllm/platforms/cuda.py",
+        "https://aws.amazon.com/ec2/instance-types/g5/"
+      ]
+    },
+    {
+      "name": "H100",
+      "vendor": "nvidia",
+      "architecture": "hopper",
+      "compute_capability": "9.0",
+      "dtypes": [
+        "fp16",
+        "bf16",
+        "fp8"
+      ],
+      "memory_gb": 80,
+      "memory_bandwidth_gbs": 3350,
+      "tflops": {
+        "bf16": 989.4,
+        "fp16": 989.4,
+        "fp8": 1979
+      },
+      "interconnect": "nvlink",
+      "interconnect_gbs": 900,
+      "sources": [
+        "https://epoch.ai/data/machine-learning-hardware",
+        "https://www.nvidia.com/en-us/data-center/h100/",
+        "https://developer.nvidia.com/cuda/gpus",
+        "https://github.com/vllm-project/vllm/blob/v0.31.0/vllm/platforms/cuda.py"
+      ]
+    },
+    {
+      "name": "H200",
+      "vendor": "nvidia",
+      "architecture": "hopper",
+      "compute_capability": "9.0",
+      "dtypes": [
+        "fp16",
+        "bf16",
+        "fp8"
+      ],
+      "memory_gb": 141,
+      "memory_bandwidth_gbs": 4800,
+      "tflops": {
+        "bf16": 989.5,
+        "fp16": 989.5,
+        "fp8": 1979
+      },
+      "interconnect": "nvlink",
+      "interconnect_gbs": 900,
+      "sources": [
+        "https://epoch.ai/data/machine-learning-hardware",
+        "https://www.nvidia.com/en-us/data-center/h200/",
+        "https://developer.nvidia.com/cuda/gpus",
+        "https://github.com/vllm-project/vllm/blob/v0.31.0/vllm/platforms/cuda.py"
+      ]
+    },
+    {
+      "name": "L4",
+      "vendor": "nvidia",
+      "architecture": "ada",
+      "compute_capability": "8.9",
+      "dtypes": [
+        "fp16",
+        "bf16",
+        "fp8"
+      ],
+      "memory_gb": 24,
+      "memory_bandwidth_gbs": 300.1,
+      "tflops": {
+        "bf16": 121,
+        "fp16": 121,
+        "fp8": 242
+      },
+      "interconnect": "pcie",
+      "interconnect_gbs": 64,
+      "sources": [
+        "https://epoch.ai/data/machine-learning-hardware",
+        "https://www.nvidia.com/en-us/data-center/l4/",
+        "https://developer.nvidia.com/cuda/gpus",
+        "https://github.com/vllm-project/vllm/blob/v0.31.0/vllm/platforms/cuda.py",
+        "https://images.nvidia.com/aem-dam/Solutions/Data-Center/l4/nvidia-ada-gpu-architecture-whitepaper-V2.02.pdf"
+      ]
+    },
+    {
+      "name": "MI300X",
+      "vendor": "amd",
+      "architecture": "cdna3",
+      "compute_capability": "gfx942",
+      "dtypes": [
+        "fp16",
+        "bf16",
+        "fp8"
+      ],
+      "memory_gb": 192,
+      "memory_bandwidth_gbs": 5300,
+      "tflops": {
+        "bf16": 1307.4,
+        "fp16": 1307.4,
+        "fp8": 2614.9
+      },
+      "interconnect": "xgmi",
+      "interconnect_gbs": 896,
+      "sources": [
+        "https://epoch.ai/data/machine-learning-hardware",
+        "https://rocm.docs.amd.com/en/latest/reference/gpu-specs.html",
+        "https://rocm.docs.amd.com/en/latest/reference/precision-support.html",
+        "https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/data-sheets/amd-instinct-mi300x-data-sheet.pdf"
+      ]
+    },
+    {
+      "name": "RTX-4090",
+      "vendor": "nvidia",
+      "architecture": "ada",
+      "compute_capability": "8.9",
+      "dtypes": [
+        "fp16",
+        "bf16",
+        "fp8"
+      ],
+      "memory_gb": 24,
+      "memory_bandwidth_gbs": 1008,
+      "tflops": {
+        "bf16": 165.2,
+        "fp16": 165.2,
+        "fp8": 330.3
+      },
+      "interconnect": "pcie",
+      "interconnect_gbs": 64,
+      "sources": [
+        "https://epoch.ai/data/machine-learning-hardware",
+        "https://www.nvidia.com/en-us/geforce/graphics-cards/40-series/rtx-4090/",
+        "https://developer.nvidia.com/cuda/gpus",
+        "https://github.com/vllm-project/vllm/blob/v0.31.0/vllm/platforms/cuda.py",
+        "https://www.nvidia.com/en-us/data-center/l4/",
+        "https://images.nvidia.com/aem-dam/Solutions/Data-Center/l4/nvidia-ada-gpu-architecture-whitepaper-V2.02.pdf"
+      ]
+    }
+  ],
+  "node_types": [
+    {
+      "id": "aws/g5.12xlarge",
+      "family": "A10G",
+      "gpus": 4,
+      "source": "https://aws.amazon.com/ec2/instance-types/g5/"
+    },
+    {
+      "id": "aws/g5.xlarge",
+      "family": "A10G",
+      "gpus": 1,
+      "source": "https://aws.amazon.com/ec2/instance-types/g5/"
+    },
+    {
+      "id": "aws/g6.12xlarge",
+      "family": "L4",
+      "gpus": 4,
+      "source": "https://aws.amazon.com/ec2/instance-types/g6/"
+    },
+    {
+      "id": "aws/g6.xlarge",
+      "family": "L4",
+      "gpus": 1,
+      "source": "https://aws.amazon.com/ec2/instance-types/g6/"
+    },
+    {
+      "id": "aws/p4de.24xlarge",
+      "family": "A100",
+      "gpus": 8,
+      "source": "https://aws.amazon.com/ec2/instance-types/p4/"
+    },
+    {
+      "id": "aws/p5.48xlarge",
+      "family": "H100",
+      "gpus": 8,
+      "source": "https://aws.amazon.com/ec2/instance-types/p5/"
+    },
+    {
+      "id": "aws/p5e.48xlarge",
+      "family": "H200",
+      "gpus": 8,
+      "source": "https://aws.amazon.com/ec2/instance-types/p5/"
+    },
+    {
+      "id": "azure/Standard_ND96isr_H100_v5",
+      "family": "H100",
+      "gpus": 8,
+      "source": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/ndh100v5-series"
+    },
+    {
+      "id": "azure/Standard_ND96isr_MI300X_v5",
+      "family": "MI300X",
+      "gpus": 8,
+      "source": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/ndmi300xv5-series"
+    },
+    {
+      "id": "gcp/a2-ultragpu-8g",
+      "family": "A100",
+      "gpus": 8,
+      "source": "https://docs.cloud.google.com/compute/docs/accelerator-optimized-machines"
+    },
+    {
+      "id": "gcp/a3-highgpu-8g",
+      "family": "H100",
+      "gpus": 8,
+      "source": "https://docs.cloud.google.com/compute/docs/accelerator-optimized-machines"
+    },
+    {
+      "id": "gcp/g2-standard-4",
+      "family": "L4",
+      "gpus": 1,
+      "source": "https://docs.cloud.google.com/compute/docs/accelerator-optimized-machines"
+    },
+    {
+      "id": "other/A100x1",
+      "family": "A100",
+      "gpus": 1
+    },
+    {
+      "id": "other/A100x2",
+      "family": "A100",
+      "gpus": 2
+    },
+    {
+      "id": "other/A100x4",
+      "family": "A100",
+      "gpus": 4
+    },
+    {
+      "id": "other/A100x8",
+      "family": "A100",
+      "gpus": 8
+    },
+    {
+      "id": "other/A10Gx1",
+      "family": "A10G",
+      "gpus": 1
+    },
+    {
+      "id": "other/A10Gx2",
+      "family": "A10G",
+      "gpus": 2
+    },
+    {
+      "id": "other/A10Gx4",
+      "family": "A10G",
+      "gpus": 4
+    },
+    {
+      "id": "other/A10Gx8",
+      "family": "A10G",
+      "gpus": 8
+    },
+    {
+      "id": "other/H100x1",
+      "family": "H100",
+      "gpus": 1
+    },
+    {
+      "id": "other/H100x2",
+      "family": "H100",
+      "gpus": 2
+    },
+    {
+      "id": "other/H100x4",
+      "family": "H100",
+      "gpus": 4
+    },
+    {
+      "id": "other/H100x8",
+      "family": "H100",
+      "gpus": 8
+    },
+    {
+      "id": "other/H200x1",
+      "family": "H200",
+      "gpus": 1
+    },
+    {
+      "id": "other/H200x2",
+      "family": "H200",
+      "gpus": 2
+    },
+    {
+      "id": "other/H200x4",
+      "family": "H200",
+      "gpus": 4
+    },
+    {
+      "id": "other/H200x8",
+      "family": "H200",
+      "gpus": 8
+    },
+    {
+      "id": "other/L4x1",
+      "family": "L4",
+      "gpus": 1
+    },
+    {
+      "id": "other/L4x2",
+      "family": "L4",
+      "gpus": 2
+    },
+    {
+      "id": "other/L4x4",
+      "family": "L4",
+      "gpus": 4
+    },
+    {
+      "id": "other/L4x8",
+      "family": "L4",
+      "gpus": 8
+    },
+    {
+      "id": "other/MI300Xx1",
+      "family": "MI300X",
+      "gpus": 1
+    },
+    {
+      "id": "other/MI300Xx2",
+      "family": "MI300X",
+      "gpus": 2
+    },
+    {
+      "id": "other/MI300Xx4",
+      "family": "MI300X",
+      "gpus": 4
+    },
+    {
+      "id": "other/MI300Xx8",
+      "family": "MI300X",
+      "gpus": 8
+    },
+    {
+      "id": "other/RTX-4090x1",
+      "family": "RTX-4090",
+      "gpus": 1
+    },
+    {
+      "id": "other/RTX-4090x2",
+      "family": "RTX-4090",
+      "gpus": 2
+    },
+    {
+      "id": "other/RTX-4090x4",
+      "family": "RTX-4090",
+      "gpus": 4
+    },
+    {
+      "id": "other/RTX-4090x8",
+      "family": "RTX-4090",
+      "gpus": 8
+    }
+  ],
+  "models": [
+    {
+      "slug": "llama-3.1-8b",
+      "name": "Llama 3.1 8B",
+      "family": "llama",
+      "description": "Llama 3.1 instruction-tuned 8B text model, optimized for multilingual dialogue use cases.",
+      "task": "chat",
+      "capabilities": [
+        "tools",
+        "long-context"
+      ],
+      "params_b": 8,
+      "params_active_b": 8,
+      "release_date": "2024-07-23",
+      "home": "https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct",
+      "aliases": [
+        "meta-llama/Llama-3.1-8B-Instruct",
+        "LLM-Research/Meta-Llama-3.1-8B-Instruct",
+        "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8",
+        "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF"
+      ],
+      "default_context": 8192,
+      "context_max": 131072,
+      "quantizations": [
+        {
+          "name": "bf16",
+          "kind": "float",
+          "requires_dtype": "bf16",
+          "weights_gb": 16.1,
+          "sources": [
+            {
+              "type": "huggingface",
+              "repo": "meta-llama/Llama-3.1-8B-Instruct",
+              "revision": "0e9e39f249a16976918f6564b8830bc894c89659"
+            },
+            {
+              "type": "modelscope",
+              "repo": "LLM-Research/Meta-Llama-3.1-8B-Instruct",
+              "revision": "359efdbb8af05b788a4ad4185215c6b8caa9052c"
+            }
+          ]
+        },
+        {
+          "name": "fp8",
+          "kind": "fp8",
+          "requires_dtype": "fp8",
+          "weights_gb": 9.1,
+          "sources": [
+            {
+              "type": "huggingface",
+              "repo": "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8",
+              "revision": "870a1177ed082c0ba5dbefd62573ab8f91803f6a"
+            },
+            {
+              "type": "modelscope",
+              "repo": "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8",
+              "revision": "de1aed904a8260414a02d0e97816990f9979499b"
+            }
+          ]
+        },
+        {
+          "name": "Q4_K_M",
+          "kind": "gguf",
+          "requires_dtype": "",
+          "weights_gb": 4.9,
+          "sources": [
+            {
+              "type": "huggingface",
+              "repo": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
+              "revision": "bf5b95e96dac0462e2a09145ec66cae9a3f12067",
+              "files": [
+                "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf"
+              ]
+            }
+          ]
+        }
+      ],
+      "architecture": {
+        "layers": 32,
+        "attention_heads": 32,
+        "kv_heads": 8,
+        "head_dim": 128
+      },
+      "kv_bytes_per_token": 131072,
+      "license": "llama3.1",
+      "gated": true,
+      "presets": [
+        {
+          "name": "vllm-bf16",
+          "quantization": "bf16",
+          "backend": "vllm",
+          "backend_version": "v0.31.0",
+          "purpose": "standard",
+          "context": 8192,
+          "tool_parser": "llama3",
+          "chat_template": "llama3.1-tools",
+          "vendors": [
+            "nvidia"
+          ]
+        },
+        {
+          "name": "sglang-bf16",
+          "quantization": "bf16",
+          "backend": "sglang",
+          "backend_version": "v0.5.21",
+          "purpose": "standard",
+          "context": 8192,
+          "tool_parser": "llama3"
+        },
+        {
+          "name": "vllm-fp8",
+          "quantization": "fp8",
+          "backend": "vllm",
+          "backend_version": "v0.31.0",
+          "purpose": "standard",
+          "context": 8192,
+          "tool_parser": "llama3",
+          "chat_template": "llama3.1-tools",
+          "vendors": [
+            "nvidia"
+          ]
+        },
+        {
+          "name": "sglang-fp8",
+          "quantization": "fp8",
+          "backend": "sglang",
+          "backend_version": "v0.5.21",
+          "purpose": "standard",
+          "context": 8192,
+          "tool_parser": "llama3"
+        },
+        {
+          "name": "vllm-bf16-eagle3",
+          "quantization": "bf16",
+          "backend": "vllm",
+          "backend_version": "v0.31.0",
+          "purpose": "standard",
+          "context": 8192,
+          "tool_parser": "llama3",
+          "chat_template": "llama3.1-tools",
+          "speculative": {
+            "method": "eagle3",
+            "draft_model": "eagle3-llama-3.1-8b-redhat",
+            "tokens": 3
+          },
+          "vendors": [
+            "nvidia"
+          ]
+        },
+        {
+          "name": "sglang-bf16-eagle3",
+          "quantization": "bf16",
+          "backend": "sglang",
+          "backend_version": "v0.5.21",
+          "purpose": "standard",
+          "context": 8192,
+          "tool_parser": "llama3",
+          "speculative": {
+            "method": "eagle3",
+            "draft_model": "eagle3-llama-3.1-8b-sglang",
+            "tokens": 3
+          }
+        },
+        {
+          "name": "llamacpp-q4km",
+          "quantization": "Q4_K_M",
+          "backend": "llamacpp",
+          "backend_version": "v0.6.0",
+          "purpose": "standard",
+          "context": 8192,
+          "tool_parser": "llama3"
+        }
+      ],
+      "deployment": {
+        "minimum": {
+          "family": "A10G",
+          "gpus": 1,
+          "nodes": 1,
+          "quantization": "bf16",
+          "preset": "vllm-bf16",
+          "context": 8192,
+          "node_types": [
+            "aws/g5.xlarge",
+            "aws/g5.12xlarge",
+            "other/A10Gx1"
+          ],
+          "decode_tokens_per_sec": 27.9,
+          "aggregate_tokens_per_sec": 111.8,
+          "source": "estimate",
+          "confidence": "estimate",
+          "fit_keys": [
+            "llama-3.1-8b/A10G/-/bf16/auto"
+          ]
+        },
+        "optimal": {
+          "family": "MI300X",
+          "gpus": 1,
+          "nodes": 1,
+          "quantization": "fp8",
+          "preset": "sglang-fp8",
+          "context": 8192,
+          "node_types": [
+            "azure/Standard_ND96isr_MI300X_v5",
+            "other/MI300Xx1"
+          ],
+          "decode_tokens_per_sec": 416.8,
+          "aggregate_tokens_per_sec": 3745.3,
+          "source": "estimate",
+          "confidence": "estimate",
+          "fit_keys": [
+            "llama-3.1-8b/MI300X/-/fp8/auto"
+          ]
+        }
+      }
+    },
+    {
+      "slug": "llama-3.1-70b",
+      "name": "Llama 3.1 70B",
+      "family": "llama",
+      "description": "Llama 3.1 instruction-tuned 70B text model, optimized for multilingual dialogue use cases.",
+      "task": "chat",
+      "capabilities": [
+        "tools",
+        "long-context"
+      ],
+      "params_b": 70,
+      "params_active_b": 70,
+      "release_date": "2024-07-23",
+      "home": "https://huggingface.co/meta-llama/Llama-3.1-70B-Instruct",
+      "aliases": [
+        "meta-llama/Llama-3.1-70B-Instruct",
+        "LLM-Research/Meta-Llama-3.1-70B-Instruct",
+        "RedHatAI/Meta-Llama-3.1-70B-Instruct-FP8"
+      ],
+      "default_context": 8192,
+      "context_max": 131072,
+      "quantizations": [
+        {
+          "name": "bf16",
+          "kind": "float",
+          "requires_dtype": "bf16",
+          "weights_gb": 141.1,
+          "sources": [
+            {
+              "type": "huggingface",
+              "repo": "meta-llama/Llama-3.1-70B-Instruct",
+              "revision": "1605565b47bb9346c5515c34102e054115b4f98b"
+            },
+            {
+              "type": "modelscope",
+              "repo": "LLM-Research/Meta-Llama-3.1-70B-Instruct",
+              "revision": "81a95863b03ec58284e1913dae2c6e980e5999a9"
+            }
+          ]
+        },
+        {
+          "name": "fp8",
+          "kind": "fp8",
+          "requires_dtype": "fp8",
+          "weights_gb": 72.7,
+          "sources": [
+            {
+              "type": "huggingface",
+              "repo": "RedHatAI/Meta-Llama-3.1-70B-Instruct-FP8",
+              "revision": "f8d0de9953e442c2fd4da32a1d4da8afb8c9452e"
+            },
+            {
+              "type": "modelscope",
+              "repo": "RedHatAI/Meta-Llama-3.1-70B-Instruct-FP8",
+              "revision": "9fbbe9f0e7924896732f24430a5cbc62f7fde8ef"
+            }
+          ]
+        }
+      ],
+      "architecture": {
+        "layers": 80,
+        "attention_heads": 64,
+        "kv_heads": 8,
+        "head_dim": 128
+      },
+      "kv_bytes_per_token": 327680,
+      "license": "llama3.1",
+      "gated": true,
+      "presets": [
+        {
+          "name": "vllm-bf16",
+          "quantization": "bf16",
+          "backend": "vllm",
+          "backend_version": "v0.31.0",
+          "purpose": "standard",
+          "context": 8192,
+          "tool_parser": "llama3",
+          "chat_template": "llama3.1-tools",
+          "vendors": [
+            "nvidia"
+          ]
+        },
+        {
+          "name": "sglang-bf16",
+          "quantization": "bf16",
+          "backend": "sglang",
+          "backend_version": "v0.5.21",
+          "purpose": "standard",
+          "context": 8192,
+          "tool_parser": "llama3"
+        },
+        {
+          "name": "vllm-fp8",
+          "quantization": "fp8",
+          "backend": "vllm",
+          "backend_version": "v0.31.0",
+          "purpose": "standard",
+          "context": 8192,
+          "tool_parser": "llama3",
+          "chat_template": "llama3.1-tools",
+          "vendors": [
+            "nvidia"
+          ]
+        },
+        {
+          "name": "sglang-fp8",
+          "quantization": "fp8",
+          "backend": "sglang",
+          "backend_version": "v0.5.21",
+          "purpose": "standard",
+          "context": 8192,
+          "tool_parser": "llama3"
+        },
+        {
+          "name": "sglang-bf16-pd",
+          "quantization": "bf16",
+          "backend": "sglang",
+          "backend_version": "v0.5.21",
+          "purpose": "standard",
+          "context": 8192,
+          "tool_parser": "llama3",
+          "topology": {
+            "kind": "disaggregated",
+            "prefill_gpus": 2,
+            "decode_gpus": 2,
+            "transfer": "nixl"
+          }
+        },
+        {
+          "name": "vllm-bf16-2node",
+          "quantization": "bf16",
+          "backend": "vllm",
+          "backend_version": "v0.31.0",
+          "purpose": "throughput",
+          "context": 8192,
+          "tool_parser": "llama3",
+          "chat_template": "llama3.1-tools",
+          "topology": {
+            "kind": "multi-node",
+            "nodes": 2
+          },
+          "vendors": [
+            "nvidia"
+          ]
+        }
+      ],
+      "deployment": {
+        "minimum": {
+          "family": "RTX-4090",
+          "gpus": 4,
+          "nodes": 1,
+          "quantization": "fp8",
+          "preset": "vllm-fp8",
+          "context": 8192,
+          "node_types": [
+            "other/RTX-4090x4"
+          ],
+          "decode_tokens_per_sec": 32.1,
+          "aggregate_tokens_per_sec": 140.5,
+          "source": "estimate",
+          "confidence": "estimate",
+          "fit_keys": [
+            "llama-3.1-70b/RTX-4090/-/fp8/auto"
+          ]
+        },
+        "optimal": {
+          "family": "MI300X",
+          "gpus": 1,
+          "nodes": 1,
+          "quantization": "fp8",
+          "preset": "sglang-fp8",
+          "context": 8192,
+          "node_types": [
+            "azure/Standard_ND96isr_MI300X_v5",
+            "other/MI300Xx1"
+          ],
+          "decode_tokens_per_sec": 56.2,
+          "aggregate_tokens_per_sec": 922.2,
+          "source": "estimate",
+          "confidence": "estimate",
+          "fit_keys": [
+            "llama-3.1-70b/MI300X/-/fp8/auto"
+          ]
+        }
+      }
+    },
+    {
+      "slug": "mixtral-8x7b",
+      "name": "Mixtral 8x7B",
+      "family": "mixtral",
+      "description": "Instruction-tuned Mixtral-8x7B, a pretrained generative sparse mixture of experts.",
+      "task": "chat",
+      "params_b": 47,
+      "params_active_b": 12.9,
+      "release_date": "2023-12-11",
+      "home": "https://huggingface.co/mistralai/Mixtral-8x7B-Instruct-v0.1",
+      "aliases": [
+        "mistralai/Mixtral-8x7B-Instruct-v0.1",
+        "AI-ModelScope/Mixtral-8x7B-Instruct-v0.1",
+        "RedHatAI/Mixtral-8x7B-Instruct-v0.1-FP8"
+      ],
+      "default_context": 32768,
+      "context_max": 32768,
+      "quantizations": [
+        {
+          "name": "bf16",
+          "kind": "float",
+          "requires_dtype": "bf16",
+          "weights_gb": 93.4,
+          "sources": [
+            {
+              "type": "huggingface",
+              "repo": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+              "revision": "eba92302a2861cdc0098cc54bc9f17cb2c47eb61"
+            },
+            {
+              "type": "modelscope",
+              "repo": "AI-ModelScope/Mixtral-8x7B-Instruct-v0.1",
+              "revision": "069d3336b779fe44f34a17ec5a5e20afbcb58688"
+            }
+          ]
+        },
+        {
+          "name": "fp8",
+          "kind": "fp8",
+          "requires_dtype": "fp8",
+          "weights_gb": 47,
+          "sources": [
+            {
+              "type": "huggingface",
+              "repo": "RedHatAI/Mixtral-8x7B-Instruct-v0.1-FP8",
+              "revision": "9a978d5cc7dabc37b3d13d6501426081c99c4cbd"
+            },
+            {
+              "type": "modelscope",
+              "repo": "RedHatAI/Mixtral-8x7B-Instruct-v0.1-FP8",
+              "revision": "7e5b8705712719ef6c3be224cfa9375ddc37d678"
+            }
+          ]
+        }
+      ],
+      "architecture": {
+        "layers": 32,
+        "attention_heads": 32,
+        "kv_heads": 8,
+        "head_dim": 128
+      },
+      "kv_bytes_per_token": 131072,
+      "license": "apache-2.0",
+      "presets": [
+        {
+          "name": "vllm-bf16",
+          "quantization": "bf16",
+          "backend": "vllm",
+          "backend_version": "v0.31.0",
+          "purpose": "standard",
+          "context": 32768
+        },
+        {
+          "name": "sglang-bf16",
+          "quantization": "bf16",
+          "backend": "sglang",
+          "backend_version": "v0.5.21",
+          "purpose": "standard",
+          "context": 32768
+        },
+        {
+          "name": "vllm-fp8",
+          "quantization": "fp8",
+          "backend": "vllm",
+          "backend_version": "v0.31.0",
+          "purpose": "standard",
+          "context": 32768
+        },
+        {
+          "name": "sglang-fp8",
+          "quantization": "fp8",
+          "backend": "sglang",
+          "backend_version": "v0.5.21",
+          "purpose": "standard",
+          "context": 32768
+        }
+      ],
+      "deployment": {
+        "minimum": {
+          "family": "A100",
+          "gpus": 1,
+          "nodes": 1,
+          "quantization": "fp8",
+          "preset": "vllm-fp8",
+          "context": 32768,
+          "node_types": [
+            "aws/p4de.24xlarge",
+            "gcp/a2-ultragpu-8g",
+            "other/A100x1"
+          ],
+          "decode_tokens_per_sec": 94.9,
+          "aggregate_tokens_per_sec": 253.1,
+          "source": "estimate",
+          "confidence": "estimate",
+          "fit_keys": [
+            "mixtral-8x7b/A100/-/fp8/auto"
+          ]
+        },
+        "optimal": {
+          "family": "MI300X",
+          "gpus": 1,
+          "nodes": 1,
+          "quantization": "fp8",
+          "preset": "vllm-fp8",
+          "context": 32768,
+          "node_types": [
+            "azure/Standard_ND96isr_MI300X_v5",
+            "other/MI300Xx1"
+          ],
+          "decode_tokens_per_sec": 246.6,
+          "aggregate_tokens_per_sec": 897.4,
+          "source": "estimate",
+          "confidence": "estimate",
+          "fit_keys": [
+            "mixtral-8x7b/MI300X/-/fp8/auto"
+          ]
+        }
+      }
+    },
+    {
+      "slug": "gemma-2-9b",
+      "name": "Gemma 2 9B",
+      "family": "gemma",
+      "description": "Instruction-tuned Gemma 2 9B, a lightweight text-to-text, decoder-only open model from Google.",
+      "task": "chat",
+      "params_b": 9,
+      "params_active_b": 9,
+      "release_date": "2024-06-27",
+      "home": "https://huggingface.co/google/gemma-2-9b-it",
+      "aliases": [
+        "google/gemma-2-9b-it",
+        "LLM-Research/gemma-2-9b-it",
+        "RedHatAI/gemma-2-9b-it-FP8"
+      ],
+      "default_context": 8192,
+      "context_max": 8192,
+      "quantizations": [
+        {
+          "name": "bf16",
+          "kind": "float",
+          "requires_dtype": "bf16",
+          "weights_gb": 18.5,
+          "sources": [
+            {
+              "type": "huggingface",
+              "repo": "google/gemma-2-9b-it",
+              "revision": "11c9b309abf73637e4b6f9a3fa1e92e615547819"
+            },
+            {
+              "type": "modelscope",
+              "repo": "LLM-Research/gemma-2-9b-it",
+              "revision": "bf37eab02659820031ec6326194edb45a99230fd"
+            }
+          ]
+        },
+        {
+          "name": "fp8",
+          "kind": "fp8",
+          "requires_dtype": "fp8",
+          "weights_gb": 10.2,
+          "sources": [
+            {
+              "type": "huggingface",
+              "repo": "RedHatAI/gemma-2-9b-it-FP8",
+              "revision": "702a3fb558bc9751e65f23fd86c8707bdb72bce2"
+            },
+            {
+              "type": "modelscope",
+              "repo": "RedHatAI/gemma-2-9b-it-FP8",
+              "revision": "4efa06e6b97ddb65a81eac0d4067dc803209b1ed"
+            }
+          ]
+        }
+      ],
+      "architecture": {
+        "layers": 42,
+        "attention_heads": 16,
+        "kv_heads": 8,
+        "head_dim": 256
+      },
+      "kv_bytes_per_token": 344064,
+      "license": "gemma",
+      "gated": true,
+      "presets": [
+        {
+          "name": "vllm-bf16",
+          "quantization": "bf16",
+          "backend": "vllm",
+          "backend_version": "v0.31.0",
+          "purpose": "standard",
+          "context": 8192
+        },
+        {
+          "name": "sglang-bf16",
+          "quantization": "bf16",
+          "backend": "sglang",
+          "backend_version": "v0.5.21",
+          "purpose": "standard",
+          "context": 8192
+        },
+        {
+          "name": "vllm-fp8",
+          "quantization": "fp8",
+          "backend": "vllm",
+          "backend_version": "v0.31.0",
+          "purpose": "standard",
+          "context": 8192
+        },
+        {
+          "name": "sglang-fp8",
+          "quantization": "fp8",
+          "backend": "sglang",
+          "backend_version": "v0.5.21",
+          "purpose": "standard",
+          "context": 8192
+        }
+      ],
+      "deployment": {
+        "minimum": {
+          "family": "A10G",
+          "gpus": 1,
+          "nodes": 1,
+          "quantization": "bf16",
+          "preset": "vllm-bf16",
+          "context": 8192,
+          "node_types": [
+            "aws/g5.xlarge",
+            "aws/g5.12xlarge",
+            "other/A10Gx1"
+          ],
+          "decode_tokens_per_sec": 22.5,
+          "aggregate_tokens_per_sec": 22.5,
+          "source": "estimate",
+          "confidence": "estimate",
+          "fit_keys": [
+            "gemma-2-9b/A10G/-/bf16/auto"
+          ]
+        },
+        "optimal": {
+          "family": "MI300X",
+          "gpus": 1,
+          "nodes": 1,
+          "quantization": "fp8",
+          "preset": "vllm-fp8",
+          "context": 8192,
+          "node_types": [
+            "azure/Standard_ND96isr_MI300X_v5",
+            "other/MI300Xx1"
+          ],
+          "decode_tokens_per_sec": 325.7,
+          "aggregate_tokens_per_sec": 1417.4,
+          "source": "estimate",
+          "confidence": "estimate",
+          "fit_keys": [
+            "gemma-2-9b/MI300X/-/fp8/auto"
+          ]
+        }
+      }
+    },
+    {
+      "slug": "qwen-2.5-14b",
+      "name": "Qwen 2.5 14B",
+      "family": "qwen",
+      "description": "Instruction-tuned 14B Qwen2.5 model with long-context support up to 128K tokens.",
+      "task": "chat",
+      "capabilities": [
+        "tools",
+        "long-context"
+      ],
+      "params_b": 14,
+      "params_active_b": 14,
+      "release_date": "2024-09-19",
+      "home": "https://huggingface.co/Qwen/Qwen2.5-14B-Instruct",
+      "aliases": [
+        "Qwen/Qwen2.5-14B-Instruct",
+        "RedHatAI/Qwen2.5-14B-Instruct-FP8-dynamic",
+        "bartowski/Qwen2.5-14B-Instruct-GGUF"
+      ],
+      "default_context": 32768,
+      "context_max": 131072,
+      "quantizations": [
+        {
+          "name": "bf16",
+          "kind": "float",
+          "requires_dtype": "bf16",
+          "weights_gb": 29.5,
+          "sources": [
+            {
+              "type": "huggingface",
+              "repo": "Qwen/Qwen2.5-14B-Instruct",
+              "revision": "cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8"
+            },
+            {
+              "type": "modelscope",
+              "repo": "Qwen/Qwen2.5-14B-Instruct",
+              "revision": "3957bf39753cf01f98f6560295c4811c2b5df001"
+            }
+          ]
+        },
+        {
+          "name": "fp8",
+          "kind": "fp8",
+          "requires_dtype": "fp8",
+          "weights_gb": 16.3,
+          "sources": [
+            {
+              "type": "huggingface",
+              "repo": "RedHatAI/Qwen2.5-14B-Instruct-FP8-dynamic",
+              "revision": "2afe81d548be7a003a3c790b77e124d4b25fdac9"
+            },
+            {
+              "type": "modelscope",
+              "repo": "RedHatAI/Qwen2.5-14B-Instruct-FP8-dynamic",
+              "revision": "cfdaa12de1b88c71ce4559a7fc5be5adcc279d49"
+            }
+          ]
+        },
+        {
+          "name": "Q4_K_M",
+          "kind": "gguf",
+          "requires_dtype": "",
+          "weights_gb": 9,
+          "sources": [
+            {
+              "type": "huggingface",
+              "repo": "bartowski/Qwen2.5-14B-Instruct-GGUF",
+              "revision": "05244aa5d871c661c80082a15d3bce44714d068d",
+              "files": [
+                "Qwen2.5-14B-Instruct-Q4_K_M.gguf"
+              ]
+            }
+          ]
+        }
+      ],
+      "architecture": {
+        "layers": 48,
+        "attention_heads": 40,
+        "kv_heads": 8,
+        "head_dim": 128
+      },
+      "kv_bytes_per_token": 196608,
+      "license": "apache-2.0",
+      "presets": [
+        {
+          "name": "vllm-bf16",
+          "quantization": "bf16",
+          "backend": "vllm",
+          "backend_version": "v0.31.0",
+          "purpose": "standard",
+          "context": 32768,
+          "tool_parser": "qwen25"
+        },
+        {
+          "name": "sglang-bf16",
+          "quantization": "bf16",
+          "backend": "sglang",
+          "backend_version": "v0.5.21",
+          "purpose": "standard",
+          "context": 32768,
+          "tool_parser": "qwen25"
+        },
+        {
+          "name": "vllm-fp8",
+          "quantization": "fp8",
+          "backend": "vllm",
+          "backend_version": "v0.31.0",
+          "purpose": "standard",
+          "context": 32768,
+          "tool_parser": "qwen25"
+        },
+        {
+          "name": "sglang-fp8",
+          "quantization": "fp8",
+          "backend": "sglang",
+          "backend_version": "v0.5.21",
+          "purpose": "standard",
+          "context": 32768,
+          "tool_parser": "qwen25"
+        },
+        {
+          "name": "llamacpp-q4km",
+          "quantization": "Q4_K_M",
+          "backend": "llamacpp",
+          "backend_version": "v0.6.0",
+          "purpose": "standard",
+          "context": 32768,
+          "tool_parser": "qwen25"
+        }
+      ],
+      "deployment": {
+        "minimum": {
+          "family": "A10G",
+          "gpus": 2,
+          "nodes": 1,
+          "quantization": "bf16",
+          "preset": "vllm-bf16",
+          "context": 32768,
+          "node_types": [
+            "aws/g5.12xlarge",
+            "other/A10Gx2"
+          ],
+          "decode_tokens_per_sec": 22.7,
+          "aggregate_tokens_per_sec": 22.7,
+          "source": "estimate",
+          "confidence": "estimate",
+          "fit_keys": [
+            "qwen-2.5-14b/A10G/-/bf16/auto"
+          ]
+        },
+        "optimal": {
+          "family": "MI300X",
+          "gpus": 1,
+          "nodes": 1,
+          "quantization": "fp8",
+          "preset": "vllm-fp8",
+          "context": 32768,
+          "node_types": [
+            "azure/Standard_ND96isr_MI300X_v5",
+            "other/MI300Xx1"
+          ],
+          "decode_tokens_per_sec": 186.4,
+          "aggregate_tokens_per_sec": 595.4,
+          "source": "estimate",
+          "confidence": "estimate",
+          "fit_keys": [
+            "qwen-2.5-14b/MI300X/-/fp8/auto"
+          ]
+        }
+      }
+    }
+  ],
+  "draft_models": [
+    {
+      "slug": "eagle3-llama-3.1-8b-redhat",
+      "method": "eagle3",
+      "targets": [
+        "llama-3.1-8b"
+      ],
+      "source": {
+        "type": "huggingface",
+        "repo": "RedHatAI/Llama-3.1-8B-Instruct-speculator.eagle3",
+        "revision": "f4fa34a8f803a0ba75d048d6b3dbc1ad5149e9ac"
+      },
+      "weights_gb": 1.9,
+      "backends": [
+        "vllm"
+      ]
+    },
+    {
+      "slug": "eagle3-llama-3.1-8b-sglang",
+      "method": "eagle3",
+      "targets": [
+        "llama-3.1-8b"
+      ],
+      "source": {
+        "type": "huggingface",
+        "repo": "lmsys/sglang-EAGLE3-LLaMA3.1-Instruct-8B",
+        "revision": "28a53ce8911434c031d7c78392abb26d898ec293"
+      },
+      "weights_gb": 0.8,
+      "backends": [
+        "sglang"
+      ]
+    }
+  ],
+  "fits": [
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "A100",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 8192,
+      "vram_required_gb": 21.32,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 76.5,
+        "concurrent_sequences": 19,
+        "aggregate_tokens_per_sec": 430.1,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "A100",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "emulated",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 8192,
+      "vram_required_gb": 13.02,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 125.3,
+        "concurrent_sequences": 22,
+        "aggregate_tokens_per_sec": 497,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "A10G",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 8192,
+      "vram_required_gb": 21.32,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 22.5,
+        "concurrent_sequences": 1,
+        "aggregate_tokens_per_sec": 22.5,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "A10G",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "emulated",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 8192,
+      "vram_required_gb": 13.02,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 36.9,
+        "concurrent_sequences": 4,
+        "aggregate_tokens_per_sec": 89.4,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "H100",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 8192,
+      "vram_required_gb": 21.32,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 125.7,
+        "concurrent_sequences": 19,
+        "aggregate_tokens_per_sec": 706.7,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "H100",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 8192,
+      "vram_required_gb": 13.02,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 205.9,
+        "concurrent_sequences": 22,
+        "aggregate_tokens_per_sec": 816.5,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "H200",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 8192,
+      "vram_required_gb": 21.32,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 180.1,
+        "concurrent_sequences": 39,
+        "aggregate_tokens_per_sec": 1166.1,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "H200",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 8192,
+      "vram_required_gb": 13.02,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 295,
+        "concurrent_sequences": 42,
+        "aggregate_tokens_per_sec": 1254.3,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "L4",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 8192,
+      "vram_required_gb": 21.32,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 11.3,
+        "concurrent_sequences": 0,
+        "aggregate_tokens_per_sec": 0,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "L4",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 8192,
+      "vram_required_gb": 13.02,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 18.4,
+        "concurrent_sequences": 0,
+        "aggregate_tokens_per_sec": 0,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "MI300X",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 8192,
+      "vram_required_gb": 21.32,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 198.9,
+        "concurrent_sequences": 56,
+        "aggregate_tokens_per_sec": 1346.5,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "MI300X",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 8192,
+      "vram_required_gb": 13.02,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 325.7,
+        "concurrent_sequences": 59,
+        "aggregate_tokens_per_sec": 1417.4,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "RTX-4090",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 8192,
+      "vram_required_gb": 21.32,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 37.8,
+        "concurrent_sequences": 1,
+        "aggregate_tokens_per_sec": 37.8,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "gemma-2-9b",
+      "device_family": "RTX-4090",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 8192,
+      "vram_required_gb": 13.02,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 61.9,
+        "concurrent_sequences": 4,
+        "aggregate_tokens_per_sec": 150.2,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "A100",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 2,
+      "nodes": 1,
+      "max_context": 8850,
+      "vram_required_gb": 144,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 19.3,
+        "concurrent_sequences": 0,
+        "aggregate_tokens_per_sec": 0,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "A100",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "emulated",
+      "gpu_count": 2,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 115.65,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 36.8,
+        "concurrent_sequences": 24,
+        "aggregate_tokens_per_sec": 485.3,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "A10G",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 8,
+      "nodes": 1,
+      "max_context": 96740,
+      "vram_required_gb": 172.8,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 20,
+        "concurrent_sequences": 1,
+        "aggregate_tokens_per_sec": 20,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "A10G",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "emulated",
+      "gpu_count": 4,
+      "nodes": 1,
+      "max_context": 41809,
+      "vram_required_gb": 86.4,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 19.1,
+        "concurrent_sequences": 0,
+        "aggregate_tokens_per_sec": 0,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "H100",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 2,
+      "nodes": 1,
+      "max_context": 8850,
+      "vram_required_gb": 144,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 31.7,
+        "concurrent_sequences": 2,
+        "aggregate_tokens_per_sec": 62.2,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "H100",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 2,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 115.65,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 60.4,
+        "concurrent_sequences": 27,
+        "aggregate_tokens_per_sec": 847.3,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "H200",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 2,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 184.05,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 45.4,
+        "concurrent_sequences": 44,
+        "aggregate_tokens_per_sec": 1108.1,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "H200",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 115.65,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 50.9,
+        "concurrent_sequences": 21,
+        "aggregate_tokens_per_sec": 624.8,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "L4",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 8,
+      "nodes": 1,
+      "max_context": 96740,
+      "vram_required_gb": 172.8,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 10,
+        "concurrent_sequences": 0,
+        "aggregate_tokens_per_sec": 0,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "L4",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 4,
+      "nodes": 1,
+      "max_context": 41809,
+      "vram_required_gb": 86.4,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 9.6,
+        "concurrent_sequences": 0,
+        "aggregate_tokens_per_sec": 0,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "MI300X",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 96740,
+      "vram_required_gb": 172.8,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 29.5,
+        "concurrent_sequences": 13,
+        "aggregate_tokens_per_sec": 313.2,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "MI300X",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 115.65,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 56.2,
+        "concurrent_sequences": 38,
+        "aggregate_tokens_per_sec": 922.2,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "RTX-4090",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 8,
+      "nodes": 1,
+      "max_context": 96740,
+      "vram_required_gb": 172.8,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 33.7,
+        "concurrent_sequences": 13,
+        "aggregate_tokens_per_sec": 357.4,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "RTX-4090",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 4,
+      "nodes": 1,
+      "max_context": 41809,
+      "vram_required_gb": 86.4,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 32.1,
+        "concurrent_sequences": 5,
+        "aggregate_tokens_per_sec": 140.5,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "A100",
+      "quantization": "Q4_K_M",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 22.08,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 273.1,
+        "concurrent_sequences": 63,
+        "aggregate_tokens_per_sec": 1416.6,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "A100",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 33.28,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 95,
+        "concurrent_sequences": 53,
+        "aggregate_tokens_per_sec": 1184.2,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "A100",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "emulated",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 26.28,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 160.3,
+        "concurrent_sequences": 60,
+        "aggregate_tokens_per_sec": 1331.1,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "A10G",
+      "quantization": "Q4_K_M",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 127410,
+      "vram_required_gb": 21.6,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 80.4,
+        "concurrent_sequences": 16,
+        "aggregate_tokens_per_sec": 347.8,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "A10G",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 41961,
+      "vram_required_gb": 21.6,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 27.9,
+        "concurrent_sequences": 5,
+        "aggregate_tokens_per_sec": 111.8,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "A10G",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "emulated",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 95367,
+      "vram_required_gb": 21.6,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 47.2,
+        "concurrent_sequences": 12,
+        "aggregate_tokens_per_sec": 262,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "H100",
+      "quantization": "Q4_K_M",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 22.08,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 448.6,
+        "concurrent_sequences": 63,
+        "aggregate_tokens_per_sec": 2327.4,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "H100",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 33.28,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 156.1,
+        "concurrent_sequences": 53,
+        "aggregate_tokens_per_sec": 1945.5,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "H100",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 26.28,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 263.4,
+        "concurrent_sequences": 60,
+        "aggregate_tokens_per_sec": 2187,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "H200",
+      "quantization": "Q4_K_M",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 22.08,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 642.8,
+        "concurrent_sequences": 116,
+        "aggregate_tokens_per_sec": 3440.9,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "H200",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 33.28,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 223.6,
+        "concurrent_sequences": 105,
+        "aggregate_tokens_per_sec": 3129.4,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "H200",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 26.28,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 377.4,
+        "concurrent_sequences": 112,
+        "aggregate_tokens_per_sec": 3324.7,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "L4",
+      "quantization": "Q4_K_M",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 127410,
+      "vram_required_gb": 21.6,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 40.2,
+        "concurrent_sequences": 6,
+        "aggregate_tokens_per_sec": 127,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "L4",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 41961,
+      "vram_required_gb": 21.6,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 14,
+        "concurrent_sequences": 0,
+        "aggregate_tokens_per_sec": 0,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "L4",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 95367,
+      "vram_required_gb": 21.6,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 23.6,
+        "concurrent_sequences": 2,
+        "aggregate_tokens_per_sec": 42.7,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "MI300X",
+      "quantization": "Q4_K_M",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 22.08,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 709.8,
+        "concurrent_sequences": 159,
+        "aggregate_tokens_per_sec": 3838.6,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "MI300X",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 33.28,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 246.9,
+        "concurrent_sequences": 149,
+        "aggregate_tokens_per_sec": 3587.8,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "MI300X",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 26.28,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 416.8,
+        "concurrent_sequences": 156,
+        "aggregate_tokens_per_sec": 3745.3,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "RTX-4090",
+      "quantization": "Q4_K_M",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 127410,
+      "vram_required_gb": 21.6,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 135,
+        "concurrent_sequences": 16,
+        "aggregate_tokens_per_sec": 584.4,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "RTX-4090",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 41961,
+      "vram_required_gb": 21.6,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 47,
+        "concurrent_sequences": 5,
+        "aggregate_tokens_per_sec": 187.8,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-8b",
+      "device_family": "RTX-4090",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 95367,
+      "vram_required_gb": 21.6,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 79.3,
+        "concurrent_sequences": 12,
+        "aggregate_tokens_per_sec": 440.2,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "A100",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 2,
+      "nodes": 1,
+      "max_context": 32768,
+      "vram_required_gb": 97.7,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 92.6,
+        "concurrent_sequences": 12,
+        "aggregate_tokens_per_sec": 431.2,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "A100",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "emulated",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 32768,
+      "vram_required_gb": 51.3,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 94.9,
+        "concurrent_sequences": 6,
+        "aggregate_tokens_per_sec": 253.1,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "A10G",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 8,
+      "nodes": 1,
+      "max_context": 32768,
+      "vram_required_gb": 97.7,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 96.2,
+        "concurrent_sequences": 19,
+        "aggregate_tokens_per_sec": 510.3,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "A10G",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "emulated",
+      "gpu_count": 4,
+      "nodes": 1,
+      "max_context": 32768,
+      "vram_required_gb": 51.3,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 83.7,
+        "concurrent_sequences": 9,
+        "aggregate_tokens_per_sec": 251.4,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "H100",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 2,
+      "nodes": 1,
+      "max_context": 32768,
+      "vram_required_gb": 97.7,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 152.2,
+        "concurrent_sequences": 12,
+        "aggregate_tokens_per_sec": 708.4,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "H100",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 32768,
+      "vram_required_gb": 51.3,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 155.9,
+        "concurrent_sequences": 6,
+        "aggregate_tokens_per_sec": 415.8,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "H200",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 32768,
+      "vram_required_gb": 97.7,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 128.3,
+        "concurrent_sequences": 8,
+        "aggregate_tokens_per_sec": 512,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "H200",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 32768,
+      "vram_required_gb": 51.3,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 223.3,
+        "concurrent_sequences": 19,
+        "aggregate_tokens_per_sec": 772,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "L4",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 8,
+      "nodes": 1,
+      "max_context": 32768,
+      "vram_required_gb": 97.7,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 48.1,
+        "concurrent_sequences": 10,
+        "aggregate_tokens_per_sec": 210,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "L4",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 4,
+      "nodes": 1,
+      "max_context": 32768,
+      "vram_required_gb": 51.3,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 41.9,
+        "concurrent_sequences": 5,
+        "aggregate_tokens_per_sec": 104.8,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "MI300X",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 32768,
+      "vram_required_gb": 97.7,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 141.7,
+        "concurrent_sequences": 19,
+        "aggregate_tokens_per_sec": 751.2,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "MI300X",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 32768,
+      "vram_required_gb": 51.3,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 246.6,
+        "concurrent_sequences": 30,
+        "aggregate_tokens_per_sec": 897.4,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "RTX-4090",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 8,
+      "nodes": 1,
+      "max_context": 32768,
+      "vram_required_gb": 97.7,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 161.7,
+        "concurrent_sequences": 19,
+        "aggregate_tokens_per_sec": 857.2,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "mixtral-8x7b",
+      "device_family": "RTX-4090",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 4,
+      "nodes": 1,
+      "max_context": 32768,
+      "vram_required_gb": 51.3,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 140.7,
+        "concurrent_sequences": 9,
+        "aggregate_tokens_per_sec": 422.3,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "A100",
+      "quantization": "Q4_K_M",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 34.77,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 105.6,
+        "concurrent_sequences": 10,
+        "aggregate_tokens_per_sec": 222.2,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "A100",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 55.27,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 45.4,
+        "concurrent_sequences": 6,
+        "aggregate_tokens_per_sec": 143.6,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "A100",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "emulated",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 42.07,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 71.7,
+        "concurrent_sequences": 8,
+        "aggregate_tokens_per_sec": 192.4,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "A10G",
+      "quantization": "Q4_K_M",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 64086,
+      "vram_required_gb": 21.6,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 31.1,
+        "concurrent_sequences": 2,
+        "aggregate_tokens_per_sec": 43.9,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "A10G",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 2,
+      "nodes": 1,
+      "max_context": 69681,
+      "vram_required_gb": 43.2,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 22.7,
+        "concurrent_sequences": 1,
+        "aggregate_tokens_per_sec": 22.7,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "A10G",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "emulated",
+      "gpu_count": 2,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 42.07,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 35.9,
+        "concurrent_sequences": 3,
+        "aggregate_tokens_per_sec": 68.7,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "H100",
+      "quantization": "Q4_K_M",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 34.77,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 173.5,
+        "concurrent_sequences": 10,
+        "aggregate_tokens_per_sec": 365,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "H100",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 55.27,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 74.6,
+        "concurrent_sequences": 6,
+        "aggregate_tokens_per_sec": 235.9,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "H100",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 42.07,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 117.8,
+        "concurrent_sequences": 8,
+        "aggregate_tokens_per_sec": 316,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "H200",
+      "quantization": "Q4_K_M",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 34.77,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 248.7,
+        "concurrent_sequences": 18,
+        "aggregate_tokens_per_sec": 553.1,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "H200",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 55.27,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 106.8,
+        "concurrent_sequences": 15,
+        "aggregate_tokens_per_sec": 456.6,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "H200",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 42.07,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 168.8,
+        "concurrent_sequences": 17,
+        "aggregate_tokens_per_sec": 518.8,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "L4",
+      "quantization": "Q4_K_M",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 64086,
+      "vram_required_gb": 21.6,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 15.5,
+        "concurrent_sequences": 0,
+        "aggregate_tokens_per_sec": 0,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "L4",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 2,
+      "nodes": 1,
+      "max_context": 69681,
+      "vram_required_gb": 43.2,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 11.4,
+        "concurrent_sequences": 0,
+        "aggregate_tokens_per_sec": 0,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "L4",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 2,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 42.07,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 17.9,
+        "concurrent_sequences": 0,
+        "aggregate_tokens_per_sec": 0,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "MI300X",
+      "quantization": "Q4_K_M",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 34.77,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 274.6,
+        "concurrent_sequences": 26,
+        "aggregate_tokens_per_sec": 624.6,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "MI300X",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 55.27,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 118,
+        "concurrent_sequences": 22,
+        "aggregate_tokens_per_sec": 544.8,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "MI300X",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 42.07,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 186.4,
+        "concurrent_sequences": 24,
+        "aggregate_tokens_per_sec": 595.4,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "RTX-4090",
+      "quantization": "Q4_K_M",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 1,
+      "nodes": 1,
+      "max_context": 64086,
+      "vram_required_gb": 21.6,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 52.2,
+        "concurrent_sequences": 2,
+        "aggregate_tokens_per_sec": 73.7,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "RTX-4090",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 2,
+      "nodes": 1,
+      "max_context": 69681,
+      "vram_required_gb": 43.2,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 38.1,
+        "concurrent_sequences": 2,
+        "aggregate_tokens_per_sec": 64.7,
+        "context": 32768
+      }
+    },
+    {
+      "model_slug": "qwen-2.5-14b",
+      "device_family": "RTX-4090",
+      "quantization": "fp8",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 2,
+      "nodes": 1,
+      "max_context": 131072,
+      "vram_required_gb": 42.07,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 60.3,
+        "concurrent_sequences": 4,
+        "aggregate_tokens_per_sec": 130.3,
+        "context": 32768
+      }
+    }
+  ],
+  "backends": [
+    {
+      "name": "vllm",
+      "versions": [
+        {
+          "version": "v0.31.0",
+          "images": {
+            "amd": "vllm/vllm-openai-rocm:v0.31.0",
+            "nvidia": "vllm/vllm-openai:v0.31.0"
+          },
+          "command": [
+            "vllm",
+            "serve",
+            "{{model_path}}",
+            "--served-model-name",
+            "{{model}}",
+            "--port",
+            "{{port}}"
+          ],
+          "health_path": "/health",
+          "min_compute_capability": "7.5",
+          "quantizations": {
+            "float": {
+              "native_dtype": "bf16"
+            },
+            "fp8": {
+              "native_dtype": "fp8",
+              "emulated_from": "7.5"
+            }
+          },
+          "flags": {
+            "context": "--max-model-len",
+            "tensor_parallel": "--tensor-parallel-size",
+            "pipeline_parallel": "--pipeline-parallel-size",
+            "kv_cache_dtype": "--kv-cache-dtype",
+            "kv_cache_dtypes": {
+              "fp8": "fp8"
+            },
+            "prefix_caching_on": "--enable-prefix-caching",
+            "prefix_caching_off": "--no-enable-prefix-caching",
+            "tool_parser": "--tool-call-parser",
+            "tool_parser_needs": [
+              "--enable-auto-tool-choice"
+            ],
+            "tool_parsers": {
+              "llama3": "llama3_json",
+              "mistral": "mistral",
+              "qwen25": "hermes"
+            },
+            "chat_template": "--chat-template",
+            "chat_templates": {
+              "llama3.1-tools": "/vllm-workspace/examples/tool_chat_template_llama3.1_json.jinja"
+            },
+            "speculative": "json:--speculative-config",
+            "disaggregation": "json:--kv-transfer-config",
+            "multi_node": "vllm"
+          },
+          "defaults": {
+            "memory_utilization": "0.92"
+          }
+        }
+      ]
+    },
+    {
+      "name": "sglang",
+      "versions": [
+        {
+          "version": "v0.5.21",
+          "images": {
+            "amd": "lmsysorg/sglang:v0.5.21-rocm720-mi30x",
+            "nvidia": "lmsysorg/sglang:v0.5.21"
+          },
+          "command": [
+            "python3",
+            "-m",
+            "sglang.launch_server",
+            "--model-path",
+            "{{model_path}}",
+            "--served-model-name",
+            "{{model}}",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "{{port}}"
+          ],
+          "health_path": "/health",
+          "min_compute_capability": "8.0",
+          "quantizations": {
+            "float": {
+              "native_dtype": "bf16"
+            },
+            "fp8": {
+              "native_dtype": "fp8",
+              "emulated_from": "8.0"
+            }
+          },
+          "flags": {
+            "context": "--context-length",
+            "tensor_parallel": "--tp-size",
+            "pipeline_parallel": "--pp-size",
+            "kv_cache_dtype": "--kv-cache-dtype",
+            "kv_cache_dtypes": {
+              "fp8": "fp8_e4m3"
+            },
+            "prefix_caching_off": "--disable-radix-cache",
+            "tool_parser": "--tool-call-parser",
+            "tool_parsers": {
+              "llama3": "llama3",
+              "mistral": "mistral",
+              "qwen25": "qwen25"
+            },
+            "speculative": "sglang",
+            "disaggregation": "sglang",
+            "multi_node": "sglang"
+          }
+        }
+      ]
+    },
+    {
+      "name": "llamacpp",
+      "versions": [
+        {
+          "version": "v0.6.0",
+          "images": {
+            "amd": "ghcr.io/ggml-org/llama.cpp:server-rocm-b11429",
+            "cpu": "ghcr.io/ggml-org/llama.cpp:server-b11429",
+            "nvidia": "ghcr.io/ggml-org/llama.cpp:server-cuda-b11429"
+          },
+          "command": [
+            "/app/llama-server",
+            "--model",
+            "{{model_path}}",
+            "--alias",
+            "{{model}}",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "{{port}}"
+          ],
+          "health_path": "/health",
+          "quantizations": {
+            "gguf": {
+              "native_dtype": ""
+            }
+          },
+          "flags": {
+            "context": "-c",
+            "tool_parser_needs": [
+              "--jinja"
+            ],
+            "tool_parsers": {
+              "llama3": "",
+              "qwen25": ""
+            },
+            "separate_values": true
+          }
+        }
+      ]
+    }
+  ]
+}

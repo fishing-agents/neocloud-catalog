@@ -1,27 +1,36 @@
 # neocloud-catalog
 
 A public, CNCF-donation-ready model-template catalog: curated model templates,
-the backends that serve them, deployable presets, and a fit matrix of which GPU
-device families run them, at which quantization, on how many GPUs, with what
-context and VRAM. The catalog is a headless data artifact, not a service - it
-ships as a pure Go module whose whole value is the versioned, digest-pinned
-snapshot it embeds. neocloud ingests that snapshot; it does not curate models
-itself.
+the backends that serve them, structured deployable presets, the hardware facts
+of GPU device families, a closed vocabulary of node types, and a fit matrix of
+which families run each model, at which quantization and KV cache dtype, on how
+many GPUs and nodes, with what context, VRAM and estimated throughput, plus
+per-model deployment guidance. The catalog is a headless data artifact, not a
+service - it ships as a pure Go module whose whole value is the versioned,
+digest-pinned snapshot it embeds (schema 4). neocloud ingests that snapshot; it
+does not curate models itself.
 
 ## What is here
 
 - `catalog.go` - the pure catalog core. Stdlib only: no GORM, tenancy, or HTTP.
-  Types: `ModelTemplate` (weights and sources per quantization, architecture,
-  derived KV bytes/token, context limits, license, gated, presets),
-  `ModelSource` (huggingface, modelscope, oci or local; pinned revision),
-  `Preset` (quantization + backend version + engine-neutral fields),
-  `Backend` and `BackendVersion` (image, command template, health path,
-  vendors), `ModelFit` (model x family x quantization x KV cache dtype ->
-  native or emulated, GPU count, nodes, max context, VRAM, estimate),
-  `CatalogSnapshot`, `VRAMRequired` (weights + KV for any context), `Fit`,
-  `Digest` (sha256 of the snapshot content, the pin clients use).
+  Types: `Family` (vendor, architecture, compute capability or gfx target,
+  native dtypes, memory, bandwidth, interconnect, source URLs), `NodeType`,
+  `ModelTemplate` (metadata, weights and sources per quantization with its kind
+  and required dtype, architecture, derived KV bytes/token, context limits,
+  license, gated, presets, deployment guidance), `ModelSource` (huggingface,
+  modelscope, oci or local; pinned revision; optional `files`), `Preset`,
+  `DraftModel`, `Backend` and `BackendVersion` (image per vendor, command
+  template, health path, quantization kinds, flag table), `ModelFit` (model x
+  family x quantization x KV cache dtype -> native or emulated, GPU count,
+  nodes, max context, VRAM, estimate), `CatalogSnapshot`, `VRAMRequired`
+  (weights + KV for any context), `Fit`, `Digest` (sha256 of the snapshot
+  content, the pin clients use).
 - `artifact.go` - the published OCI artifact contract (`ArtifactType`,
-  `VersionAnnotation`) and `ParseVersion`, the order clients refresh by.
+  `OverlayArtifactType`, `VersionAnnotation`) and `ParseVersion`, the order
+  clients refresh by.
+- `extension.go` - the extension API (`Extension`, `RegisterExtension`,
+  `RunExtensions`) and the overlay `Merge`; see Extensions and overlays.
+- `nodetype.go` - `NodeTypeVocabulary` and `FallbackNodeType`; see Node types.
 - `render.go` - `Render`/`RenderRole` turn a structured preset into the engine
   arguments through its backend version's flag table (multi-node arguments carry
   `{{master_addr}}` and `{{master_port}}` for the caller to fill).
@@ -34,7 +43,8 @@ itself.
   SGLang, llama.cpp) with a pinned image per vendor, command templates
   (`{{model_path}}`, `{{model}}`, `{{port}}`), the quantization kinds they run
   and their flag tables; `families.json` the per-family hardware facts
-  (generated, see Regenerate) and `families.overlay.json` their curated part.
+  (generated, see Regenerate) and `families.overlay.json` their curated part;
+  `node_types.json` the cloud instances of the node-type vocabulary.
 - `generate.go` - the outsourced generation. `Generate` validates the input
   (`CatalogSnapshot.Validate`: every source has a known type and repo, and
   huggingface, modelscope and oci sources a pinned revision; drafts are pinned
@@ -64,9 +74,12 @@ itself.
   memory-bandwidth roofline where each decode step reads the active weights
   once and every concurrent sequence's KV cache; concurrency is the most
   sequences memory holds that each still decode 20 tokens/s. Its constants are
-  documented in one place.
-- `snapshots/v3/catalog.json` - the committed, generated snapshot the module
-  embeds (schema 3.0.0). `SnapshotV3()` returns it.
+  documented in one place: `BandwidthEfficiency` 0.8 of peak bandwidth,
+  tensor-parallel efficiency 0.85 (2 GPUs) and 0.75 (4 or more),
+  `EstimateMemoryUtilization` 0.92 of memory for weights and KV, and
+  `DecentDecodeTokensPerSec` 20.
+- `snapshots/v4/catalog.json` - the committed, generated snapshot the module
+  embeds (schema 4.0.0). `SnapshotV4()` returns it.
 - `cmd/catalog-generate` - the pipeline CLI: reads `data/` and writes the
   snapshot.
 - `cmd/families-import` - writes `data/families.json` from Epoch AI's ML
@@ -93,13 +106,84 @@ gets. The `/v1/model-catalog` endpoint in neocloud serves the same shape and
 semantics.
 
 Upstream refresh: the snapshot is published as a single-layer OCI artifact
-(`application/vnd.neocloud.catalog.v3+json`, version in the
+(`application/vnd.neocloud.catalog.v4+json`, version in the
 `org.opencontainers.image.version` manifest annotation), signed with cosign. A
 client resolves the reference to a manifest digest, verifies the Sigstore bundle
 attached as an OCI referrer against that digest and the publisher's identity,
 refuses a version not newer than the one in use, pulls the layer, and accepts
 the snapshot only if its version matches the annotation and its schema major is
-3. Anything else keeps the last good snapshot.
+4. Anything else keeps the last good snapshot.
+
+Schema 4 replaced schema 3 in one cutover; schema 3 is not published any more.
+The moving `v3` tag keeps serving the last schema 3 release, which a schema 4
+client refuses while it keeps its last good catalog: repoint `catalog.ref` to
+`:v4`.
+
+### Presets
+
+A preset states intent in engine-neutral fields: `purpose` (`standard`,
+`throughput`, `latency`, `long-context`), `context`, `tensor_parallel` (0 = from
+the fit), `kv_cache_dtype` (`auto`, `fp8`), `prefix_caching`, `tool_parser`,
+`reasoning_parser`, `chat_template`, `speculative`, `topology`, `env` (no
+secrets), `min_backend_version`, `extra_args` (verbatim escape hatch) and
+`vendors`. Each backend version's flag table maps the fields and the neutral
+parser, template and KV dtype names to its own flags; `Render` produces the
+argv, so adapters do not translate by hand.
+
+- Speculative decoding: `speculative` names the method (`eagle`, `eagle3`,
+  `mtp`, `ngram`, `draft-model`), the token count and, when the method needs
+  one, a draft from `draft_models`; draft weights count in the fit's memory.
+- Topology: `single` (default), `multi-node` (`nodes`, `pipeline` stages per
+  node) or `disaggregated` (`prefill_gpus`, `decode_gpus`, KV `transfer`
+  `nixl` or `mooncake`). Fits carry the node count.
+- llama.cpp: the `llamacpp` backend runs `gguf` quantizations (e.g. `Q4_K_M`)
+  whose source names the file in `files`, from pinned llama-server images for
+  nvidia, amd and cpu.
+
+### Hardware facts
+
+`families` carry vendor, architecture, compute capability (NVIDIA) or gfx
+target (AMD), native dtypes, memory, memory bandwidth and interconnect. Memory,
+bandwidth and tensor throughput come from Epoch AI's ML hardware data (CC BY
+4.0, see `NOTICE`); compute capability from developer.nvidia.com/cuda/gpus;
+gfx target and native dtypes from rocm.docs.amd.com. Every value carries its
+source URL. A fit is `native` when the quantization's dtype is native to the
+family and `emulated` when the backend version runs it weight-only from a
+compute capability (FP8 on A100 and A10G).
+
+### Node types
+
+`node_types` is a closed vocabulary of the systems models run on: cloud
+instances by `<provider>/<instance type>` (e.g. `aws/p5.48xlarge`) with only
+their GPU family and count, plus generated fallbacks `other/<family>x<gpus>`
+for 1, 2, 4 and 8 GPUs of every family. A system that is no listed instance is
+reported as its fallback, never as free text. Deployment guidance names
+example node types.
+
+### Deployment guidance
+
+Each model's `deployment` holds a `minimum` (the least GPU memory serving one
+sequence at `DecentDecodeTokensPerSec`, 20 tokens/s, at the preset's context)
+and an `optimal` setup (the highest aggregate output tokens/s per GPU while each
+sequence keeps 20 tokens/s): family, GPUs, nodes, quantization, preset,
+context, example node types and the fits it derives from. Only float and fp8
+quantizations drive guidance; every fit carries its own `performance` estimate.
+Recommendations are estimates (`source` and `confidence` `estimate`) until
+observed aggregates exist.
+
+### Extensions and overlays
+
+`Family`, `ModelTemplate`, `Preset`, `ModelFit` and `BackendVersion` carry
+`extensions`: payloads keyed by a namespace (e.g. `neocloud.io/interruption`)
+that the core preserves and the digest covers but never interprets. The public
+snapshot has none. Private features register an `Extension`; generation fails
+when one writes outside its namespace. Their payloads ship as an `Overlay` (an
+OCI artifact of type `application/vnd.neocloud.catalog-overlay.v4+json`, signed
+by its own identity) pinned to the public snapshot digest. `Merge` adds the
+payloads and refuses another digest, an unknown id or a namespace already
+present. `Validate` checks only registered namespaces and ignores the rest. A
+merged snapshot is identified by the public digest plus the overlay digest,
+never by a merged digest.
 
 ## Platform adapters
 
@@ -148,9 +232,11 @@ curl -s https://huggingface.co/api/models/<org>/<repo> | jq -r .sha
 git ls-remote https://www.modelscope.cn/<org>/<repo>.git HEAD
 ```
 
-Backend images are pinned release tags (`vllm/vllm-openai:vX.Y.Z`,
-`lmsysorg/sglang:vX.Y.Z`). `gated` is true when a source needs an
-authenticated, licence-accepted account.
+Backend images are pinned release tags per vendor (`vllm/vllm-openai:vX.Y.Z`,
+`lmsysorg/sglang:vX.Y.Z`, `ghcr.io/ggml-org/llama.cpp:server[-<variant>]-bNNNN`);
+pull a tag successfully before committing it. Every hardware value and node type
+carries its source URL. `gated` is true when a source needs an authenticated,
+licence-accepted account.
 
 ## Regenerate
 
@@ -167,15 +253,16 @@ After editing `data/`, from the module root:
 go run ./cmd/catalog-generate
 ```
 
-This validates `data/`, rewrites `snapshots/v3/catalog.json` and prints the
-digest. Unchanged content keeps the committed version and digest. Commit the
-snapshot; the module's embedded snapshot is picked up at build.
+This validates `data/`, rewrites `snapshots/v4/catalog.json`, lists the models
+without a minimum setup and prints the digest. Unchanged content keeps the
+committed version and digest. Commit the snapshot; the module's embedded
+snapshot is picked up at build.
 
 ## Release
 
 Push a `v*` tag on a commit whose committed snapshot is current. The release
 workflow checks that regenerating reproduces the snapshot, pushes it to
-`ghcr.io/fishing-agents/neocloud-catalog` under the git tag and the moving `v3`
+`ghcr.io/fishing-agents/neocloud-catalog` under the git tag and the moving `v4`
 tag, and signs the manifest with cosign keyless. There is no signing key: the
 signature binds the digest to the workflow identity
 `https://github.com/fishing-agents/neocloud-catalog/.github/workflows/release.yml@refs/tags/<tag>`,
@@ -185,7 +272,7 @@ neocloud trusts it with:
 
 ```toml
 [catalog]
-ref = "ghcr.io/fishing-agents/neocloud-catalog:v3"
+ref = "ghcr.io/fishing-agents/neocloud-catalog:v4"
 identity_issuer = "https://token.actions.githubusercontent.com"
 identity = '^https://github\.com/fishing-agents/neocloud-catalog/\.github/workflows/release\.yml@refs/tags/v.*$'
 ```
@@ -194,7 +281,7 @@ Pin the identity to this exact workflow file: an org-wide pattern would trust
 any workflow in any repository of the org. Check a release by hand:
 
 ```sh
-cosign verify ghcr.io/fishing-agents/neocloud-catalog:v3 \
+cosign verify ghcr.io/fishing-agents/neocloud-catalog:v4 \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   --certificate-identity-regexp '^https://github\.com/fishing-agents/neocloud-catalog/\.github/workflows/release\.yml@refs/tags/v.*$'
 ```
