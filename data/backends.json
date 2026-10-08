@@ -4,10 +4,35 @@
     "versions": [
       {
         "version": "v0.31.0",
-        "image": "vllm/vllm-openai:v0.31.0",
+        "images": {
+          "nvidia": "vllm/vllm-openai:v0.31.0",
+          "amd": "vllm/vllm-openai-rocm:v0.31.0"
+        },
         "command": ["vllm", "serve", "{{model_path}}", "--served-model-name", "{{model}}", "--port", "{{port}}"],
         "health_path": "/health",
-        "vendors": ["nvidia"]
+        "min_compute_capability": "7.5",
+        "quantizations": {
+          "float": {"native_dtype": "bf16"},
+          "fp8": {"native_dtype": "fp8", "emulated_from": "7.5"}
+        },
+        "flags": {
+          "context": "--max-model-len",
+          "tensor_parallel": "--tensor-parallel-size",
+          "pipeline_parallel": "--pipeline-parallel-size",
+          "kv_cache_dtype": "--kv-cache-dtype",
+          "kv_cache_dtypes": {"fp8": "fp8"},
+          "prefix_caching_on": "--enable-prefix-caching",
+          "prefix_caching_off": "--no-enable-prefix-caching",
+          "tool_parser": "--tool-call-parser",
+          "tool_parser_needs": ["--enable-auto-tool-choice"],
+          "tool_parsers": {"llama3": "llama3_json", "mistral": "mistral", "qwen25": "hermes"},
+          "chat_template": "--chat-template",
+          "chat_templates": {"llama3.1-tools": "/vllm-workspace/examples/tool_chat_template_llama3.1_json.jinja"},
+          "speculative": "json:--speculative-config",
+          "disaggregation": "json:--kv-transfer-config",
+          "multi_node": "vllm"
+        },
+        "defaults": {"memory_utilization": "0.92"}
       }
     ]
   },
@@ -16,10 +41,54 @@
     "versions": [
       {
         "version": "v0.5.21",
-        "image": "lmsysorg/sglang:v0.5.21",
+        "images": {
+          "nvidia": "lmsysorg/sglang:v0.5.21",
+          "amd": "lmsysorg/sglang:v0.5.21-rocm720-mi30x"
+        },
         "command": ["python3", "-m", "sglang.launch_server", "--model-path", "{{model_path}}", "--served-model-name", "{{model}}", "--host", "0.0.0.0", "--port", "{{port}}"],
         "health_path": "/health",
-        "vendors": ["nvidia"]
+        "min_compute_capability": "8.0",
+        "quantizations": {
+          "float": {"native_dtype": "bf16"},
+          "fp8": {"native_dtype": "fp8", "emulated_from": "8.0"}
+        },
+        "flags": {
+          "context": "--context-length",
+          "tensor_parallel": "--tp-size",
+          "pipeline_parallel": "--pp-size",
+          "kv_cache_dtype": "--kv-cache-dtype",
+          "kv_cache_dtypes": {"fp8": "fp8_e4m3"},
+          "prefix_caching_off": "--disable-radix-cache",
+          "tool_parser": "--tool-call-parser",
+          "tool_parsers": {"llama3": "llama3", "mistral": "mistral", "qwen25": "qwen25"},
+          "speculative": "sglang",
+          "disaggregation": "sglang",
+          "multi_node": "sglang"
+        }
+      }
+    ]
+  },
+  {
+    "name": "llamacpp",
+    "versions": [
+      {
+        "version": "v0.6.0",
+        "images": {
+          "nvidia": "ghcr.io/ggml-org/llama.cpp:server-cuda-b11429",
+          "amd": "ghcr.io/ggml-org/llama.cpp:server-rocm-b11429",
+          "cpu": "ghcr.io/ggml-org/llama.cpp:server-b11429"
+        },
+        "command": ["/app/llama-server", "--model", "{{model_path}}", "--alias", "{{model}}", "--host", "0.0.0.0", "--port", "{{port}}"],
+        "health_path": "/health",
+        "quantizations": {
+          "gguf": {}
+        },
+        "flags": {
+          "context": "-c",
+          "tool_parser_needs": ["--jinja"],
+          "tool_parsers": {"llama3": "", "qwen25": ""},
+          "separate_values": true
+        }
       }
     ]
   }

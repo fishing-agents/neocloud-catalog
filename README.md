@@ -21,11 +21,15 @@ itself.
   `Digest` (sha256 of the snapshot content, the pin clients use).
 - `artifact.go` - the published OCI artifact contract (`ArtifactType`,
   `VersionAnnotation`) and `ParseVersion`, the order clients refresh by.
+- `render.go` - `Render`/`RenderRole` turn a structured preset into the engine
+  arguments through its backend version's flag table (multi-node arguments carry
+  `{{master_addr}}` and `{{master_port}}` for the caller to fill).
 - `data/` - the curated sources. `models.json` holds each model's published
   architecture (from its config), checkpoint size and sources per quantization,
   license, gated flag and presets; `backends.json` the inference servers (vLLM,
-  SGLang) with pinned release images and command templates (`{{model_path}}`,
-  `{{model}}`, `{{port}}`); `families.json` the per-family hardware facts
+  SGLang, llama.cpp) with a pinned image per vendor, command templates
+  (`{{model_path}}`, `{{model}}`, `{{port}}`), the quantization kinds they run
+  and their flag tables; `families.json` the per-family hardware facts
   (generated, see Regenerate) and `families.overlay.json` their curated part.
 - `generate.go` - the outsourced generation. `Generate` validates the input
   (`CatalogSnapshot.Validate`: every source has a known type and repo, and

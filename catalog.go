@@ -157,13 +157,16 @@ type QuantSupport struct {
 }
 
 // FlagTable maps engine-neutral preset fields to one backend version's flags.
-// An empty flag means the field is not expressible on that version. The parser
-// and template maps translate neutral names to the engine's.
+// An empty flag means the field is not expressible on that version. The parser,
+// template and KV cache dtype maps translate neutral names to the engine's.
+// SeparateValues renders "flag value" as two arguments for engines that reject
+// "--flag=value".
 type FlagTable struct {
 	Context          string            `json:"context"`
 	TensorParallel   string            `json:"tensor_parallel,omitempty"`
 	PipelineParallel string            `json:"pipeline_parallel,omitempty"`
 	KVCacheDType     string            `json:"kv_cache_dtype,omitempty"`
+	KVCacheDTypes    map[string]string `json:"kv_cache_dtypes,omitempty"`
 	PrefixCachingOn  string            `json:"prefix_caching_on,omitempty"`
 	PrefixCachingOff string            `json:"prefix_caching_off,omitempty"`
 	ToolParser       string            `json:"tool_parser,omitempty"`
@@ -176,6 +179,7 @@ type FlagTable struct {
 	Speculative      string            `json:"speculative,omitempty"`
 	Disaggregation   string            `json:"disaggregation,omitempty"`
 	MultiNode        string            `json:"multi_node,omitempty"`
+	SeparateValues   bool              `json:"separate_values,omitempty"`
 }
 
 // Architecture is the subset of a model's config that sizes its KV cache and
