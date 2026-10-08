@@ -22,6 +22,10 @@ var tpSizes = []int{1, 2, 4, 8}
 // kvDTypes are the KV cache dtypes fits are derived for.
 var kvDTypes = []string{"auto", "fp8"}
 
+// guidanceKinds are the quantization kinds whose fits drive deployment
+// guidance; other kinds (gguf, int4) keep their per-fit estimates only.
+var guidanceKinds = []string{"float", "fp8"}
+
 // Generate validates the curated input and assembles the snapshot: families,
 // the node-type vocabulary of the cloud node types plus generated fallbacks,
 // models with their deployment guidance, draft models, backends and the fit
@@ -32,12 +36,15 @@ var kvDTypes = []string{"auto", "fp8"}
 // plus the KV cache of its context in the memory budget, with the largest
 // context that layout holds, capped at the model's ceiling, and the estimate at
 // that preset's context. A preset whose quantization fits families its backend
-// version runs on none of fails generation. The report lists the models without
-// a deployment minimum. Pure and deterministic, so the snapshot digest is
-// stable for identical input.
+// version runs on none of, or an unparsable NVIDIA compute capability, fails
+// generation. The report lists the models without a deployment minimum. Pure
+// and deterministic, so the snapshot digest is stable for identical input.
 func Generate(families []Family, nodeTypes []NodeType, templates []ModelTemplate, drafts []DraftModel, backends []Backend) (CatalogSnapshot, []string, error) {
 	vocab, err := NodeTypeVocabulary(families, nodeTypes)
 	if err != nil {
+		return CatalogSnapshot{}, nil, err
+	}
+	if err := checkComputeCapabilities(families, backends); err != nil {
 		return CatalogSnapshot{}, nil, err
 	}
 	if families == nil {
@@ -65,7 +72,7 @@ func Generate(families []Family, nodeTypes []NodeType, templates []ModelTemplate
 		}
 		t.Deployment = deployment(fits, vocab)
 		if t.Deployment.Minimum == nil {
-			report = append(report, fmt.Sprintf("%s: no deployment minimum: no fit decodes %d tokens/s per sequence", t.Slug, DecentDecodeTokensPerSec))
+			report = append(report, fmt.Sprintf("%s: no deployment minimum: no float or fp8 fit decodes %d tokens/s per sequence", t.Slug, DecentDecodeTokensPerSec))
 		}
 		snap.Models[i] = t
 		for _, c := range fits {
@@ -89,12 +96,38 @@ func Generate(families []Family, nodeTypes []NodeType, templates []ModelTemplate
 	return snap, report, nil
 }
 
+// checkComputeCapabilities refuses NVIDIA compute capabilities that do not
+// parse as numbers, which would fail every comparison and drop fits silently.
+func checkComputeCapabilities(families []Family, backends []Backend) error {
+	bad := func(cc string) bool { _, err := versionNumbers(cc); return err != nil }
+	var errs []error
+	for _, f := range families {
+		if f.Vendor == "nvidia" && bad(f.ComputeCapability) {
+			errs = append(errs, fmt.Errorf("family %s: compute capability %q is not numeric", f.Name, f.ComputeCapability))
+		}
+	}
+	for _, b := range backends {
+		for _, v := range b.Versions {
+			if v.MinComputeCapability != "" && bad(v.MinComputeCapability) {
+				errs = append(errs, fmt.Errorf("backend %s %s: min_compute_capability %q is not numeric", b.Name, v.Version, v.MinComputeCapability))
+			}
+			for _, kind := range slices.Sorted(maps.Keys(v.Quantizations)) {
+				if from := v.Quantizations[kind].EmulatedFrom; from != "" && bad(from) {
+					errs = append(errs, fmt.Errorf("backend %s %s: %s emulated_from %q is not numeric", b.Name, v.Version, kind, from))
+				}
+			}
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // candidate is a fit with what deployment guidance ranks it by.
 type candidate struct {
 	fit    ModelFit
 	preset string  // the preset it was sized for
 	memory float64 // total GPU memory
 	rank   int     // quantization order, then auto KV before fp8
+	guides bool    // its quantization kind may drive guidance
 }
 
 // modelFits derives t's fits. It fails on a preset whose quantization fits
@@ -142,7 +175,7 @@ func modelFits(t ModelTemplate, families []Family, versions map[[2]string]Backen
 					fit: ModelFit{ModelSlug: t.Slug, DeviceFamily: fam.Name, Quantization: q.Name, KVCacheDType: kvd, Mode: mode,
 						GPUCount: gpus, Nodes: nodes, MaxContext: maxCtx,
 						VRAMRequiredGB: math.Ceil((q.WeightsGB+kvGB(t, kvd, maxCtx))*100) / 100, Performance: &perf},
-					preset: best.Name, memory: fam.MemoryGB * float64(gpus), rank: qi*len(kvDTypes) + ki,
+					preset: best.Name, memory: fam.MemoryGB * float64(gpus), rank: qi*len(kvDTypes) + ki, guides: slices.Contains(guidanceKinds, q.Kind),
 				})
 			}
 		}
@@ -232,11 +265,11 @@ func atLeast(cc, floor string) bool {
 	return err == nil && c >= 0
 }
 
-// deployment picks a model's minimum and optimal setups among its fits (spec
-// section 5). The minimum is the least total GPU memory (then fewest GPUs,
-// family name, quantization order, auto KV first) decoding at least
-// DecentDecodeTokensPerSec per sequence alone; the optimal is the highest
-// aggregate per GPU whose sequences keep that rate under load.
+// deployment picks a model's minimum and optimal setups among its fits of a
+// guidance kind (spec section 5) whose estimate serves at least one sequence at
+// DecentDecodeTokensPerSec: the minimum is the least total GPU memory (then
+// fewest GPUs, family name, quantization order, auto KV first), the optimal the
+// highest aggregate per GPU at its decent concurrency.
 func deployment(cands []candidate, vocab []NodeType) Deployment {
 	smaller := func(a, b *candidate) bool {
 		return cmp.Or(cmp.Compare(a.memory, b.memory), cmp.Compare(a.fit.GPUCount, b.fit.GPUCount),
@@ -245,12 +278,14 @@ func deployment(cands []candidate, vocab []NodeType) Deployment {
 	perGPU := func(c *candidate) float64 { return c.fit.Performance.AggregateTokensPerSec / float64(c.fit.GPUCount) }
 	var minimum, optimal *candidate
 	for i := range cands {
-		c, p := &cands[i], cands[i].fit.Performance
-		if p.DecodeTokensPerSec >= DecentDecodeTokensPerSec && (minimum == nil || smaller(c, minimum)) {
+		c := &cands[i]
+		if !c.guides || c.fit.Performance.ConcurrentSequences == 0 {
+			continue
+		}
+		if minimum == nil || smaller(c, minimum) {
 			minimum = c
 		}
-		if p.ConcurrentSequences > 0 && p.AggregateTokensPerSec/float64(p.ConcurrentSequences) >= DecentDecodeTokensPerSec &&
-			(optimal == nil || perGPU(c) > perGPU(optimal) || perGPU(c) == perGPU(optimal) && smaller(c, optimal)) {
+		if optimal == nil || perGPU(c) > perGPU(optimal) || perGPU(c) == perGPU(optimal) && smaller(c, optimal) {
 			optimal = c
 		}
 	}

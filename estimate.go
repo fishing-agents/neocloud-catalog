@@ -3,27 +3,31 @@ package catalog
 import "math"
 
 // Performance estimates (spec section 5) are a memory-bandwidth roofline, as AI
-// Runway's estimator: decoding one token reads the active weights and the
-// sequence's KV cache once.
+// Runway's estimator: one decode step for c concurrent sequences reads the
+// active weights once and every sequence's KV cache.
 //
-//	decode tokens/s per sequence = BandwidthEfficiency x bandwidth x
-//	    tpEfficiency(gpus) x gpus / (active weights + KV at the context)
-//	concurrent sequences = floor((EstimateMemoryUtilization x memory x gpus -
-//	    weights) / KV at the context)
-//	aggregate tokens/s = per-sequence x concurrent x BatchingEfficiency
+//	step(c) = (active weights + c x KV at the context) /
+//	    (BandwidthEfficiency x bandwidth x gpus x tpEfficiency(gpus)) seconds
+//	per-sequence decode(c) = 1 / step(c) tokens/s
+//	aggregate(c) = c / step(c) tokens/s
+//	capacity = floor((EstimateMemoryUtilization x memory x gpus - weights) /
+//	    KV at the context)
 //
-// Active weights are the quantization's weights scaled by active over total
-// parameters (mixture-of-experts). Tokens/s are rounded to 0.1.
+// DecodeTokensPerSec is decode(1). ConcurrentSequences is the largest c within
+// capacity whose decode(c) is at least DecentDecodeTokensPerSec (0 when decode(1)
+// is below it), AggregateTokensPerSec aggregate at that c. Active weights are
+// the quantization's weights scaled by active over total parameters
+// (mixture-of-experts); capacity counts all weights. Tokens/s are rounded to
+// 0.1.
 const (
 	// BandwidthEfficiency is the share of peak memory bandwidth decode reaches.
 	BandwidthEfficiency = 0.8
 	// EstimateMemoryUtilization is the share of memory for weights and KV when
 	// counting concurrent sequences.
 	EstimateMemoryUtilization = 0.92
-	// BatchingEfficiency caps the aggregate of concurrent sequences.
-	BatchingEfficiency = 0.6
 	// DecentDecodeTokensPerSec is the per-sequence decode rate deployment
-	// guidance requires, comfortably above reading speed.
+	// guidance and concurrent sequences require, comfortably above reading
+	// speed.
 	DecentDecodeTokensPerSec = 20
 )
 
@@ -46,16 +50,20 @@ func Estimate(m ModelTemplate, q Quantization, f Family, gpus int, context int, 
 	if m.ParamsB > 0 && m.ParamsActiveB > 0 {
 		active *= m.ParamsActiveB / m.ParamsB
 	}
-	decode := BandwidthEfficiency * f.MemoryBandwidthGBs * tpEfficiency(gpus) * float64(gpus) / (active + kv)
-	concurrent := 0
+	rate := BandwidthEfficiency * f.MemoryBandwidthGBs * float64(gpus) * tpEfficiency(gpus)
+	decode := func(c int) float64 { return rate / (active + float64(c)*kv) }
+	c := 0
 	if kv > 0 {
-		concurrent = max(0, int((EstimateMemoryUtilization*f.MemoryGB*float64(gpus)-q.WeightsGB)/kv))
+		capacity := int((EstimateMemoryUtilization*f.MemoryGB*float64(gpus) - q.WeightsGB) / kv)
+		for c < capacity && decode(c+1) >= DecentDecodeTokensPerSec {
+			c++
+		}
 	}
 	return Performance{
 		Source:                "estimate",
-		DecodeTokensPerSec:    round1(decode),
-		ConcurrentSequences:   concurrent,
-		AggregateTokensPerSec: round1(decode * float64(concurrent) * BatchingEfficiency),
+		DecodeTokensPerSec:    round1(decode(1)),
+		ConcurrentSequences:   c,
+		AggregateTokensPerSec: round1(float64(c) * decode(c)),
 		Context:               context,
 	}
 }

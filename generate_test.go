@@ -246,12 +246,43 @@ func TestGenerateFailsOnContradiction(t *testing.T) {
 	}
 }
 
+// An unparsable NVIDIA compute capability would fail every comparison and drop
+// fits silently; AMD gfx targets are not numbers and stay accepted.
+func TestGenerateRejectsUnparsableComputeCapability(t *testing.T) {
+	cases := []struct {
+		name string
+		edit func(*Family, *BackendVersion)
+		want string
+	}{
+		{"parsable, gfx on amd", func(*Family, *BackendVersion) {}, ""},
+		{"family", func(f *Family, _ *BackendVersion) { f.ComputeCapability = "sm_90" }, `family H100: compute capability "sm_90" is not numeric`},
+		{"backend minimum", func(_ *Family, bv *BackendVersion) { bv.MinComputeCapability = "7,5" },
+			`backend vllm v0.31.0: min_compute_capability "7,5" is not numeric`},
+		{"backend emulation", func(_ *Family, bv *BackendVersion) {
+			bv.Quantizations["fp8"] = QuantSupport{NativeDType: "fp8", EmulatedFrom: "ampere"}
+		}, `backend vllm v0.31.0: fp8 emulated_from "ampere" is not numeric`},
+	}
+	for _, c := range cases {
+		fams, vllm := curatedFamilies(t, "H100", "MI300X"), curatedBackends(t)["vllm"]
+		c.edit(&fams[0], &vllm)
+		m := llama8b()
+		m.Presets = []Preset{vllmPreset("vllm-bf16", "bf16", 8192)}
+		_, _, err := Generate(fams, nil, []ModelTemplate{m}, nil, backendOf("vllm", vllm))
+		if c.want == "" && err != nil || c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)) {
+			t.Errorf("%s: err = %v, want %q", c.name, err, c.want)
+		}
+	}
+}
+
 func TestDeploymentGuidance(t *testing.T) {
 	// llama-3.1-8b bf16 at 8192 tokens (16.1 + 1.07GB) decodes on one A at
 	// 0.8 x 300 / 17.17 = 14.0 tokens/s, below 20 though A is the smallest; on
-	// one B at 46.6 with 26 sequences (727 tokens/s per GPU); on one C at 156.1
-	// with 53 (4962 per GPU). llama-3.1-70b bf16 (141.1 + 2.68GB) reaches 20 only
-	// on two C (31.7), and 0.6 x 31.7 under load misses it: no optimal.
+	// one B at 46.6, 22 sequences at 20 (443 tokens/s per GPU); on one C at
+	// 156.1, 53 sequences (1946 per GPU). Its Q4_K_M (4.9GB) would win both:
+	// 40.2 on A (24GB), 63 sequences on C (2327 per GPU), but gguf fits never
+	// drive guidance. llama-3.1-70b bf16 (141.1 + 2.68GB) reaches 20 only on two
+	// C (31.7, 2 sequences). huge has no bf16 fit; its decent Q4_K_M fits do not
+	// count, so it is reported.
 	fam := func(name string, memory, bandwidth float64) Family {
 		return Family{Name: name, Vendor: "nvidia", ComputeCapability: "9.0", DTypes: []string{"bf16"}, MemoryGB: memory, MemoryBandwidthGBs: bandwidth}
 	}
@@ -263,12 +294,19 @@ func TestDeploymentGuidance(t *testing.T) {
 		m.Presets = []Preset{vllmPreset("vllm-bf16", "bf16", 8192)}
 		return m
 	}
+	withGGUF := func(m ModelTemplate, weights float64) ModelTemplate {
+		m.Quantizations = append(m.Quantizations, Quantization{Name: "Q4_K_M", Kind: "gguf", WeightsGB: weights})
+		m.Presets = append(m.Presets, Preset{Name: "llamacpp-q4km", Quantization: "Q4_K_M", Backend: "llamacpp", BackendVersion: "v0.6.0", Context: 8192})
+		return m
+	}
 	huge := withPreset(llama70b())
 	huge.Slug, huge.Quantizations[0].WeightsGB = "huge", 2000
+	bvs := curatedBackends(t)
 	snap, report, err := Generate(
 		[]Family{fam("A", 24, 300), fam("B", 48, 1000), fam("C", 80, 3350)},
 		[]NodeType{cloud("cloud/b1", "B", 1), cloud("cloud/b4", "B", 4), cloud("cloud/c1", "C", 1), cloud("cloud/c8", "C", 8)},
-		[]ModelTemplate{withPreset(llama8b()), withPreset(llama70b()), huge}, nil, backendOf("vllm", curatedBackends(t)["vllm"]))
+		[]ModelTemplate{withGGUF(withPreset(llama8b()), 4.9), withPreset(llama70b()), withGGUF(huge, 30)}, nil,
+		append(backendOf("vllm", bvs["vllm"]), backendOf("llamacpp", bvs["llamacpp"])...))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +323,7 @@ func TestDeploymentGuidance(t *testing.T) {
 	want := []Deployment{
 		{Minimum: rec("llama-3.1-8b/B/bf16/auto", "cloud/b1", "cloud/b4", "other/Bx1"),
 			Optimal: rec("llama-3.1-8b/C/bf16/auto", "cloud/c1", "cloud/c8", "other/Cx1")},
-		{Minimum: rec("llama-3.1-70b/C/bf16/auto", "cloud/c8", "other/Cx2")},
+		{Minimum: rec("llama-3.1-70b/C/bf16/auto", "cloud/c8", "other/Cx2"), Optimal: rec("llama-3.1-70b/C/bf16/auto", "cloud/c8", "other/Cx2")},
 		{},
 	}
 	for i, w := range want {
@@ -293,6 +331,11 @@ func TestDeploymentGuidance(t *testing.T) {
 			gj, _ := json.Marshal(got)
 			wj, _ := json.Marshal(w)
 			t.Errorf("%s deployment = %s\nwant %s", snap.Models[i].Slug, gj, wj)
+		}
+	}
+	for _, k := range []string{"llama-3.1-8b/A/Q4_K_M/auto", "llama-3.1-8b/C/Q4_K_M/auto", "huge/B/Q4_K_M/auto"} {
+		if p := fits[k].Performance; p == nil || p.ConcurrentSequences == 0 {
+			t.Errorf("%s: performance %+v, want a decent estimate that guidance ignores", k, p)
 		}
 	}
 	if len(report) != 1 || !strings.Contains(report[0], "huge") {

@@ -55,13 +55,16 @@ itself.
   side of a disaggregated one - whose budget (90% of GPU memory, vLLM's
   default) holds the weights plus the preset's context; max context is what the
   rest holds, capped at the model's ceiling. A preset whose quantization fits
-  families its backend runs on none of fails generation. Each model's
-  `deployment` names the minimum (least GPU memory decoding 20 tokens/s per
-  sequence) and optimal (highest aggregate per GPU keeping 20 under load)
-  fits with example node types; models without a minimum are reported.
+  families its backend runs on none of, or an unparsable NVIDIA compute
+  capability, fails generation. Each model's `deployment` names, among its
+  float and fp8 fits serving one sequence at 20 tokens/s, the minimum (least GPU
+  memory) and optimal (highest aggregate per GPU at 20 tokens/s per sequence)
+  with example node types; models without a minimum are reported.
 - `estimate.go` - `Estimate`, the per-fit performance estimate: a
-  memory-bandwidth roofline over active weights and KV reads, with its
-  efficiency constants documented in one place.
+  memory-bandwidth roofline where each decode step reads the active weights
+  once and every concurrent sequence's KV cache; concurrency is the most
+  sequences memory holds that each still decode 20 tokens/s. Its constants are
+  documented in one place.
 - `snapshots/v3/catalog.json` - the committed, generated snapshot the module
   embeds (schema 3.0.0). `SnapshotV3()` returns it.
 - `cmd/catalog-generate` - the pipeline CLI: reads `data/` and writes the

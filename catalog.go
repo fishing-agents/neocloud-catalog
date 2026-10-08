@@ -268,8 +268,10 @@ type ModelFit struct {
 	Extensions     Extensions   `json:"extensions,omitempty"`
 }
 
-// Performance is a per-fit throughput figure. Source is "estimate" in the
-// catalog; observed values come from the collection service.
+// Performance is a per-fit throughput figure at Context tokens per sequence:
+// decode of one sequence alone, the most concurrent sequences that each still
+// decode DecentDecodeTokensPerSec, and their aggregate (see Estimate). Source is
+// "estimate" in the catalog; observed values come from the collection service.
 type Performance struct {
 	Source                string  `json:"source"`
 	DecodeTokensPerSec    float64 `json:"decode_tokens_per_sec"`
