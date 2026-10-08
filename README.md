@@ -48,12 +48,16 @@ does not curate models itself.
 - `generate.go` - the outsourced generation. `Generate` validates the input
   (`CatalogSnapshot.Validate`: every source has a known type and repo, and
   huggingface, modelscope and oci sources a pinned revision; drafts are pinned
-  huggingface or modelscope repos; every preset names a quantization of its
-  model whose kind its backend version runs, an existing backend version and a
-  draft for its backend, model and method that fits next to the model, stays
-  within the model's context, spans at least two nodes when multi-node, and
-  renders on its backend version; preset names are unique per model), derives
-  the fit matrix and deployment guidance, then runs the registered extensions.
+  huggingface or modelscope repos; a model's `task` is one of `chat`,
+  `completion`, `embedding`, `rerank`, `vision-chat` and its `capabilities`
+  among `tools`, `reasoning`, `vision`, `long-context`, `json-schema`; every
+  preset has a `purpose` (see Presets) and names a quantization of its model
+  whose kind its backend version runs - natively in the quantization's
+  `requires_dtype`, when set - an existing backend version and a draft for its
+  backend, model and method that fits next to the model, stays within the
+  model's context, spans at least two nodes when multi-node, and renders on its
+  backend version; preset names are unique per model), derives the fit matrix
+  and deployment guidance, then runs the registered extensions.
   KV bytes/token = 2 x layers x KV heads x head dim x 2 bytes (half for an fp8
   KV cache). A fit exists for a model, quantization, KV cache dtype and family
   only where some preset with them runs there: its backend version has an image
@@ -62,14 +66,15 @@ does not curate models itself.
   the family) or `emulated` (NVIDIA from a compute capability). The fit is the
   smallest layout such a preset needs - tensor-parallel GPU counts (1/2/4/8 per
   node, dividing the attention heads) across a multi-node preset's nodes, each
-  side of a disaggregated one - whose budget (90% of GPU memory, vLLM's
-  default) holds the weights plus the preset's context; max context is what the
-  rest holds, capped at the model's ceiling. A preset whose quantization fits
-  families its backend runs on none of, or an unparsable NVIDIA compute
-  capability, fails generation. Each model's `deployment` names, among its
-  float and fp8 fits serving one sequence at 20 tokens/s, the minimum (least GPU
-  memory) and optimal (highest aggregate per GPU at 20 tokens/s per sequence)
-  with example node types; models without a minimum are reported.
+  side of a disaggregated one - whose budget (90% of GPU memory, a conservative
+  budget below vLLM's 0.92 default) holds the weights plus the preset's
+  context; max context is what the rest holds, capped at the model's ceiling. A
+  preset whose quantization fits families its backend runs on none of, or an
+  unparsable NVIDIA compute capability, fails generation. Each model's
+  `deployment` names, among its float and fp8 fits serving one sequence at 20
+  tokens/s, the minimum (least GPU memory) and optimal (highest aggregate per
+  GPU at 20 tokens/s per sequence) with example node types; models without a
+  minimum and presets whose quantization fits no family are reported.
 - `estimate.go` - `Estimate`, the per-fit performance estimate: a
   memory-bandwidth roofline where each decode step reads the active weights
   once and every concurrent sequence's KV cache; concurrency is the most
@@ -130,9 +135,12 @@ secrets), `min_backend_version`, `extra_args` (verbatim escape hatch) and
 parser, template and KV dtype names to its own flags; `Render` produces the
 argv, so adapters do not translate by hand.
 
-- Speculative decoding: `speculative` names the method (`eagle`, `eagle3`,
-  `mtp`, `ngram`, `draft-model`), the token count and, when the method needs
-  one, a draft from `draft_models`; draft weights count in the fit's memory.
+- Speculative decoding: `speculative` names the method, the token count and,
+  when the method needs one, a draft from `draft_models`. Only `eagle` and
+  `eagle3` render today; other methods (`mtp`, `ngram`, `draft-model`) fail
+  generation until a flag table maps them. Validate checks that the draft's
+  weights fit next to the model's on the GPUs of every fit the preset deploys
+  on, but a fit's `vram_required_gb` does not include them.
 - Topology: `single` (default), `multi-node` (`nodes`, `pipeline` stages per
   node) or `disaggregated` (`prefill_gpus`, `decode_gpus`, KV `transfer`
   `nixl` or `mooncake`). Fits carry the node count.

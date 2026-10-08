@@ -41,7 +41,7 @@ var okPayload = json.RawMessage(`{"ok":true}`)
 func extSnap() CatalogSnapshot {
 	m := llama8b()
 	m.Slug = "m"
-	m.Presets = []Preset{{Name: "p", Quantization: "bf16", Backend: "vllm", BackendVersion: "v1"}}
+	m.Presets = []Preset{{Name: "p", Purpose: "standard", Quantization: "bf16", Backend: "vllm", BackendVersion: "v1"}}
 	return CatalogSnapshot{
 		SchemaVersion: SchemaVersion,
 		Version:       "2026-10-08T00:00:00Z",

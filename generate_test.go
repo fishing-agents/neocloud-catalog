@@ -11,7 +11,7 @@ import (
 
 func llama70b() ModelTemplate {
 	return ModelTemplate{
-		Slug: "llama-3.1-70b", ParamsB: 70, ParamsActiveB: 70, DefaultContext: 8192, ContextMax: 131072,
+		Slug: "llama-3.1-70b", Task: "chat", ParamsB: 70, ParamsActiveB: 70, DefaultContext: 8192, ContextMax: 131072,
 		Quantizations: []Quantization{{Name: "bf16", Kind: "float", RequiresDType: "bf16", WeightsGB: 141.1}},
 		Architecture:  Architecture{Layers: 80, AttentionHeads: 64, KVHeads: 8, HeadDim: 128},
 	}
@@ -41,7 +41,7 @@ func curatedFamilies(t *testing.T, names ...string) []Family {
 }
 
 func vllmPreset(name, quant string, context int) Preset {
-	return Preset{Name: name, Quantization: quant, Backend: "vllm", BackendVersion: "v0.31.0", Context: context}
+	return Preset{Name: name, Purpose: "standard", Quantization: quant, Backend: "vllm", BackendVersion: "v0.31.0", Context: context}
 }
 
 func backendOf(name string, bv BackendVersion) []Backend {
@@ -101,7 +101,7 @@ func TestGenerateFits(t *testing.T) {
 func TestGenerateRespectsTensorParallelHeads(t *testing.T) {
 	// 6 attention heads: TP 4 and 8 are illegal, so the 2-GPU option is the last
 	// one tried before giving up.
-	m := ModelTemplate{Slug: "odd", DefaultContext: 1024, ContextMax: 1024,
+	m := ModelTemplate{Slug: "odd", Task: "chat", DefaultContext: 1024, ContextMax: 1024,
 		Quantizations: []Quantization{{Name: "bf16", Kind: "float", WeightsGB: 30}},
 		Architecture:  Architecture{Layers: 1, AttentionHeads: 6, KVHeads: 6, HeadDim: 64},
 		Presets:       []Preset{vllmPreset("vllm-bf16", "bf16", 1024)}}
@@ -192,14 +192,14 @@ func TestKVFP8DoublesContext(t *testing.T) {
 func TestFitTopology(t *testing.T) {
 	// 812GB plus 8192 tokens at 516096B exceeds eight H100 (576GB budget): two
 	// nodes of eight (1152GB). Sixteen L4 hold 345.6GB.
-	huge := ModelTemplate{Slug: "llama-3.1-405b", ParamsB: 405, ParamsActiveB: 405, DefaultContext: 8192, ContextMax: 131072,
+	huge := ModelTemplate{Slug: "llama-3.1-405b", Task: "chat", ParamsB: 405, ParamsActiveB: 405, DefaultContext: 8192, ContextMax: 131072,
 		Quantizations: []Quantization{{Name: "bf16", Kind: "float", WeightsGB: 812}},
 		Architecture:  Architecture{Layers: 126, AttentionHeads: 128, KVHeads: 8, HeadDim: 128},
-		Presets: []Preset{{Name: "sglang-2node", Quantization: "bf16", Backend: "sglang", BackendVersion: "v0.5.21", Context: 8192,
+		Presets: []Preset{{Name: "sglang-2node", Purpose: "standard", Quantization: "bf16", Backend: "sglang", BackendVersion: "v0.5.21", Context: 8192,
 			Topology: Topology{Kind: "multi-node", Nodes: 2}}}}
 	// 141.1 + 2.68GB holds on each side of two H100 (144GB), not of two L4 (43.2GB).
 	pd := llama70b()
-	pd.Presets = []Preset{{Name: "sglang-pd", Quantization: "bf16", Backend: "sglang", BackendVersion: "v0.5.21", Context: 8192,
+	pd.Presets = []Preset{{Name: "sglang-pd", Purpose: "standard", Quantization: "bf16", Backend: "sglang", BackendVersion: "v0.5.21", Context: 8192,
 		Topology: Topology{Kind: "disaggregated", Prefill: 2, Decode: 2, Transfer: "nixl"}}}
 	snap, _, err := Generate(curatedFamilies(t, "H100", "L4"), nil, []ModelTemplate{huge, pd}, nil, backendOf("sglang", curatedBackends(t)["sglang"]))
 	if err != nil {
@@ -281,8 +281,8 @@ func TestDeploymentGuidance(t *testing.T) {
 	// 156.1, 53 sequences (1946 per GPU). Its Q4_K_M (4.9GB) would win both:
 	// 40.2 on A (24GB), 63 sequences on C (2327 per GPU), but gguf fits never
 	// drive guidance. llama-3.1-70b bf16 (141.1 + 2.68GB) reaches 20 only on two
-	// C (31.7, 2 sequences). huge has no bf16 fit; its decent Q4_K_M fits do not
-	// count, so it is reported.
+	// C (31.7, 2 sequences). huge's bf16 preset fits no family and its decent
+	// Q4_K_M fits do not count: both are reported.
 	fam := func(name string, memory, bandwidth float64) Family {
 		return Family{Name: name, Vendor: "nvidia", ComputeCapability: "9.0", DTypes: []string{"bf16"}, MemoryGB: memory, MemoryBandwidthGBs: bandwidth}
 	}
@@ -296,7 +296,7 @@ func TestDeploymentGuidance(t *testing.T) {
 	}
 	withGGUF := func(m ModelTemplate, weights float64) ModelTemplate {
 		m.Quantizations = append(m.Quantizations, Quantization{Name: "Q4_K_M", Kind: "gguf", WeightsGB: weights})
-		m.Presets = append(m.Presets, Preset{Name: "llamacpp-q4km", Quantization: "Q4_K_M", Backend: "llamacpp", BackendVersion: "v0.6.0", Context: 8192})
+		m.Presets = append(m.Presets, Preset{Name: "llamacpp-q4km", Purpose: "standard", Quantization: "Q4_K_M", Backend: "llamacpp", BackendVersion: "v0.6.0", Context: 8192})
 		return m
 	}
 	huge := withPreset(llama70b())
@@ -338,8 +338,9 @@ func TestDeploymentGuidance(t *testing.T) {
 			t.Errorf("%s: performance %+v, want a decent estimate that guidance ignores", k, p)
 		}
 	}
-	if len(report) != 1 || !strings.Contains(report[0], "huge") {
-		t.Errorf("report = %q, want one line for huge", report)
+	wantReport := []string{"huge/vllm-bf16: fits no family", "huge: no deployment minimum: no float or fp8 fit decodes 20 tokens/s per sequence"}
+	if !slices.Equal(report, wantReport) {
+		t.Errorf("report = %q, want %q", report, wantReport)
 	}
 }
 
@@ -364,7 +365,7 @@ func TestGenerateRejectsUnresolvedPresetsAndUnpinnedSources(t *testing.T) {
 	for _, c := range cases {
 		m := llama8b()
 		m.Quantizations[0].Sources = []ModelSource{{Type: SourceHuggingFace, Repo: "org/model", Revision: "abc123"}}
-		m.Presets = []Preset{{Name: "vllm-bf16", Quantization: "bf16", Backend: "vllm", BackendVersion: "v1"}}
+		m.Presets = []Preset{{Name: "vllm-bf16", Purpose: "standard", Quantization: "bf16", Backend: "vllm", BackendVersion: "v1"}}
 		c.edit(&m)
 		_, _, err := Generate(nil, nil, []ModelTemplate{m}, nil, backends)
 		if c.want == "" && err != nil || c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)) {
@@ -394,8 +395,8 @@ func wantValidate(t *testing.T, name string, snap CatalogSnapshot, want string) 
 }
 
 func TestValidateRejectsUnsupportedParser(t *testing.T) {
-	m := ModelTemplate{Slug: "gemma-2-9b", DefaultContext: 8192, ContextMax: 8192, Quantizations: []Quantization{{Name: "bf16", Kind: "float"}},
-		Presets: []Preset{{Name: "vllm-bf16", Quantization: "bf16", Backend: "vllm", BackendVersion: "v0.31.0", ToolParser: "llama3"}}}
+	m := ModelTemplate{Slug: "gemma-2-9b", Task: "chat", DefaultContext: 8192, ContextMax: 8192, Quantizations: []Quantization{{Name: "bf16", Kind: "float"}},
+		Presets: []Preset{{Name: "vllm-bf16", Purpose: "standard", Quantization: "bf16", Backend: "vllm", BackendVersion: "v0.31.0", ToolParser: "llama3"}}}
 	wantValidate(t, "parser in the flag table", curatedSnap(t, m), "")
 	m.Presets[0].ToolParser = "gemma2"
 	wantValidate(t, "parser not in the flag table", curatedSnap(t, m), `gemma-2-9b/vllm-bf16 on vllm v0.31.0: has no tool parser "gemma2"`)
@@ -410,7 +411,7 @@ func eagle3Drafts() []DraftModel {
 
 func TestValidateRejectsDraftForOtherBackend(t *testing.T) {
 	m := llama8b()
-	m.Presets = []Preset{{Name: "eagle3", Quantization: "bf16", Backend: "vllm", BackendVersion: "v0.31.0",
+	m.Presets = []Preset{{Name: "eagle3", Purpose: "standard", Quantization: "bf16", Backend: "vllm", BackendVersion: "v0.31.0",
 		Speculative: &Speculative{Method: "eagle3", DraftModel: vllmEagle3.Slug, Tokens: 3}}}
 	wantValidate(t, "vllm preset with the vllm draft", curatedSnap(t, m, eagle3Drafts()...), "")
 	m.Presets[0].Backend, m.Presets[0].BackendVersion = "sglang", "v0.5.21"
@@ -420,7 +421,7 @@ func TestValidateRejectsDraftForOtherBackend(t *testing.T) {
 
 func TestValidateRejectsContextAboveMax(t *testing.T) {
 	m := llama8b()
-	m.Presets = []Preset{{Name: "vllm-bf16", Quantization: "bf16", Backend: "vllm", BackendVersion: "v0.31.0", Context: 131072}}
+	m.Presets = []Preset{{Name: "vllm-bf16", Purpose: "standard", Quantization: "bf16", Backend: "vllm", BackendVersion: "v0.31.0", Context: 131072}}
 	wantValidate(t, "context at max", curatedSnap(t, m), "")
 	m.Presets[0].Context = 131073
 	wantValidate(t, "context above max", curatedSnap(t, m), "llama-3.1-8b/vllm-bf16 on vllm v0.31.0: context 131073 above context_max 131072")
@@ -428,14 +429,15 @@ func TestValidateRejectsContextAboveMax(t *testing.T) {
 
 func TestValidateRejectsUnknownTopologyTransfer(t *testing.T) {
 	m := llama70b()
-	m.Presets = []Preset{{Name: "sglang-pd", Quantization: "bf16", Backend: "sglang", BackendVersion: "v0.5.21",
+	m.Presets = []Preset{{Name: "sglang-pd", Purpose: "standard", Quantization: "bf16", Backend: "sglang", BackendVersion: "v0.5.21",
 		Topology: Topology{Kind: "disaggregated", Prefill: 2, Decode: 2, Transfer: "nixl"}}}
 	wantValidate(t, "nixl", curatedSnap(t, m), "")
 	m.Presets[0].Topology.Transfer = "ucx"
 	wantValidate(t, "ucx", curatedSnap(t, m), `llama-3.1-70b/sglang-pd on sglang v0.5.21: has no kv transfer "ucx"`)
 }
 
-// Each case breaks one rule the renderer relies on but cannot check itself.
+// Each case breaks one rule the renderer relies on but cannot check itself, or
+// a closed vocabulary.
 func TestValidateRejectsInconsistentPresetsAndDrafts(t *testing.T) {
 	cases := []struct {
 		name string
@@ -481,13 +483,26 @@ func TestValidateRejectsInconsistentPresetsAndDrafts(t *testing.T) {
 			m.Quantizations = append(m.Quantizations, Quantization{Name: "Q4_K_M", Kind: "gguf", WeightsGB: 4.9})
 			m.Presets[0].Quantization = "Q4_K_M"
 		}, `llama-3.1-8b/vllm-bf16 on vllm v0.31.0: quantization kind "gguf" not supported`},
+		{"every capability", func(m *ModelTemplate, _ []DraftModel) {
+			m.Capabilities = []string{"tools", "reasoning", "vision", "long-context", "json-schema"}
+		}, ""},
+		{"task outside the vocabulary", func(m *ModelTemplate, _ []DraftModel) { m.Task = "chatt" }, `llama-3.1-8b: task "chatt", want one of`},
+		{"no task", func(m *ModelTemplate, _ []DraftModel) { m.Task = "" }, `llama-3.1-8b: task "", want one of`},
+		{"capability outside the vocabulary", func(m *ModelTemplate, _ []DraftModel) { m.Capabilities = []string{"tools", "function-calling"} },
+			`llama-3.1-8b: capability "function-calling", want one of`},
+		{"purpose outside the vocabulary", func(m *ModelTemplate, _ []DraftModel) { m.Presets[1].Purpose = "fast" },
+			`llama-3.1-8b: preset "eagle3": purpose "fast", want one of`},
+		{"long-context purpose", func(m *ModelTemplate, _ []DraftModel) { m.Presets[0].Purpose = "long-context" }, ""},
+		{"requires_dtype other than the kind's native dtype", func(m *ModelTemplate, _ []DraftModel) { m.Quantizations[0].RequiresDType = "fp16" },
+			`llama-3.1-8b/vllm-bf16 on vllm v0.31.0: quantization bf16 requires_dtype "fp16", but its kind float is native "bf16"`},
+		{"no requires_dtype", func(m *ModelTemplate, _ []DraftModel) { m.Quantizations[0].RequiresDType = "" }, ""},
 	}
 	for _, c := range cases {
 		m, drafts := llama8b(), eagle3Drafts()
 		m.Presets = []Preset{
-			{Name: "vllm-bf16", Quantization: "bf16", Backend: "vllm", BackendVersion: "v0.31.0", Context: 8192,
+			{Name: "vllm-bf16", Purpose: "standard", Quantization: "bf16", Backend: "vllm", BackendVersion: "v0.31.0", Context: 8192,
 				ToolParser: "llama3", ChatTemplate: "llama3.1-tools", Vendors: []string{"nvidia"}},
-			{Name: "eagle3", Quantization: "bf16", Backend: "vllm", BackendVersion: "v0.31.0",
+			{Name: "eagle3", Purpose: "standard", Quantization: "bf16", Backend: "vllm", BackendVersion: "v0.31.0",
 				Speculative: &Speculative{Method: "eagle3", DraftModel: vllmEagle3.Slug, Tokens: 3}},
 		}
 		c.edit(&m, drafts)

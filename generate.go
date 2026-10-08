@@ -11,8 +11,9 @@ import (
 	"strings"
 )
 
-// GPUMemoryUtilization is the share of each GPU's memory a model may use for
-// weights and KV cache; vLLM's default, leaving the rest for activations.
+// GPUMemoryUtilization is the share of each GPU's memory a fit may use for
+// weights and KV cache: a conservative budget below vLLM's 0.92 default,
+// leaving the rest for activations.
 const GPUMemoryUtilization = 0.9
 
 // tpSizes are the tensor-parallel GPU counts per node considered, smallest
@@ -26,6 +27,13 @@ var kvDTypes = []string{"auto", "fp8"}
 // guidance; other kinds (gguf, int4) keep their per-fit estimates only.
 var guidanceKinds = []string{"float", "fp8"}
 
+// The closed vocabularies of preset purposes, model tasks and capabilities.
+var (
+	purposes     = []string{"standard", "throughput", "latency", "long-context"}
+	tasks        = []string{"chat", "completion", "embedding", "rerank", "vision-chat"}
+	capabilities = []string{"tools", "reasoning", "vision", "long-context", "json-schema"}
+)
+
 // Generate validates the curated input and assembles the snapshot: families,
 // the node-type vocabulary of the cloud node types plus generated fallbacks,
 // models with their deployment guidance, draft models, backends and the fit
@@ -37,8 +45,9 @@ var guidanceKinds = []string{"float", "fp8"}
 // context that layout holds, capped at the model's ceiling, and the estimate at
 // that preset's context. A preset whose quantization fits families its backend
 // version runs on none of, or an unparsable NVIDIA compute capability, fails
-// generation. The report lists the models without a deployment minimum. Pure
-// and deterministic, so the snapshot digest is stable for identical input.
+// generation. The report lists the models without a deployment minimum and the
+// presets whose quantization fits no family. Pure and deterministic, so the
+// snapshot digest is stable for identical input.
 func Generate(families []Family, nodeTypes []NodeType, templates []ModelTemplate, drafts []DraftModel, backends []Backend) (CatalogSnapshot, []string, error) {
 	vocab, err := NodeTypeVocabulary(families, nodeTypes)
 	if err != nil {
@@ -67,8 +76,12 @@ func Generate(families []Family, nodeTypes []NodeType, templates []ModelTemplate
 		t.KVBytesPerToken = t.Architecture.KVBytesPerToken()
 		var fits []candidate
 		if t.KVBytesPerToken > 0 {
-			fits, err = modelFits(t, families, versions)
+			var unfit []string
+			fits, unfit, err = modelFits(t, families, versions)
 			errs = append(errs, err)
+			for _, p := range unfit {
+				report = append(report, fmt.Sprintf("%s/%s: fits no family", t.Slug, p))
+			}
 		}
 		t.Deployment = deployment(fits, vocab)
 		if t.Deployment.Minimum == nil {
@@ -130,11 +143,13 @@ type candidate struct {
 	guides bool    // its quantization kind may drive guidance
 }
 
-// modelFits derives t's fits. It fails on a preset whose quantization fits
-// families its backend version runs on none of; presets of unknown backend
-// versions or quantization kinds are left to Validate.
-func modelFits(t ModelTemplate, families []Family, versions map[[2]string]BackendVersion) ([]candidate, error) {
+// modelFits derives t's fits and names the presets whose quantization fits no
+// family. It fails on a preset whose quantization fits families its backend
+// version runs on none of; presets of unknown backend versions or quantization
+// kinds are left to Validate.
+func modelFits(t ModelTemplate, families []Family, versions map[[2]string]BackendVersion) ([]candidate, []string, error) {
 	var out []candidate
+	sized := map[int]bool{}
 	fitting := map[int][]string{}
 	runs := map[int]bool{}
 	for qi, q := range t.Quantizations {
@@ -149,6 +164,7 @@ func modelFits(t ModelTemplate, families []Family, versions map[[2]string]Backen
 					if _, kind := bv.Quantizations[q.Kind]; p.Quantization != q.Name || kvDType(*p) != kvd || !known || !kind {
 						continue
 					}
+					sized[pi] = true
 					g, n, ok := layout(t, q, fam, *p, kvd)
 					if !ok {
 						continue
@@ -180,13 +196,20 @@ func modelFits(t ModelTemplate, families []Family, versions map[[2]string]Backen
 			}
 		}
 	}
+	var unfit []string
 	var errs []error
 	for pi, p := range t.Presets {
-		if fams := fitting[pi]; len(fams) > 0 && !runs[pi] {
+		if !sized[pi] {
+			continue
+		}
+		switch fams := fitting[pi]; {
+		case len(fams) == 0:
+			unfit = append(unfit, p.Name)
+		case !runs[pi]:
 			errs = append(errs, fmt.Errorf("%s: runs on none of the families its quantization fits (%s)", presetID(t, p), strings.Join(fams, ", ")))
 		}
 	}
-	return out, errors.Join(errs...)
+	return out, unfit, errors.Join(errs...)
 }
 
 // layout is the smallest GPU count, and the nodes it spans, on which preset p
@@ -329,9 +352,11 @@ func exampleNodeTypes(vocab []NodeType, family string, gpus int) []string {
 }
 
 // Validate checks that every model source has a known type and is pinned, that
-// every draft model is pinned on a repository and targets known models, and
-// that every preset names a quantization of its model whose kind its backend
-// version runs, an existing backend version, and a draft model for its backend,
+// every draft model is pinned on a repository and targets known models, that
+// model tasks, capabilities and preset purposes are in their closed
+// vocabularies, and that every preset names a quantization of its model whose
+// kind its backend version runs (natively in the quantization's requires_dtype,
+// when set), an existing backend version, and a draft model for its backend,
 // model and method that fits next to the model on every fit the preset deploys
 // on, stays within the model's context, spans at least two nodes when
 // multi-node and renders on its backend version. It then runs Validate of every
@@ -380,6 +405,14 @@ func (s CatalogSnapshot) validate(reg *registry) error {
 		}
 	}
 	for _, m := range s.Models {
+		if !slices.Contains(tasks, m.Task) {
+			errs = append(errs, fmt.Errorf("%s: task %q, want one of %s", m.Slug, m.Task, strings.Join(tasks, ", ")))
+		}
+		for _, c := range m.Capabilities {
+			if !slices.Contains(capabilities, c) {
+				errs = append(errs, fmt.Errorf("%s: capability %q, want one of %s", m.Slug, c, strings.Join(capabilities, ", ")))
+			}
+		}
 		quants := map[string]Quantization{}
 		for _, q := range m.Quantizations {
 			quants[q.Name] = q
@@ -393,6 +426,9 @@ func (s CatalogSnapshot) validate(reg *registry) error {
 		for _, p := range m.Presets {
 			bv, known := versions[[2]string{p.Backend, p.BackendVersion}]
 			q, quant := quants[p.Quantization]
+			if !slices.Contains(purposes, p.Purpose) {
+				errs = append(errs, fmt.Errorf("%s: preset %q: purpose %q, want one of %s", m.Slug, p.Name, p.Purpose, strings.Join(purposes, ", ")))
+			}
 			switch {
 			case presets[p.Name]:
 				errs = append(errs, fmt.Errorf("%s: duplicate preset %q", m.Slug, p.Name))
@@ -424,8 +460,10 @@ func (s CatalogSnapshot) validate(reg *registry) error {
 func validatePreset(m ModelTemplate, p Preset, q Quantization, bv BackendVersion, drafts map[string]*DraftModel) error {
 	id := presetID(m, p)
 	var errs []error
-	if _, ok := bv.Quantizations[q.Kind]; !ok {
+	if qs, ok := bv.Quantizations[q.Kind]; !ok {
 		errs = append(errs, fmt.Errorf("%s: quantization kind %q not supported", id, q.Kind))
+	} else if q.RequiresDType != "" && q.RequiresDType != qs.NativeDType {
+		errs = append(errs, fmt.Errorf("%s: quantization %s requires_dtype %q, but its kind %s is native %q", id, q.Name, q.RequiresDType, q.Kind, qs.NativeDType))
 	}
 	if p.Context > m.ContextMax {
 		errs = append(errs, fmt.Errorf("%s: context %d above context_max %d", id, p.Context, m.ContextMax))

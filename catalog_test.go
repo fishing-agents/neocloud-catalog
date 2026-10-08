@@ -11,6 +11,7 @@ func llama8b() ModelTemplate {
 		Slug:           "llama-3.1-8b",
 		Name:           "Llama 3.1 8B",
 		Family:         "llama",
+		Task:           "chat",
 		ParamsB:        8,
 		ParamsActiveB:  8,
 		DefaultContext: 8192,
