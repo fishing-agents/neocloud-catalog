@@ -81,6 +81,9 @@ func TestImportMergesEpochAndOverlay(t *testing.T) {
 	if h100.ComputeCapability != "9.0" || h100.Architecture != "hopper" {
 		t.Errorf("H100 overlay facts = %q %q", h100.ComputeCapability, h100.Architecture)
 	}
+	if !slices.Equal(h100.DTypes, []string{"fp16", "bf16", "fp8"}) {
+		t.Errorf("H100 dtypes = %v, want the overlay's", h100.DTypes)
+	}
 	if h100.Interconnect != "nvlink" || h100.InterconnectGBs != 900 {
 		t.Errorf("H100 interconnect = %s %v, want nvlink 900 (epoch intranode)", h100.Interconnect, h100.InterconnectGBs)
 	}

@@ -2,12 +2,13 @@
   {
     "name": "A10G",
     "sku": "AWS A10G 24 GB (NVIDIA A10G, offered only in AWS G5 instances)",
-    "note": "NVIDIA publishes no A10G page. A10G is the AWS variant of the GA102-based A10, so compute capability, architecture and PCIe Gen4 x16 link are taken from the A10 entries; the 24 GB per GPU is from the AWS G5 page. Epoch has no tensor FP16/BF16 figure for A10G and no vendor source states one, so tflops is omitted.",
+    "note": "NVIDIA publishes no A10G page. A10G is the AWS variant of the GA102-based A10, so compute capability, architecture, memory bandwidth (600 GB/s; Epoch's 600.2 cites only TechPowerUp) and PCIe Gen4 x16 link are taken from the A10 entries; the 24 GB per GPU is from the AWS G5 page. Epoch has no tensor FP16/BF16 figure for A10G and no vendor source states one, so tflops is omitted.",
     "epoch_name": "NVIDIA A10G",
     "architecture": {"value": "ampere", "source": "https://www.nvidia.com/en-us/data-center/products/a10-gpu/"},
     "compute_capability": {"value": "8.6", "source": "https://developer.nvidia.com/cuda/gpus"},
     "dtypes": {"value": ["fp16", "bf16"], "source": "https://github.com/vllm-project/vllm/blob/v0.31.0/vllm/platforms/cuda.py"},
     "memory_gb": {"value": 24, "source": "https://aws.amazon.com/ec2/instance-types/g5/"},
+    "memory_bandwidth_gbs": {"value": 600, "source": "https://www.nvidia.com/en-us/data-center/products/a10-gpu/"},
     "interconnect": {"value": "pcie", "source": "https://www.nvidia.com/en-us/data-center/products/a10-gpu/"},
     "interconnect_gbs": {"value": 64, "source": "https://www.nvidia.com/en-us/data-center/products/a10-gpu/"}
   },
@@ -28,7 +29,7 @@
   {
     "name": "RTX-4090",
     "sku": "NVIDIA GeForce RTX 4090 24 GB",
-    "note": "Epoch's 330 TFLOPS 16-bit figure is FP16 with FP16 accumulate; BF16 always accumulates in FP32, and GeForce runs FP32-accumulate tensor math at half rate. tflops use the dense FP32-accumulate figures from the Ada whitepaper, Appendix A (FP16/BF16 165.2, FP8 330.3; Epoch leaves FP8 blank). The product page states PCIe Gen 4; the 64 GB/s Gen4 x16 figure is NVIDIA's from the L4 spec.",
+    "note": "Epoch's 330 TFLOPS 16-bit figure is FP16 with FP16 accumulate; BF16 always accumulates in FP32, and GeForce runs FP32-accumulate tensor math at half rate. tflops use the dense FP32-accumulate figures from the Ada whitepaper, Appendix A (FP16/BF16 165.2, FP8 330.3; Epoch leaves FP8 blank). The product page states only PCIe Gen 4; the x16 lane width is inferred, and 64 GB/s is NVIDIA's Gen4 x16 figure from the L4 spec.",
     "epoch_name": "NVIDIA GeForce RTX 4090",
     "architecture": {"value": "ada", "source": "https://www.nvidia.com/en-us/geforce/graphics-cards/40-series/rtx-4090/"},
     "compute_capability": {"value": "8.9", "source": "https://developer.nvidia.com/cuda/gpus"},
