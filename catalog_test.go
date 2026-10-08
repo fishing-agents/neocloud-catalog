@@ -56,7 +56,7 @@ func TestDigestStableAndContentSensitive(t *testing.T) {
 	m := llama8b()
 	snap := CatalogSnapshot{SchemaVersion: SchemaVersion, Version: "2026-08-25.1", Models: []ModelTemplate{m},
 		Fits:     []ModelFit{{ModelSlug: m.Slug, DeviceFamily: "L4", Quantization: "bf16", GPUCount: 1, MaxContext: 8192, VRAMRequiredGB: 24}},
-		Backends: []Backend{{Name: "vllm", Versions: []BackendVersion{{Version: "v1", Image: "vllm/vllm-openai:v1"}}}}}
+		Backends: []Backend{{Name: "vllm", Versions: []BackendVersion{{Version: "v1", Images: map[string]string{"cuda": "vllm/vllm-openai:v1"}}}}}}
 	d1 := snap.Digest()
 	if d2 := snap.Digest(); d1 != d2 {
 		t.Fatalf("digest unstable across calls: %s vs %s", d1, d2)
@@ -67,7 +67,7 @@ func TestDigestStableAndContentSensitive(t *testing.T) {
 		t.Fatalf("digest should change when version changes")
 	}
 	snap3 := snap
-	snap3.Backends = []Backend{{Name: "vllm", Versions: []BackendVersion{{Version: "v1", Image: "vllm/vllm-openai:v2"}}}}
+	snap3.Backends = []Backend{{Name: "vllm", Versions: []BackendVersion{{Version: "v1", Images: map[string]string{"cuda": "vllm/vllm-openai:v2"}}}}}
 	if d4 := snap3.Digest(); d4 == d1 {
 		t.Fatalf("digest should change when a backend image changes")
 	}

@@ -3,7 +3,9 @@ package catalog
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"math"
+	"slices"
 	"sort"
 )
 
@@ -14,18 +16,12 @@ const GPUMemoryUtilization = 0.9
 // tpSizes are the tensor-parallel GPU counts considered, smallest first.
 var tpSizes = []int{1, 2, 4, 8}
 
-// FamilyCapability is the curated per-family GPU memory used to derive fits.
-type FamilyCapability struct {
-	Name     string  `json:"name"`
-	MemoryGB float64 `json:"memory_gb"`
-}
-
 // Generate validates the curated input and derives the fit matrix. For each
 // model, quantization, and family it emits the smallest legal GPU count whose
 // memory budget holds the weights plus the model's default context; max context
 // is what the remaining budget holds, capped at the model's ceiling. Pure and
 // deterministic, so the snapshot digest is stable for identical input.
-func Generate(templates []ModelTemplate, families []FamilyCapability, backends []Backend) (CatalogSnapshot, error) {
+func Generate(templates []ModelTemplate, families []Family, backends []Backend) (CatalogSnapshot, error) {
 	snap := CatalogSnapshot{SchemaVersion: SchemaVersion, Models: make([]ModelTemplate, len(templates)), Fits: []ModelFit{}, Backends: backends}
 	for i, t := range templates {
 		t.KVBytesPerToken = t.Architecture.KVBytesPerToken()
@@ -59,8 +55,12 @@ func Generate(templates []ModelTemplate, families []FamilyCapability, backends [
 
 // Validate checks that every model source has a known type and is pinned, and
 // that every preset names a quantization of its model and an existing backend
-// version. Embedders can run it on a snapshot fetched from an upstream.
-func (s CatalogSnapshot) Validate() error {
+// version, then runs Validate of every registered extension. Payloads of
+// namespaces no registered extension owns are preserved and ignored. Embedders
+// can run it on a snapshot fetched from an upstream.
+func (s CatalogSnapshot) Validate() error { return s.validate(extensions) }
+
+func (s CatalogSnapshot) validate(reg *registry) error {
 	versions := map[[2]string]bool{}
 	for _, b := range s.Backends {
 		for _, v := range b.Versions {
@@ -91,6 +91,11 @@ func (s CatalogSnapshot) Validate() error {
 			presets[p.Name] = true
 		}
 	}
+	for _, name := range slices.Sorted(maps.Keys(reg.exts)) {
+		if err := reg.exts[name].Validate(s); err != nil {
+			errs = append(errs, fmt.Errorf("extension %s: %w", name, err))
+		}
+	}
 	return errors.Join(errs...)
 }
 
@@ -106,7 +111,7 @@ func (src ModelSource) validate() error {
 	return nil
 }
 
-func fit(t ModelTemplate, q Quantization, fam FamilyCapability) (ModelFit, bool) {
+func fit(t ModelTemplate, q Quantization, fam Family) (ModelFit, bool) {
 	for _, gpus := range tpDegrees(t.Architecture.AttentionHeads) {
 		budget := fam.MemoryGB * GPUMemoryUtilization * float64(gpus)
 		ctx := min(int((budget-q.WeightsGB)*1e9/t.KVBytesPerToken), t.ContextMax)

@@ -19,7 +19,7 @@ func llama70b() ModelTemplate {
 func TestGenerateFits(t *testing.T) {
 	snap, err := Generate(
 		[]ModelTemplate{llama8b(), llama70b()},
-		[]FamilyCapability{{Name: "L4", MemoryGB: 24}, {Name: "A100", MemoryGB: 80}, {Name: "MI300X", MemoryGB: 192}},
+		[]Family{{Name: "L4", MemoryGB: 24}, {Name: "A100", MemoryGB: 80}, {Name: "MI300X", MemoryGB: 192}},
 		nil,
 	)
 	if err != nil {
@@ -63,7 +63,7 @@ func TestGenerateRespectsTensorParallelHeads(t *testing.T) {
 	m := ModelTemplate{Slug: "odd", DefaultContext: 1024, ContextMax: 1024,
 		Quantizations: []Quantization{{Name: "bf16", WeightsGB: 30}},
 		Architecture:  Architecture{Layers: 1, AttentionHeads: 6, KVHeads: 6, HeadDim: 64}}
-	snap, err := Generate([]ModelTemplate{m}, []FamilyCapability{{Name: "small", MemoryGB: 10}}, nil)
+	snap, err := Generate([]ModelTemplate{m}, []Family{{Name: "small", MemoryGB: 10}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func TestGenerateRejectsUnresolvedPresetsAndUnpinnedSources(t *testing.T) {
 // generator is deterministic and snapshots/v3 is not stale.
 func TestCommittedSnapshotMatchesData(t *testing.T) {
 	var models []ModelTemplate
-	var families []FamilyCapability
+	var families []Family
 	var backends []Backend
 	for path, v := range map[string]any{"data/models.json": &models, "data/families.json": &families, "data/backends.json": &backends} {
 		b, err := os.ReadFile(path)

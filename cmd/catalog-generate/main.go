@@ -30,7 +30,7 @@ func run() error {
 	if err := loadJSON("data/models.json", &templates); err != nil {
 		return err
 	}
-	var families []catalog.FamilyCapability
+	var families []catalog.Family
 	if err := loadJSON("data/families.json", &families); err != nil {
 		return err
 	}
