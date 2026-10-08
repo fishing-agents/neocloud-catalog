@@ -138,7 +138,7 @@ argv, so adapters do not translate by hand.
 - Speculative decoding: `speculative` names the method, the token count and,
   when the method needs one, a draft from `draft_models`. Only `eagle` and
   `eagle3` render today; other methods (`mtp`, `ngram`, `draft-model`) fail
-  generation until a flag table maps them. Validate checks that the draft's
+  generation until they are mapped (the method maps live in render.go; moving them into the flag-table data is a tracked follow-up). Validate checks that the draft's
   weights fit next to the model's on the GPUs of every fit the preset deploys
   on, but a fit's `vram_required_gb` does not include them.
 - Topology: `single` (default), `multi-node` (`nodes`, `pipeline` stages per
