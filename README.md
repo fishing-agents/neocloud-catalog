@@ -88,7 +88,7 @@ Platforms without a fit matrix get the GPU count of the `-reference-family` fit
 |---|---|---|
 | `gpustack` (`model-catalog.yaml`) | GPUStack `--model-catalog-file <url>` or an admin catalog source | One spec per preset, `mode` = preset name (GPUStack shows one spec per mode). The pinned image goes in `image_name`, not `backend_version` (GPUStack refuses both, and its bundled runners predate our versions). vLLM specs come last per repo. Lost: source revision (no field), fit matrix. |
 | `airunway-recipes` | AI Runway `VLLM_RECIPES_BASE_URL=<base>` | vLLM presets only (the resolver is vLLM only; SGLang presets are skipped here). One recipe per Hugging Face repo; further vLLM presets are derived recipes (`meta.derived_from`). |
-| `airunway-deployments` | `kubectl apply -f deployments/...` or `POST /api/deployments` with `api/...` | Every vLLM and SGLang preset. SGLang runs only on AI Runway's Dynamo provider, on Dynamo's sglang-runtime image (the pinned SGLang image is not used); manifests carry `neocloud.ai/required-provider`. Gated models use AI Runway's `hf-token-secret`. Lost: source revision, ModelScope-only models. |
+| `airunway-deployments` | `kubectl apply -f deployments/...` or `POST /api/deployments` with `api/...` | Every vLLM and SGLang preset. SGLang runs only on AI Runway's Dynamo provider, on Dynamo's sglang-runtime image (the pinned SGLang image is not used); manifests carry `neocloud.io/required-provider`. Gated models use AI Runway's `hf-token-secret`. Lost: source revision, ModelScope-only models. |
 
 A release publishes the exports with a cosign-signed `SHA256SUMS`
 (`SHA256SUMS.sigstore.json`) as release assets and on GitHub Pages, which serves

@@ -4,7 +4,7 @@
   "metadata": {
     "name": "gemma-2-9b-sglang-fp8",
     "annotations": {
-      "neocloud.ai/required-provider": "dynamo"
+      "neocloud.io/required-provider": "dynamo"
     }
   },
   "spec": {

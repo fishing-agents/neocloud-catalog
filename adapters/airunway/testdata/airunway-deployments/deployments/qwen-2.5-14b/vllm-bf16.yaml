@@ -4,7 +4,7 @@
   "metadata": {
     "name": "qwen-2-5-14b-vllm-bf16",
     "annotations": {
-      "neocloud.ai/required-provider": "vllm"
+      "neocloud.io/required-provider": "vllm"
     }
   },
   "spec": {

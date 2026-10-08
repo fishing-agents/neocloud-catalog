@@ -4,7 +4,7 @@
   "metadata": {
     "name": "llama-3-1-8b-sglang-fp8",
     "annotations": {
-      "neocloud.ai/required-provider": "dynamo"
+      "neocloud.io/required-provider": "dynamo"
     }
   },
   "spec": {

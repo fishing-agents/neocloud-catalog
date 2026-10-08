@@ -4,7 +4,7 @@
   "metadata": {
     "name": "mixtral-8x7b-vllm-bf16",
     "annotations": {
-      "neocloud.ai/required-provider": "vllm"
+      "neocloud.io/required-provider": "vllm"
     }
   },
   "spec": {

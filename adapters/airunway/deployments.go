@@ -13,7 +13,7 @@ import (
 
 // RequiredProviderAnnotation names the AI Runway provider a manifest runs on
 // and spec.provider.name pins.
-const RequiredProviderAnnotation = "neocloud.ai/required-provider"
+const RequiredProviderAnnotation = "neocloud.io/required-provider"
 
 // HFTokenSecret is the secret AI Runway's settings store a Hugging Face token
 // in (key HF_TOKEN); manifests of gated models reference it.
