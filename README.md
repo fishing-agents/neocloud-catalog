@@ -14,9 +14,10 @@ itself.
   Types: `ModelTemplate` (weights and sources per quantization, architecture,
   derived KV bytes/token, context limits, license, gated, presets),
   `ModelSource` (huggingface, modelscope, oci or local; pinned revision),
-  `Preset` (quantization + backend version + arguments), `Backend` and
-  `BackendVersion` (image, command template, health path, vendors), `ModelFit`
-  (model x family x quantization -> GPU count, max context, VRAM),
+  `Preset` (quantization + backend version + engine-neutral fields),
+  `Backend` and `BackendVersion` (image, command template, health path,
+  vendors), `ModelFit` (model x family x quantization -> GPU count, max
+  context, VRAM),
   `CatalogSnapshot`, `VRAMRequired` (weights + KV for any context), `Fit`,
   `Digest` (sha256 of the snapshot content, the pin clients use).
 - `artifact.go` - the published OCI artifact contract (`ArtifactType`,
@@ -24,23 +25,29 @@ itself.
 - `render.go` - `Render`/`RenderRole` turn a structured preset into the engine
   arguments through its backend version's flag table (multi-node arguments carry
   `{{master_addr}}` and `{{master_port}}` for the caller to fill).
-- `data/` - the curated sources. `models.json` holds each model's published
-  architecture (from its config), checkpoint size and sources per quantization,
-  license, gated flag and presets; `backends.json` the inference servers (vLLM,
+- `data/` - the curated sources. `models.json` holds each model's metadata
+  (description, task, capabilities, active parameters, release date, model
+  card, aliases), published architecture (from its config), checkpoint kind,
+  size and sources per quantization, license, gated flag and presets;
+  `draft_models.json` the speculative-decoding drafts with their targets and
+  the backends that load them; `backends.json` the inference servers (vLLM,
   SGLang, llama.cpp) with a pinned image per vendor, command templates
   (`{{model_path}}`, `{{model}}`, `{{port}}`), the quantization kinds they run
   and their flag tables; `families.json` the per-family hardware facts
   (generated, see Regenerate) and `families.overlay.json` their curated part.
 - `generate.go` - the outsourced generation. `Generate` validates the input
   (`CatalogSnapshot.Validate`: every source has a known type and repo, and
-  huggingface, modelscope and oci sources a pinned revision; every preset names
-  a quantization of its model and an existing backend version; preset names are
-  unique per model) and derives the fit matrix. KV bytes/token = 2 x layers x KV
-  heads x head dim x 2 bytes. For each model, quantization, and family it picks
-  the smallest tensor-parallel GPU count (1/2/4/8, dividing the attention heads)
-  whose budget (90% of GPU memory, vLLM's default) holds the weights plus the
-  default context; max context is what the rest holds, capped at the model's
-  ceiling. No throughput figures: the catalog states only what it can derive.
+  huggingface, modelscope and oci sources a pinned revision; drafts are pinned
+  huggingface or modelscope repos; every preset names a quantization of its
+  model, an existing backend version and a draft for its backend, model and
+  method, stays within the model's context, and renders on its backend
+  version; preset names are unique per model) and derives the fit matrix. KV
+  bytes/token = 2 x layers x KV heads x head dim x 2 bytes. For each model,
+  quantization, and family it picks the smallest tensor-parallel GPU count
+  (1/2/4/8, dividing the attention heads) whose budget (90% of GPU memory,
+  vLLM's default) holds the weights plus the default context; max context is
+  what the rest holds, capped at the model's ceiling. No throughput figures:
+  the catalog states only what it can derive.
 - `snapshots/v3/catalog.json` - the committed, generated snapshot the module
   embeds (schema 3.0.0). `SnapshotV3()` returns it.
 - `cmd/catalog-generate` - the pipeline CLI: reads `data/` and writes the

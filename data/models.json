@@ -3,7 +3,22 @@
     "slug": "llama-3.1-8b",
     "name": "Llama 3.1 8B",
     "family": "llama",
+    "description": "Llama 3.1 instruction-tuned 8B text model, optimized for multilingual dialogue use cases.",
+    "task": "chat",
+    "capabilities": [
+      "tools",
+      "long-context"
+    ],
     "params_b": 8,
+    "params_active_b": 8,
+    "release_date": "2024-07-23",
+    "home": "https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct",
+    "aliases": [
+      "meta-llama/Llama-3.1-8B-Instruct",
+      "LLM-Research/Meta-Llama-3.1-8B-Instruct",
+      "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8",
+      "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF"
+    ],
     "default_context": 8192,
     "context_max": 131072,
     "license": "llama3.1",
@@ -11,6 +26,8 @@
     "quantizations": [
       {
         "name": "bf16",
+        "kind": "float",
+        "requires_dtype": "bf16",
         "weights_gb": 16.1,
         "sources": [
           {
@@ -27,6 +44,8 @@
       },
       {
         "name": "fp8",
+        "kind": "fp8",
+        "requires_dtype": "fp8",
         "weights_gb": 9.1,
         "sources": [
           {
@@ -40,11 +59,23 @@
             "revision": "de1aed904a8260414a02d0e97816990f9979499b"
           }
         ]
+      },
+      {
+        "name": "Q4_K_M",
+        "kind": "gguf",
+        "requires_dtype": "",
+        "weights_gb": 4.9,
+        "sources": [
+          {
+            "type": "huggingface",
+            "repo": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
+            "revision": "bf5b95e96dac0462e2a09145ec66cae9a3f12067",
+            "files": [
+              "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf"
+            ]
+          }
+        ]
       }
-    ],
-    "tags": [
-      "general",
-      "instruct"
     ],
     "architecture": {
       "layers": 32,
@@ -58,10 +89,12 @@
         "quantization": "bf16",
         "backend": "vllm",
         "backend_version": "v0.31.0",
-        "args": [
-          "--enable-auto-tool-choice",
-          "--tool-call-parser",
-          "llama3_json"
+        "purpose": "standard",
+        "context": 8192,
+        "tool_parser": "llama3",
+        "chat_template": "llama3.1-tools",
+        "vendors": [
+          "nvidia"
         ]
       },
       {
@@ -69,20 +102,21 @@
         "quantization": "bf16",
         "backend": "sglang",
         "backend_version": "v0.5.21",
-        "args": [
-          "--tool-call-parser",
-          "llama3"
-        ]
+        "purpose": "standard",
+        "context": 8192,
+        "tool_parser": "llama3"
       },
       {
         "name": "vllm-fp8",
         "quantization": "fp8",
         "backend": "vllm",
         "backend_version": "v0.31.0",
-        "args": [
-          "--enable-auto-tool-choice",
-          "--tool-call-parser",
-          "llama3_json"
+        "purpose": "standard",
+        "context": 8192,
+        "tool_parser": "llama3",
+        "chat_template": "llama3.1-tools",
+        "vendors": [
+          "nvidia"
         ]
       },
       {
@@ -90,10 +124,50 @@
         "quantization": "fp8",
         "backend": "sglang",
         "backend_version": "v0.5.21",
-        "args": [
-          "--tool-call-parser",
-          "llama3"
+        "purpose": "standard",
+        "context": 8192,
+        "tool_parser": "llama3"
+      },
+      {
+        "name": "vllm-bf16-eagle3",
+        "quantization": "bf16",
+        "backend": "vllm",
+        "backend_version": "v0.31.0",
+        "purpose": "standard",
+        "context": 8192,
+        "tool_parser": "llama3",
+        "chat_template": "llama3.1-tools",
+        "speculative": {
+          "method": "eagle3",
+          "draft_model": "eagle3-llama-3.1-8b-redhat",
+          "tokens": 3
+        },
+        "vendors": [
+          "nvidia"
         ]
+      },
+      {
+        "name": "sglang-bf16-eagle3",
+        "quantization": "bf16",
+        "backend": "sglang",
+        "backend_version": "v0.5.21",
+        "purpose": "standard",
+        "context": 8192,
+        "tool_parser": "llama3",
+        "speculative": {
+          "method": "eagle3",
+          "draft_model": "eagle3-llama-3.1-8b-sglang",
+          "tokens": 3
+        }
+      },
+      {
+        "name": "llamacpp-q4km",
+        "quantization": "Q4_K_M",
+        "backend": "llamacpp",
+        "backend_version": "v0.6.0",
+        "purpose": "standard",
+        "context": 8192,
+        "tool_parser": "llama3"
       }
     ]
   },
@@ -101,7 +175,21 @@
     "slug": "llama-3.1-70b",
     "name": "Llama 3.1 70B",
     "family": "llama",
+    "description": "Llama 3.1 instruction-tuned 70B text model, optimized for multilingual dialogue use cases.",
+    "task": "chat",
+    "capabilities": [
+      "tools",
+      "long-context"
+    ],
     "params_b": 70,
+    "params_active_b": 70,
+    "release_date": "2024-07-23",
+    "home": "https://huggingface.co/meta-llama/Llama-3.1-70B-Instruct",
+    "aliases": [
+      "meta-llama/Llama-3.1-70B-Instruct",
+      "LLM-Research/Meta-Llama-3.1-70B-Instruct",
+      "RedHatAI/Meta-Llama-3.1-70B-Instruct-FP8"
+    ],
     "default_context": 8192,
     "context_max": 131072,
     "license": "llama3.1",
@@ -109,6 +197,8 @@
     "quantizations": [
       {
         "name": "bf16",
+        "kind": "float",
+        "requires_dtype": "bf16",
         "weights_gb": 141.1,
         "sources": [
           {
@@ -125,6 +215,8 @@
       },
       {
         "name": "fp8",
+        "kind": "fp8",
+        "requires_dtype": "fp8",
         "weights_gb": 72.7,
         "sources": [
           {
@@ -140,10 +232,6 @@
         ]
       }
     ],
-    "tags": [
-      "general",
-      "instruct"
-    ],
     "architecture": {
       "layers": 80,
       "attention_heads": 64,
@@ -156,10 +244,12 @@
         "quantization": "bf16",
         "backend": "vllm",
         "backend_version": "v0.31.0",
-        "args": [
-          "--enable-auto-tool-choice",
-          "--tool-call-parser",
-          "llama3_json"
+        "purpose": "standard",
+        "context": 8192,
+        "tool_parser": "llama3",
+        "chat_template": "llama3.1-tools",
+        "vendors": [
+          "nvidia"
         ]
       },
       {
@@ -167,20 +257,21 @@
         "quantization": "bf16",
         "backend": "sglang",
         "backend_version": "v0.5.21",
-        "args": [
-          "--tool-call-parser",
-          "llama3"
-        ]
+        "purpose": "standard",
+        "context": 8192,
+        "tool_parser": "llama3"
       },
       {
         "name": "vllm-fp8",
         "quantization": "fp8",
         "backend": "vllm",
         "backend_version": "v0.31.0",
-        "args": [
-          "--enable-auto-tool-choice",
-          "--tool-call-parser",
-          "llama3_json"
+        "purpose": "standard",
+        "context": 8192,
+        "tool_parser": "llama3",
+        "chat_template": "llama3.1-tools",
+        "vendors": [
+          "nvidia"
         ]
       },
       {
@@ -188,9 +279,40 @@
         "quantization": "fp8",
         "backend": "sglang",
         "backend_version": "v0.5.21",
-        "args": [
-          "--tool-call-parser",
-          "llama3"
+        "purpose": "standard",
+        "context": 8192,
+        "tool_parser": "llama3"
+      },
+      {
+        "name": "sglang-bf16-pd",
+        "quantization": "bf16",
+        "backend": "sglang",
+        "backend_version": "v0.5.21",
+        "purpose": "standard",
+        "context": 8192,
+        "tool_parser": "llama3",
+        "topology": {
+          "kind": "disaggregated",
+          "prefill_gpus": 2,
+          "decode_gpus": 2,
+          "transfer": "nixl"
+        }
+      },
+      {
+        "name": "vllm-bf16-2node",
+        "quantization": "bf16",
+        "backend": "vllm",
+        "backend_version": "v0.31.0",
+        "purpose": "throughput",
+        "context": 8192,
+        "tool_parser": "llama3",
+        "chat_template": "llama3.1-tools",
+        "topology": {
+          "kind": "multi-node",
+          "nodes": 2
+        },
+        "vendors": [
+          "nvidia"
         ]
       }
     ]
@@ -199,7 +321,17 @@
     "slug": "mixtral-8x7b",
     "name": "Mixtral 8x7B",
     "family": "mixtral",
+    "description": "Instruction-tuned Mixtral-8x7B, a pretrained generative sparse mixture of experts.",
+    "task": "chat",
     "params_b": 47,
+    "params_active_b": 12.9,
+    "release_date": "2023-12-11",
+    "home": "https://huggingface.co/mistralai/Mixtral-8x7B-Instruct-v0.1",
+    "aliases": [
+      "mistralai/Mixtral-8x7B-Instruct-v0.1",
+      "AI-ModelScope/Mixtral-8x7B-Instruct-v0.1",
+      "RedHatAI/Mixtral-8x7B-Instruct-v0.1-FP8"
+    ],
     "default_context": 32768,
     "context_max": 32768,
     "license": "apache-2.0",
@@ -207,6 +339,8 @@
     "quantizations": [
       {
         "name": "bf16",
+        "kind": "float",
+        "requires_dtype": "bf16",
         "weights_gb": 93.4,
         "sources": [
           {
@@ -223,6 +357,8 @@
       },
       {
         "name": "fp8",
+        "kind": "fp8",
+        "requires_dtype": "fp8",
         "weights_gb": 47.0,
         "sources": [
           {
@@ -238,9 +374,6 @@
         ]
       }
     ],
-    "tags": [
-      "expert"
-    ],
     "architecture": {
       "layers": 32,
       "attention_heads": 32,
@@ -252,25 +385,33 @@
         "name": "vllm-bf16",
         "quantization": "bf16",
         "backend": "vllm",
-        "backend_version": "v0.31.0"
+        "backend_version": "v0.31.0",
+        "purpose": "standard",
+        "context": 32768
       },
       {
         "name": "sglang-bf16",
         "quantization": "bf16",
         "backend": "sglang",
-        "backend_version": "v0.5.21"
+        "backend_version": "v0.5.21",
+        "purpose": "standard",
+        "context": 32768
       },
       {
         "name": "vllm-fp8",
         "quantization": "fp8",
         "backend": "vllm",
-        "backend_version": "v0.31.0"
+        "backend_version": "v0.31.0",
+        "purpose": "standard",
+        "context": 32768
       },
       {
         "name": "sglang-fp8",
         "quantization": "fp8",
         "backend": "sglang",
-        "backend_version": "v0.5.21"
+        "backend_version": "v0.5.21",
+        "purpose": "standard",
+        "context": 32768
       }
     ]
   },
@@ -278,7 +419,17 @@
     "slug": "gemma-2-9b",
     "name": "Gemma 2 9B",
     "family": "gemma",
+    "description": "Instruction-tuned Gemma 2 9B, a lightweight text-to-text, decoder-only open model from Google.",
+    "task": "chat",
     "params_b": 9,
+    "params_active_b": 9,
+    "release_date": "2024-06-27",
+    "home": "https://huggingface.co/google/gemma-2-9b-it",
+    "aliases": [
+      "google/gemma-2-9b-it",
+      "LLM-Research/gemma-2-9b-it",
+      "RedHatAI/gemma-2-9b-it-FP8"
+    ],
     "default_context": 8192,
     "context_max": 8192,
     "license": "gemma",
@@ -286,6 +437,8 @@
     "quantizations": [
       {
         "name": "bf16",
+        "kind": "float",
+        "requires_dtype": "bf16",
         "weights_gb": 18.5,
         "sources": [
           {
@@ -302,6 +455,8 @@
       },
       {
         "name": "fp8",
+        "kind": "fp8",
+        "requires_dtype": "fp8",
         "weights_gb": 10.2,
         "sources": [
           {
@@ -317,9 +472,6 @@
         ]
       }
     ],
-    "tags": [
-      "instruct"
-    ],
     "architecture": {
       "layers": 42,
       "attention_heads": 16,
@@ -331,25 +483,33 @@
         "name": "vllm-bf16",
         "quantization": "bf16",
         "backend": "vllm",
-        "backend_version": "v0.31.0"
+        "backend_version": "v0.31.0",
+        "purpose": "standard",
+        "context": 8192
       },
       {
         "name": "sglang-bf16",
         "quantization": "bf16",
         "backend": "sglang",
-        "backend_version": "v0.5.21"
+        "backend_version": "v0.5.21",
+        "purpose": "standard",
+        "context": 8192
       },
       {
         "name": "vllm-fp8",
         "quantization": "fp8",
         "backend": "vllm",
-        "backend_version": "v0.31.0"
+        "backend_version": "v0.31.0",
+        "purpose": "standard",
+        "context": 8192
       },
       {
         "name": "sglang-fp8",
         "quantization": "fp8",
         "backend": "sglang",
-        "backend_version": "v0.5.21"
+        "backend_version": "v0.5.21",
+        "purpose": "standard",
+        "context": 8192
       }
     ]
   },
@@ -357,7 +517,21 @@
     "slug": "qwen-2.5-14b",
     "name": "Qwen 2.5 14B",
     "family": "qwen",
+    "description": "Instruction-tuned 14B Qwen2.5 model with long-context support up to 128K tokens.",
+    "task": "chat",
+    "capabilities": [
+      "tools",
+      "long-context"
+    ],
     "params_b": 14,
+    "params_active_b": 14,
+    "release_date": "2024-09-19",
+    "home": "https://huggingface.co/Qwen/Qwen2.5-14B-Instruct",
+    "aliases": [
+      "Qwen/Qwen2.5-14B-Instruct",
+      "RedHatAI/Qwen2.5-14B-Instruct-FP8-dynamic",
+      "bartowski/Qwen2.5-14B-Instruct-GGUF"
+    ],
     "default_context": 32768,
     "context_max": 131072,
     "license": "apache-2.0",
@@ -365,6 +539,8 @@
     "quantizations": [
       {
         "name": "bf16",
+        "kind": "float",
+        "requires_dtype": "bf16",
         "weights_gb": 29.5,
         "sources": [
           {
@@ -381,6 +557,8 @@
       },
       {
         "name": "fp8",
+        "kind": "fp8",
+        "requires_dtype": "fp8",
         "weights_gb": 16.3,
         "sources": [
           {
@@ -394,11 +572,23 @@
             "revision": "cfdaa12de1b88c71ce4559a7fc5be5adcc279d49"
           }
         ]
+      },
+      {
+        "name": "Q4_K_M",
+        "kind": "gguf",
+        "requires_dtype": "",
+        "weights_gb": 9.0,
+        "sources": [
+          {
+            "type": "huggingface",
+            "repo": "bartowski/Qwen2.5-14B-Instruct-GGUF",
+            "revision": "05244aa5d871c661c80082a15d3bce44714d068d",
+            "files": [
+              "Qwen2.5-14B-Instruct-Q4_K_M.gguf"
+            ]
+          }
+        ]
       }
-    ],
-    "tags": [
-      "general",
-      "instruct"
     ],
     "architecture": {
       "layers": 48,
@@ -412,42 +602,45 @@
         "quantization": "bf16",
         "backend": "vllm",
         "backend_version": "v0.31.0",
-        "args": [
-          "--enable-auto-tool-choice",
-          "--tool-call-parser",
-          "hermes"
-        ]
+        "purpose": "standard",
+        "context": 32768,
+        "tool_parser": "qwen25"
       },
       {
         "name": "sglang-bf16",
         "quantization": "bf16",
         "backend": "sglang",
         "backend_version": "v0.5.21",
-        "args": [
-          "--tool-call-parser",
-          "qwen25"
-        ]
+        "purpose": "standard",
+        "context": 32768,
+        "tool_parser": "qwen25"
       },
       {
         "name": "vllm-fp8",
         "quantization": "fp8",
         "backend": "vllm",
         "backend_version": "v0.31.0",
-        "args": [
-          "--enable-auto-tool-choice",
-          "--tool-call-parser",
-          "hermes"
-        ]
+        "purpose": "standard",
+        "context": 32768,
+        "tool_parser": "qwen25"
       },
       {
         "name": "sglang-fp8",
         "quantization": "fp8",
         "backend": "sglang",
         "backend_version": "v0.5.21",
-        "args": [
-          "--tool-call-parser",
-          "qwen25"
-        ]
+        "purpose": "standard",
+        "context": 32768,
+        "tool_parser": "qwen25"
+      },
+      {
+        "name": "llamacpp-q4km",
+        "quantization": "Q4_K_M",
+        "backend": "llamacpp",
+        "backend_version": "v0.6.0",
+        "purpose": "standard",
+        "context": 32768,
+        "tool_parser": "qwen25"
       }
     ]
   }

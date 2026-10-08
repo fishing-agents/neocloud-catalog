@@ -17,9 +17,11 @@ func llama70b() ModelTemplate {
 }
 
 func TestGenerateFits(t *testing.T) {
-	snap, err := Generate(
-		[]ModelTemplate{llama8b(), llama70b()},
+	snap, _, err := Generate(
 		[]Family{{Name: "L4", MemoryGB: 24}, {Name: "A100", MemoryGB: 80}, {Name: "MI300X", MemoryGB: 192}},
+		nil,
+		[]ModelTemplate{llama8b(), llama70b()},
+		nil,
 		nil,
 	)
 	if err != nil {
@@ -63,7 +65,7 @@ func TestGenerateRespectsTensorParallelHeads(t *testing.T) {
 	m := ModelTemplate{Slug: "odd", DefaultContext: 1024, ContextMax: 1024,
 		Quantizations: []Quantization{{Name: "bf16", WeightsGB: 30}},
 		Architecture:  Architecture{Layers: 1, AttentionHeads: 6, KVHeads: 6, HeadDim: 64}}
-	snap, err := Generate([]ModelTemplate{m}, []Family{{Name: "small", MemoryGB: 10}}, nil)
+	snap, _, err := Generate([]Family{{Name: "small", MemoryGB: 10}}, nil, []ModelTemplate{m}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,20 +100,138 @@ func TestGenerateRejectsUnresolvedPresetsAndUnpinnedSources(t *testing.T) {
 		m.Quantizations[0].Sources = []ModelSource{{Type: SourceHuggingFace, Repo: "org/model", Revision: "abc123"}}
 		m.Presets = []Preset{{Name: "vllm-bf16", Quantization: "bf16", Backend: "vllm", BackendVersion: "v1"}}
 		c.edit(&m)
-		_, err := Generate([]ModelTemplate{m}, nil, backends)
+		_, _, err := Generate(nil, nil, []ModelTemplate{m}, nil, backends)
 		if c.want == "" && err != nil || c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)) {
 			t.Errorf("%s: err = %v, want %q", c.name, err, c.want)
 		}
 	}
 }
 
+// curatedSnap puts one model and its drafts next to the curated backends, so
+// presets are validated against the real flag tables.
+func curatedSnap(t *testing.T, m ModelTemplate, drafts ...DraftModel) CatalogSnapshot {
+	t.Helper()
+	snap := CatalogSnapshot{Models: []ModelTemplate{m}, DraftModels: drafts}
+	for name, bv := range curatedBackends(t) {
+		snap.Backends = append(snap.Backends, Backend{Name: name, Versions: []BackendVersion{bv}})
+	}
+	return snap
+}
+
+// wantValidate fails unless Validate succeeds (want "") or its error contains want.
+func wantValidate(t *testing.T, name string, snap CatalogSnapshot, want string) {
+	t.Helper()
+	err := snap.Validate()
+	if want == "" && err != nil || want != "" && (err == nil || !strings.Contains(err.Error(), want)) {
+		t.Errorf("%s: err = %v, want %q", name, err, want)
+	}
+}
+
+func TestValidateRejectsUnsupportedParser(t *testing.T) {
+	m := ModelTemplate{Slug: "gemma-2-9b", DefaultContext: 8192, ContextMax: 8192, Quantizations: []Quantization{{Name: "bf16"}},
+		Presets: []Preset{{Name: "vllm-bf16", Quantization: "bf16", Backend: "vllm", BackendVersion: "v0.31.0", ToolParser: "llama3"}}}
+	wantValidate(t, "parser in the flag table", curatedSnap(t, m), "")
+	m.Presets[0].ToolParser = "gemma2"
+	wantValidate(t, "parser not in the flag table", curatedSnap(t, m), `gemma-2-9b/vllm-bf16 on vllm v0.31.0: has no tool parser "gemma2"`)
+}
+
+func eagle3Drafts() []DraftModel {
+	redhat, lmsys := *vllmEagle3, *sglangEagle3
+	redhat.Targets, redhat.Backends = []string{"llama-3.1-8b"}, []string{"vllm"}
+	lmsys.Targets, lmsys.Backends = []string{"llama-3.1-8b"}, []string{"sglang"}
+	return []DraftModel{redhat, lmsys}
+}
+
+func TestValidateRejectsDraftForOtherBackend(t *testing.T) {
+	m := llama8b()
+	m.Presets = []Preset{{Name: "eagle3", Quantization: "bf16", Backend: "vllm", BackendVersion: "v0.31.0",
+		Speculative: &Speculative{Method: "eagle3", DraftModel: vllmEagle3.Slug, Tokens: 3}}}
+	wantValidate(t, "vllm preset with the vllm draft", curatedSnap(t, m, eagle3Drafts()...), "")
+	m.Presets[0].Backend, m.Presets[0].BackendVersion = "sglang", "v0.5.21"
+	wantValidate(t, "sglang preset with the vllm draft", curatedSnap(t, m, eagle3Drafts()...),
+		`llama-3.1-8b/eagle3 on sglang v0.5.21: draft model "eagle3-llama-3.1-8b-redhat" does not load on sglang`)
+}
+
+func TestValidateRejectsContextAboveMax(t *testing.T) {
+	m := llama8b()
+	m.Presets = []Preset{{Name: "vllm-bf16", Quantization: "bf16", Backend: "vllm", BackendVersion: "v0.31.0", Context: 131072}}
+	wantValidate(t, "context at max", curatedSnap(t, m), "")
+	m.Presets[0].Context = 131073
+	wantValidate(t, "context above max", curatedSnap(t, m), "llama-3.1-8b/vllm-bf16 on vllm v0.31.0: context 131073 above context_max 131072")
+}
+
+func TestValidateRejectsUnknownTopologyTransfer(t *testing.T) {
+	m := llama70b()
+	m.Presets = []Preset{{Name: "sglang-pd", Quantization: "bf16", Backend: "sglang", BackendVersion: "v0.5.21",
+		Topology: Topology{Kind: "disaggregated", Prefill: 2, Decode: 2, Transfer: "nixl"}}}
+	wantValidate(t, "nixl", curatedSnap(t, m), "")
+	m.Presets[0].Topology.Transfer = "ucx"
+	wantValidate(t, "ucx", curatedSnap(t, m), `llama-3.1-70b/sglang-pd on sglang v0.5.21: has no kv transfer "ucx"`)
+}
+
+// Each case breaks one rule the renderer relies on but cannot check itself.
+func TestValidateRejectsInconsistentPresetsAndDrafts(t *testing.T) {
+	cases := []struct {
+		name string
+		edit func(*ModelTemplate, []DraftModel)
+		want string
+	}{
+		{"valid", func(*ModelTemplate, []DraftModel) {}, ""},
+		{"disaggregated without decode gpus", func(m *ModelTemplate, _ []DraftModel) {
+			m.Presets[0].Topology = Topology{Kind: "disaggregated", Prefill: 2, Transfer: "nixl"}
+		}, "llama-3.1-8b/vllm-bf16 on vllm v0.31.0: disaggregated topology needs prefill_gpus and decode_gpus >= 1 and no tensor_parallel"},
+		{"disaggregated with tensor parallel", func(m *ModelTemplate, _ []DraftModel) {
+			m.Presets[0].TensorParallel = 4
+			m.Presets[0].Topology = Topology{Kind: "disaggregated", Prefill: 2, Decode: 2, Transfer: "nixl"}
+		}, "disaggregated topology needs prefill_gpus and decode_gpus >= 1 and no tensor_parallel"},
+		{"tool template without vendors", func(m *ModelTemplate, _ []DraftModel) { m.Presets[0].Vendors = nil },
+			`llama-3.1-8b/vllm-bf16 on vllm v0.31.0: chat template "llama3.1-tools" needs vendors [nvidia]`},
+		{"tool template on amd too", func(m *ModelTemplate, _ []DraftModel) { m.Presets[0].Vendors = []string{"nvidia", "amd"} },
+			`chat template "llama3.1-tools" needs vendors [nvidia]`},
+		{"min backend version compares numerically", func(m *ModelTemplate, _ []DraftModel) { m.Presets[0].MinBackendVersion = "v0.9.0" }, ""},
+		{"min backend version equal", func(m *ModelTemplate, _ []DraftModel) { m.Presets[0].MinBackendVersion = "v0.31" }, ""},
+		{"min backend version newer", func(m *ModelTemplate, _ []DraftModel) { m.Presets[0].MinBackendVersion = "v0.31.1" },
+			"llama-3.1-8b/vllm-bf16 on vllm v0.31.0: min_backend_version v0.31.1 is newer than the backend version"},
+		{"min backend version not a version", func(m *ModelTemplate, _ []DraftModel) { m.Presets[0].MinBackendVersion = "latest" },
+			`version "latest" is not dot-separated numbers`},
+		{"unknown draft", func(m *ModelTemplate, _ []DraftModel) { m.Presets[1].Speculative.DraftModel = "nope" },
+			`llama-3.1-8b/eagle3 on vllm v0.31.0: unknown draft model "nope"`},
+		{"draft for another model", func(_ *ModelTemplate, d []DraftModel) { d[0].Targets = []string{"llama-3.1-70b"} },
+			`draft model "eagle3-llama-3.1-8b-redhat" does not target llama-3.1-8b`},
+		{"draft of another method", func(_ *ModelTemplate, d []DraftModel) { d[0].Method = "eagle" },
+			`draft model "eagle3-llama-3.1-8b-redhat" is eagle, not eagle3`},
+		{"draft from oci", func(_ *ModelTemplate, d []DraftModel) {
+			d[0].Source = ModelSource{Type: SourceOCI, Repo: "registry.example/eagle3", Revision: "sha256:abc"}
+		}, `draft model "eagle3-llama-3.1-8b-redhat": source type "oci", want huggingface or modelscope`},
+		{"unpinned draft", func(_ *ModelTemplate, d []DraftModel) { d[1].Source.Revision = "" }, "revision required"},
+		{"draft for an unknown model", func(_ *ModelTemplate, d []DraftModel) { d[1].Targets = append(d[1].Targets, "nope") },
+			`draft model "eagle3-llama-3.1-8b-sglang": unknown target "nope"`},
+		{"duplicate draft", func(_ *ModelTemplate, d []DraftModel) { d[1].Slug = d[0].Slug },
+			`draft model "eagle3-llama-3.1-8b-redhat": duplicate`},
+	}
+	for _, c := range cases {
+		m, drafts := llama8b(), eagle3Drafts()
+		m.Presets = []Preset{
+			{Name: "vllm-bf16", Quantization: "bf16", Backend: "vllm", BackendVersion: "v0.31.0", Context: 8192,
+				ToolParser: "llama3", ChatTemplate: "llama3.1-tools", Vendors: []string{"nvidia"}},
+			{Name: "eagle3", Quantization: "bf16", Backend: "vllm", BackendVersion: "v0.31.0",
+				Speculative: &Speculative{Method: "eagle3", DraftModel: vllmEagle3.Slug, Tokens: 3}},
+		}
+		c.edit(&m, drafts)
+		wantValidate(t, c.name, curatedSnap(t, m, drafts...), c.want)
+	}
+}
+
 // Regenerating the committed data must reproduce the embedded snapshot: the
 // generator is deterministic and snapshots/v3 is not stale.
 func TestCommittedSnapshotMatchesData(t *testing.T) {
-	var models []ModelTemplate
 	var families []Family
+	var nodeTypes []NodeType
+	var models []ModelTemplate
+	var drafts []DraftModel
 	var backends []Backend
-	for path, v := range map[string]any{"data/models.json": &models, "data/families.json": &families, "data/backends.json": &backends} {
+	for path, v := range map[string]any{"data/families.json": &families, "data/node_types.json": &nodeTypes, "data/models.json": &models,
+		"data/draft_models.json": &drafts, "data/backends.json": &backends} {
 		b, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
@@ -120,7 +240,7 @@ func TestCommittedSnapshotMatchesData(t *testing.T) {
 			t.Fatalf("%s: %v", path, err)
 		}
 	}
-	snap, err := Generate(models, families, backends)
+	snap, _, err := Generate(families, nodeTypes, models, drafts, backends)
 	if err != nil {
 		t.Fatal(err)
 	}

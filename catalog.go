@@ -71,28 +71,30 @@ type ModelSource struct {
 
 // Preset is a deployable template: a model at one quantization served by one
 // backend version, stated in engine-neutral fields that the backend version's
-// flag table renders. TensorParallel 0 takes the GPU count from the fit; a nil
+// flag table renders. MinBackendVersion is the oldest version that supports
+// every field used. TensorParallel 0 takes the GPU count from the fit; a nil
 // PrefixCaching keeps the engine default. ExtraArgs are passed verbatim. Vendors
 // limits it to GPU vendors (empty means any the backend supports).
 type Preset struct {
-	Name            string            `json:"name"`
-	Quantization    string            `json:"quantization"`
-	Backend         string            `json:"backend"`
-	BackendVersion  string            `json:"backend_version"`
-	Purpose         string            `json:"purpose"`
-	Context         int               `json:"context"`
-	TensorParallel  int               `json:"tensor_parallel,omitempty"`
-	KVCacheDType    string            `json:"kv_cache_dtype,omitempty"`
-	PrefixCaching   *bool             `json:"prefix_caching,omitempty"`
-	ToolParser      string            `json:"tool_parser,omitempty"`
-	ReasoningParser string            `json:"reasoning_parser,omitempty"`
-	ChatTemplate    string            `json:"chat_template,omitempty"`
-	Speculative     *Speculative      `json:"speculative,omitempty"`
-	Topology        Topology          `json:"topology,omitzero"`
-	Env             map[string]string `json:"env,omitempty"`
-	ExtraArgs       []string          `json:"extra_args,omitempty"`
-	Vendors         []string          `json:"vendors,omitempty"`
-	Extensions      Extensions        `json:"extensions,omitempty"`
+	Name              string            `json:"name"`
+	Quantization      string            `json:"quantization"`
+	Backend           string            `json:"backend"`
+	BackendVersion    string            `json:"backend_version"`
+	MinBackendVersion string            `json:"min_backend_version,omitempty"`
+	Purpose           string            `json:"purpose"`
+	Context           int               `json:"context"`
+	TensorParallel    int               `json:"tensor_parallel,omitempty"`
+	KVCacheDType      string            `json:"kv_cache_dtype,omitempty"`
+	PrefixCaching     *bool             `json:"prefix_caching,omitempty"`
+	ToolParser        string            `json:"tool_parser,omitempty"`
+	ReasoningParser   string            `json:"reasoning_parser,omitempty"`
+	ChatTemplate      string            `json:"chat_template,omitempty"`
+	Speculative       *Speculative      `json:"speculative,omitempty"`
+	Topology          Topology          `json:"topology,omitzero"`
+	Env               map[string]string `json:"env,omitempty"`
+	ExtraArgs         []string          `json:"extra_args,omitempty"`
+	Vendors           []string          `json:"vendors,omitempty"`
+	Extensions        Extensions        `json:"extensions,omitempty"`
 }
 
 // Speculative configures speculative decoding. DraftModel names an entry of

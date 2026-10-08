@@ -30,6 +30,10 @@ func run() error {
 	if err := loadJSON("data/models.json", &templates); err != nil {
 		return err
 	}
+	var drafts []catalog.DraftModel
+	if err := loadJSON("data/draft_models.json", &drafts); err != nil {
+		return err
+	}
 	var families []catalog.Family
 	if err := loadJSON("data/families.json", &families); err != nil {
 		return err
@@ -42,12 +46,12 @@ func run() error {
 	if err := loadJSON("data/node_types.json", &cloud); err != nil {
 		return err
 	}
-	if _, err := catalog.NodeTypeVocabulary(families, cloud); err != nil {
-		return err
-	}
-	snap, err := catalog.Generate(templates, families, backends)
+	snap, report, err := catalog.Generate(families, cloud, templates, drafts, backends)
 	if err != nil {
 		return err
+	}
+	for _, line := range report {
+		fmt.Println(line)
 	}
 
 	// Unchanged content keeps the committed version, so the release workflow

@@ -1,0 +1,34 @@
+[
+  {
+    "slug": "eagle3-llama-3.1-8b-redhat",
+    "method": "eagle3",
+    "targets": [
+      "llama-3.1-8b"
+    ],
+    "source": {
+      "type": "huggingface",
+      "repo": "RedHatAI/Llama-3.1-8B-Instruct-speculator.eagle3",
+      "revision": "f4fa34a8f803a0ba75d048d6b3dbc1ad5149e9ac"
+    },
+    "weights_gb": 1.9,
+    "backends": [
+      "vllm"
+    ]
+  },
+  {
+    "slug": "eagle3-llama-3.1-8b-sglang",
+    "method": "eagle3",
+    "targets": [
+      "llama-3.1-8b"
+    ],
+    "source": {
+      "type": "huggingface",
+      "repo": "lmsys/sglang-EAGLE3-LLaMA3.1-Instruct-8B",
+      "revision": "28a53ce8911434c031d7c78392abb26d898ec293"
+    },
+    "weights_gb": 0.8,
+    "backends": [
+      "sglang"
+    ]
+  }
+]
