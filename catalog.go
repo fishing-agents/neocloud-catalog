@@ -243,6 +243,12 @@ func (t ModelTemplate) kvBytesPerToken() float64 {
 // or emulated (weight-only, slower).
 type FitMode string
 
+// Fit modes.
+const (
+	FitNative   FitMode = "native"
+	FitEmulated FitMode = "emulated"
+)
+
 // ModelFit states that a model at a quantization and KV cache dtype runs on
 // GPUCount GPUs of a device family (tensor parallel) across Nodes, with the
 // largest context that fits and the VRAM that context needs across those GPUs,
@@ -332,13 +338,18 @@ func VRAMRequired(t ModelTemplate, quant string, context int) (float64, bool) {
 }
 
 // Fit reports whether a model at a quantization runs on a fit row at the given
-// context: same quantization, within the row's context, within its VRAM.
+// context: same quantization, within the row's context, within its VRAM at the
+// row's KV cache dtype.
 func Fit(t ModelTemplate, f ModelFit, quant string, context int) bool {
 	if quant != f.Quantization || context > f.MaxContext {
 		return false
 	}
-	vram, ok := VRAMRequired(t, quant, context)
-	return ok && vram <= f.VRAMRequiredGB
+	for _, q := range t.Quantizations {
+		if q.Name == quant {
+			return q.WeightsGB+kvGB(t, f.KVCacheDType, context) <= f.VRAMRequiredGB
+		}
+	}
+	return false
 }
 
 // Digest returns the sha256 of the snapshot's content: every field except

@@ -16,8 +16,8 @@ itself.
   `ModelSource` (huggingface, modelscope, oci or local; pinned revision),
   `Preset` (quantization + backend version + engine-neutral fields),
   `Backend` and `BackendVersion` (image, command template, health path,
-  vendors), `ModelFit` (model x family x quantization -> GPU count, max
-  context, VRAM),
+  vendors), `ModelFit` (model x family x quantization x KV cache dtype ->
+  native or emulated, GPU count, nodes, max context, VRAM, estimate),
   `CatalogSnapshot`, `VRAMRequired` (weights + KV for any context), `Fit`,
   `Digest` (sha256 of the snapshot content, the pin clients use).
 - `artifact.go` - the published OCI artifact contract (`ArtifactType`,
@@ -39,15 +39,29 @@ itself.
   (`CatalogSnapshot.Validate`: every source has a known type and repo, and
   huggingface, modelscope and oci sources a pinned revision; drafts are pinned
   huggingface or modelscope repos; every preset names a quantization of its
-  model, an existing backend version and a draft for its backend, model and
-  method, stays within the model's context, and renders on its backend
-  version; preset names are unique per model) and derives the fit matrix. KV
-  bytes/token = 2 x layers x KV heads x head dim x 2 bytes. For each model,
-  quantization, and family it picks the smallest tensor-parallel GPU count
-  (1/2/4/8, dividing the attention heads) whose budget (90% of GPU memory,
-  vLLM's default) holds the weights plus the default context; max context is
-  what the rest holds, capped at the model's ceiling. No throughput figures:
-  the catalog states only what it can derive.
+  model whose kind its backend version runs, an existing backend version and a
+  draft for its backend, model and method that fits next to the model, stays
+  within the model's context, spans at least two nodes when multi-node, and
+  renders on its backend version; preset names are unique per model), derives
+  the fit matrix and deployment guidance, then runs the registered extensions.
+  KV bytes/token = 2 x layers x KV heads x head dim x 2 bytes (half for an fp8
+  KV cache). A fit exists for a model, quantization, KV cache dtype and family
+  only where some preset with them runs there: its backend version has an image
+  for the family's vendor, the family meets its minimum compute capability
+  (NVIDIA only), and the quantization kind runs `native` (its dtype is native to
+  the family) or `emulated` (NVIDIA from a compute capability). The fit is the
+  smallest layout such a preset needs - tensor-parallel GPU counts (1/2/4/8 per
+  node, dividing the attention heads) across a multi-node preset's nodes, each
+  side of a disaggregated one - whose budget (90% of GPU memory, vLLM's
+  default) holds the weights plus the preset's context; max context is what the
+  rest holds, capped at the model's ceiling. A preset whose quantization fits
+  families its backend runs on none of fails generation. Each model's
+  `deployment` names the minimum (least GPU memory decoding 20 tokens/s per
+  sequence) and optimal (highest aggregate per GPU keeping 20 under load)
+  fits with example node types; models without a minimum are reported.
+- `estimate.go` - `Estimate`, the per-fit performance estimate: a
+  memory-bandwidth roofline over active weights and KV reads, with its
+  efficiency constants documented in one place.
 - `snapshots/v3/catalog.json` - the committed, generated snapshot the module
   embeds (schema 3.0.0). `SnapshotV3()` returns it.
 - `cmd/catalog-generate` - the pipeline CLI: reads `data/` and writes the

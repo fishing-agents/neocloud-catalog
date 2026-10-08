@@ -48,7 +48,7 @@ func extSnap() CatalogSnapshot {
 		Families:      []Family{{Name: "L4", Vendor: "nvidia", MemoryGB: 24}},
 		Models:        []ModelTemplate{m},
 		Fits:          []ModelFit{{ModelSlug: "m", DeviceFamily: "L4", Quantization: "bf16", KVCacheDType: "auto", GPUCount: 1}},
-		Backends:      []Backend{{Name: "vllm", Versions: []BackendVersion{{Version: "v1"}}}},
+		Backends:      []Backend{{Name: "vllm", Versions: []BackendVersion{{Version: "v1", Quantizations: map[string]QuantSupport{"float": {NativeDType: "bf16"}}}}}},
 	}
 }
 
@@ -91,6 +91,32 @@ func TestRunExtensionsRefusesForeignNamespace(t *testing.T) {
 	}
 	if p := snap.Models[0].Extensions["x.io/a"]; string(p) != `{"ok":true}` {
 		t.Fatalf("payload = %s, want the extension's own write", p)
+	}
+}
+
+type funcExt struct {
+	name string
+	gen  func(*CatalogSnapshot)
+}
+
+func (e funcExt) Name() string                      { return e.name }
+func (e funcExt) Validate(CatalogSnapshot) error    { return nil }
+func (e funcExt) Generate(s *CatalogSnapshot) error { e.gen(s); return nil }
+
+func TestRunExtensionsRefusesPublicChanges(t *testing.T) {
+	for name, gen := range map[string]func(*CatalogSnapshot){
+		"public field": func(s *CatalogSnapshot) { s.Models[0].Name = "renamed" },
+		"added object": func(s *CatalogSnapshot) {
+			s.Fits = append(s.Fits, ModelFit{ModelSlug: "m", DeviceFamily: "H100", KVCacheDType: "auto"})
+		},
+		"removed object": func(s *CatalogSnapshot) { s.Families = nil },
+	} {
+		reg := newRegistry()
+		reg.register(funcExt{"x.io/a", gen})
+		snap := extSnap()
+		if err := runExtensions(reg, &snap); err == nil || !strings.Contains(err.Error(), "extension x.io/a changed the public snapshot") {
+			t.Errorf("%s: err = %v, want refusal", name, err)
+		}
 	}
 }
 

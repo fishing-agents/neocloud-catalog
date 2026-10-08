@@ -12,10 +12,12 @@ func llama8b() ModelTemplate {
 		Name:           "Llama 3.1 8B",
 		Family:         "llama",
 		ParamsB:        8,
+		ParamsActiveB:  8,
 		DefaultContext: 8192,
 		ContextMax:     131072,
-		Quantizations:  []Quantization{{Name: "bf16", WeightsGB: 16.1}, {Name: "fp8", WeightsGB: 9.1}},
-		Architecture:   Architecture{Layers: 32, AttentionHeads: 32, KVHeads: 8, HeadDim: 128},
+		Quantizations: []Quantization{{Name: "bf16", Kind: "float", RequiresDType: "bf16", WeightsGB: 16.1},
+			{Name: "fp8", Kind: "fp8", RequiresDType: "fp8", WeightsGB: 9.1}},
+		Architecture: Architecture{Layers: 32, AttentionHeads: 32, KVHeads: 8, HeadDim: 128},
 	}
 }
 
@@ -49,6 +51,12 @@ func TestFit(t *testing.T) {
 	}
 	if Fit(m, row, "fp8", 8192) {
 		t.Fatalf("a bf16 row must not answer for fp8")
+	}
+	// An fp8 KV cache holds 83923 tokens in the same 5.5GB: 60000 tokens need
+	// 16.1 + 3.93GB, within the row, though they would not at 16 bits.
+	fp8KV := ModelFit{ModelSlug: m.Slug, DeviceFamily: "L4", Quantization: "bf16", KVCacheDType: "fp8", GPUCount: 1, MaxContext: 83923, VRAMRequiredGB: 21.6}
+	if !Fit(m, fp8KV, "bf16", 60000) {
+		t.Fatalf("expected fit within an fp8 KV row's context")
 	}
 }
 

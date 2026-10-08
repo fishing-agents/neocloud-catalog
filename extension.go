@@ -38,15 +38,20 @@ var extensions = newRegistry()
 // It panics if an extension of the same name is already registered.
 func RegisterExtension(e Extension) { extensions.register(e) }
 
-// RunExtensions runs Generate then Validate of every registered extension on a
-// generated snapshot, failing if an extension writes outside its namespace.
+// RunExtensions runs Generate of every registered extension on a generated
+// snapshot, then Validate of every one, failing if an extension writes outside
+// its namespace or changes the public snapshot (a field or an object).
 func RunExtensions(snap *CatalogSnapshot) error { return runExtensions(extensions, snap) }
 
 func runExtensions(reg *registry, snap *CatalogSnapshot) error {
-	for _, name := range slices.Sorted(maps.Keys(reg.exts)) {
-		e := reg.exts[name]
+	names := slices.Sorted(maps.Keys(reg.exts))
+	for _, name := range names {
 		before := payloads(snap)
-		if err := e.Generate(snap); err != nil {
+		public, err := publicDigest(snap)
+		if err != nil {
+			return err
+		}
+		if err := reg.exts[name].Generate(snap); err != nil {
 			return fmt.Errorf("extension %s: generate: %w", name, err)
 		}
 		after := payloads(snap)
@@ -60,11 +65,35 @@ func runExtensions(reg *registry, snap *CatalogSnapshot) error {
 				return fmt.Errorf("extension %s removed namespace %s on %s", name, k.namespace, k.object)
 			}
 		}
-		if err := e.Validate(*snap); err != nil {
+		switch d, err := publicDigest(snap); {
+		case err != nil:
+			return fmt.Errorf("extension %s: %w", name, err)
+		case d != public:
+			return fmt.Errorf("extension %s changed the public snapshot", name)
+		}
+	}
+	for _, name := range names {
+		if err := reg.exts[name].Validate(*snap); err != nil {
 			return fmt.Errorf("extension %s: %w", name, err)
 		}
 	}
 	return nil
+}
+
+// publicDigest is the digest of a copy of snap without extension payloads.
+func publicDigest(snap *CatalogSnapshot) (string, error) {
+	b, err := json.Marshal(snap)
+	if err != nil {
+		return "", err
+	}
+	var c CatalogSnapshot
+	if err := json.Unmarshal(b, &c); err != nil {
+		return "", err
+	}
+	for _, ext := range extensionTargets(&c) {
+		*ext = nil
+	}
+	return c.Digest(), nil
 }
 
 type payloadKey struct{ object, namespace string }
