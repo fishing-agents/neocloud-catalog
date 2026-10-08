@@ -187,6 +187,49 @@ func TestLlamaCpp(t *testing.T) {
 	}
 }
 
+// A model set carries the model's metadata in GPUStack's vocabulary: task as a
+// category, the context and capabilities GPUStack names (long-context is its
+// context/<N>K), the active size of a mixture of experts.
+func TestModelSets(t *testing.T) {
+	snap := committed(t)
+	_, doc := export(t, snap)
+	want := map[string]modelSet{
+		"Llama 3.1 8B": {Description: "Llama 3.1 instruction-tuned 8B text model, optimized for multilingual dialogue use cases.",
+			Home: "https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct", Size: 8, Categories: []string{"llm"},
+			Capabilities: []string{"context/128K", "tools"}, Licenses: []string{"llama3.1"}, ReleaseDate: "2024-07-23"},
+		"Mixtral 8x7B": {Description: "Instruction-tuned Mixtral-8x7B, a pretrained generative sparse mixture of experts.",
+			Home: "https://huggingface.co/mistralai/Mixtral-8x7B-Instruct-v0.1", Size: 47, ActivatedSize: 12.9, Categories: []string{"llm"},
+			Capabilities: []string{"context/32K"}, Licenses: []string{"apache-2.0"}, ReleaseDate: "2023-12-11"},
+	}
+	for _, set := range doc.ModelSets {
+		w, ok := want[set.Name]
+		if !ok {
+			continue
+		}
+		w.Name, w.Specs = set.Name, set.Specs
+		if !reflect.DeepEqual(set, w) {
+			t.Errorf("model set = %+v, want %+v", set, w)
+		}
+		delete(want, set.Name)
+	}
+	if len(want) > 0 {
+		t.Errorf("model sets missing: %v", want)
+	}
+
+	m := snap.Models[0]
+	m.Home, m.Task, m.Capabilities, m.ParamsActiveB = "", "rerank", []string{"reasoning", "vision", "json-schema", "long-context"}, m.ParamsB
+	_, doc = export(t, catalog.CatalogSnapshot{Models: []catalog.ModelTemplate{m}, Backends: snap.Backends, DraftModels: snap.DraftModels})
+	set := doc.ModelSets[0]
+	if !slices.Equal(set.Categories, []string{"reranker"}) || !slices.Equal(set.Capabilities, []string{"context/128K", "reasoning", "vision"}) ||
+		set.ActivatedSize != 0 || set.Home != "https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct" {
+		t.Errorf("rerank model set = %+v, want category reranker, GPUStack's capabilities only, no active size, home from the first spec", set)
+	}
+	m.Home = "https://example.com/card"
+	if _, doc = export(t, catalog.CatalogSnapshot{Models: []catalog.ModelTemplate{m}, Backends: snap.Backends, DraftModels: snap.DraftModels}); doc.ModelSets[0].Home != m.Home {
+		t.Errorf("home = %s, want the model's %s", doc.ModelSets[0].Home, m.Home)
+	}
+}
+
 func TestComputeCapability(t *testing.T) {
 	images := map[string]string{"nvidia": "n", "amd": "a"}
 	snap := catalog.CatalogSnapshot{

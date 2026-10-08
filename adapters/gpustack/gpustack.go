@@ -4,6 +4,7 @@ package gpustack
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -32,6 +33,14 @@ const (
 // backends maps catalog backends to GPUStack's BackendEnum values. It has no
 // llama.cpp value (schemas/models.py), so llama.cpp runs as a Custom image.
 var backends = map[string]string{"vllm": "vLLM", "sglang": "SGLang", "llamacpp": "Custom"}
+
+// GPUStack's model-set vocabulary: CategoryEnum (schemas/models.py) for the
+// task, and the capabilities its own catalog (assets/model-catalog.yaml) uses
+// besides context/<N>K, which stands for long-context. json-schema has none.
+var (
+	categories   = map[string]string{"chat": "llm", "completion": "llm", "vision-chat": "llm", "embedding": "embedding", "rerank": "reranker"}
+	capabilities = map[string]string{"tools": "tools", "reasoning": "reasoning", "vision": "vision"}
+)
 
 func init() { adapters.Register(adapter{}) }
 
@@ -63,13 +72,16 @@ type document struct {
 }
 
 type modelSet struct {
-	Name         string   `json:"name"`
-	Home         string   `json:"home"`
-	Size         float64  `json:"size,omitempty"`
-	Categories   []string `json:"categories"`
-	Capabilities []string `json:"capabilities"`
-	Licenses     []string `json:"licenses,omitempty"`
-	Specs        []spec   `json:"specs"`
+	Name          string   `json:"name"`
+	Description   string   `json:"description,omitempty"`
+	Home          string   `json:"home"`
+	Size          float64  `json:"size,omitempty"`
+	ActivatedSize float64  `json:"activated_size,omitempty"`
+	Categories    []string `json:"categories"`
+	Capabilities  []string `json:"capabilities"`
+	Licenses      []string `json:"licenses,omitempty"`
+	ReleaseDate   string   `json:"release_date,omitempty"`
+	Specs         []spec   `json:"specs"`
 }
 
 type spec struct {
@@ -102,9 +114,20 @@ func (a adapter) Export(snap catalog.CatalogSnapshot, format string, _ adapters.
 	for _, m := range snap.Models {
 		set := modelSet{
 			Name:         m.Name,
+			Description:  m.Description,
+			Home:         m.Home,
 			Size:         m.ParamsB,
-			Categories:   []string{"llm"},
+			Categories:   []string{cmp.Or(categories[m.Task], "unknown")},
 			Capabilities: []string{fmt.Sprintf("context/%dK", m.ContextMax/1024)},
+			ReleaseDate:  m.ReleaseDate,
+		}
+		if m.ParamsActiveB != m.ParamsB {
+			set.ActivatedSize = m.ParamsActiveB
+		}
+		for _, c := range m.Capabilities {
+			if c, ok := capabilities[c]; ok {
+				set.Capabilities = append(set.Capabilities, c)
+			}
 		}
 		if m.License != "" {
 			set.Licenses = []string{m.License}

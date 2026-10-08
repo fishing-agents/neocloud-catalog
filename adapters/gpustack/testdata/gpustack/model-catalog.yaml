@@ -2,17 +2,20 @@
   "model_sets": [
     {
       "name": "Llama 3.1 8B",
+      "description": "Llama 3.1 instruction-tuned 8B text model, optimized for multilingual dialogue use cases.",
       "home": "https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct",
       "size": 8,
       "categories": [
         "llm"
       ],
       "capabilities": [
-        "context/128K"
+        "context/128K",
+        "tools"
       ],
       "licenses": [
         "llama3.1"
       ],
+      "release_date": "2024-07-23",
       "specs": [
         {
           "mode": "sglang-bf16",
@@ -227,17 +230,20 @@
     },
     {
       "name": "Llama 3.1 70B",
+      "description": "Llama 3.1 instruction-tuned 70B text model, optimized for multilingual dialogue use cases.",
       "home": "https://huggingface.co/meta-llama/Llama-3.1-70B-Instruct",
       "size": 70,
       "categories": [
         "llm"
       ],
       "capabilities": [
-        "context/128K"
+        "context/128K",
+        "tools"
       ],
       "licenses": [
         "llama3.1"
       ],
+      "release_date": "2024-07-23",
       "specs": [
         {
           "mode": "sglang-bf16",
@@ -353,8 +359,10 @@
     },
     {
       "name": "Mixtral 8x7B",
+      "description": "Instruction-tuned Mixtral-8x7B, a pretrained generative sparse mixture of experts.",
       "home": "https://huggingface.co/mistralai/Mixtral-8x7B-Instruct-v0.1",
       "size": 47,
+      "activated_size": 12.9,
       "categories": [
         "llm"
       ],
@@ -364,6 +372,7 @@
       "licenses": [
         "apache-2.0"
       ],
+      "release_date": "2023-12-11",
       "specs": [
         {
           "mode": "sglang-bf16",
@@ -501,6 +510,7 @@
     },
     {
       "name": "Gemma 2 9B",
+      "description": "Instruction-tuned Gemma 2 9B, a lightweight text-to-text, decoder-only open model from Google.",
       "home": "https://huggingface.co/google/gemma-2-9b-it",
       "size": 9,
       "categories": [
@@ -512,6 +522,7 @@
       "licenses": [
         "gemma"
       ],
+      "release_date": "2024-06-27",
       "specs": [
         {
           "mode": "sglang-bf16",
@@ -649,17 +660,20 @@
     },
     {
       "name": "Qwen 2.5 14B",
+      "description": "Instruction-tuned 14B Qwen2.5 model with long-context support up to 128K tokens.",
       "home": "https://huggingface.co/Qwen/Qwen2.5-14B-Instruct",
       "size": 14,
       "categories": [
         "llm"
       ],
       "capabilities": [
-        "context/128K"
+        "context/128K",
+        "tools"
       ],
       "licenses": [
         "apache-2.0"
       ],
+      "release_date": "2024-09-19",
       "specs": [
         {
           "mode": "sglang-bf16",

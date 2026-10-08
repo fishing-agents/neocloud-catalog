@@ -215,6 +215,20 @@ exported. Public builds register none.
 | `airunway-recipes` | AI Runway `VLLM_RECIPES_BASE_URL=<base>` | vLLM presets only. One recipe per Hugging Face repo; further vLLM presets are derived recipes (`meta.derived_from`). The NVIDIA image and families only (see deployments). Skipped: `recipes resolver is vLLM only` (SGLang, llama.cpp), `recipes resolve to one Direct vLLM server` (multi-node, disaggregated), `one recipe per Hugging Face repo`, `recipes need a Hugging Face org/model repo`, `no whole-GPU fit to size the GPU count`. |
 | `airunway-deployments` | `kubectl apply -f deployments/...` or `POST /api/deployments` with `api/...` | vLLM and SGLang presets on NVIDIA GPUs (AI Runway's API requests `nvidia.com/gpu`). SGLang runs only on AI Runway's Dynamo provider, on Dynamo's sglang-runtime image (the pinned SGLang image is not used); manifests carry `neocloud.io/required-provider`. A disaggregated SGLang preset uses `serving.mode: disaggregated` with `scaling.prefill`/`decode` GPU counts; Dynamo adds each worker's role. Gated models use AI Runway's `hf-token-secret`. Skipped: `KAITO runs llama.cpp only as an AIKit runner` (its template passes no context or engine flags to the pinned llama-server), `AI Runway has no multi-node deployments`, `topology needs Dynamo disaggregated mode` (vLLM, or roles needing different engine args), `backend AI Runway cannot run`, `ModelDeployment source is huggingface or custom only`, `no whole-GPU fit to size the GPU count`. Lost: source revision, ModelScope-only models, AMD. |
 
+Model metadata: a GPUStack model set carries `name`, `description`, `home`
+(the model's, else its first source's page), `size` (`params_b`),
+`activated_size` (`params_active_b` of a mixture of experts), `categories`
+(`task`: chat, completion and vision-chat `llm`, embedding `embedding`, rerank
+`reranker`), `capabilities` (`context/<context_max>K`, which stands for
+`long-context`, then `tools`, `reasoning`, `vision`), `licenses` and
+`release_date`. Lost there: `json-schema` (GPUStack names no such capability),
+`icon` (a neocloud asset path GPUStack cannot serve), `family`, `aliases`,
+`gated`. AI Runway reads only a recipe's `hf_id`, `title` (the model name) and
+`provider` (the repo's org), and no metadata from a ModelDeployment; recipes
+also carry `model.parameter_count` and `model.context_length` (the
+recipes.vllm.ai layout), unread. Every other metadata field is lost in both AI
+Runway formats.
+
 A release publishes the exports with a cosign-signed `SHA256SUMS`
 (`SHA256SUMS.sigstore.json`) as release assets and on GitHub Pages, which serves
 the recipes tree. Neither platform verifies signatures itself; check by hand:
