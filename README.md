@@ -25,7 +25,8 @@ itself.
   architecture (from its config), checkpoint size and sources per quantization,
   license, gated flag and presets; `backends.json` the inference servers (vLLM,
   SGLang) with pinned release images and command templates (`{{model_path}}`,
-  `{{model}}`, `{{port}}`); `families.json` the per-family GPU memory table.
+  `{{model}}`, `{{port}}`); `families.json` the per-family hardware facts
+  (generated, see Regenerate) and `families.overlay.json` their curated part.
 - `generate.go` - the outsourced generation. `Generate` validates the input
   (`CatalogSnapshot.Validate`: every source has a known type and repo, and
   huggingface, modelscope and oci sources a pinned revision; every preset names
@@ -40,6 +41,12 @@ itself.
   embeds (schema 3.0.0). `SnapshotV3()` returns it.
 - `cmd/catalog-generate` - the pipeline CLI: reads `data/` and writes the
   snapshot.
+- `cmd/families-import` - writes `data/families.json` from Epoch AI's ML
+  hardware data (vendor, memory, bandwidth, dense tensor TFLOPS, NVLink-class
+  bandwidth) and `data/families.overlay.json` (the SKU each family name stands
+  for, its Epoch row, architecture, compute capability or gfx target, native
+  dtypes, interconnect, and Epoch gaps or corrections), every value with its
+  source URL.
 - `runrecord/` - the run-record contract: one serving configuration observed
   over one window with its outcome (Go types, `schema/run-record.v1.json`,
   strict `Decode`, `Validate`, the launch-flag allowlist `FilterArgs`).
@@ -119,6 +126,13 @@ authenticated, licence-accepted account.
 
 ## Regenerate
 
+Hardware facts come from the overlay plus Epoch's CSV (downloaded by default;
+`-csv` reads a local copy). After editing `data/families.overlay.json`:
+
+```sh
+go run ./cmd/families-import
+```
+
 After editing `data/`, from the module root:
 
 ```sh
@@ -171,3 +185,7 @@ committed snapshot is stale. Adapter exports are compared with golden files unde
 ## License
 
 Apache-2.0. Isolated and dependency-free so it can lift out for donation.
+
+`data/families.json` contains hardware figures from Epoch AI, "Data on Machine
+Learning Hardware" (https://epoch.ai/data/machine-learning-hardware), licensed
+under CC BY 4.0; see `NOTICE`.

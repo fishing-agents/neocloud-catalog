@@ -1,0 +1,3 @@
+Hardware name,Manufacturer,Tensor-FP16/BF16 performance (FLOP/s),FP8 performance (FLOP/s),FP4 performance (FLOP/s),Memory (bytes),Memory bandwidth (byte/s),Intranode bandwidth (byte/s)
+NVIDIA H100 SXM5 80GB,NVIDIA,989400000000000.0,1979000000000000.0,,80000000000.0,3350000000000.0,900000000000.0
+NVIDIA L4,NVIDIA,121000000000000.0,,,24000000000.0,300100000000.0,

@@ -1,0 +1,6 @@
+neocloud-catalog
+Copyright The neocloud authors. Licensed under the Apache License 2.0.
+
+data/families.json contains hardware figures from Epoch AI, "Data on Machine
+Learning Hardware" (https://epoch.ai/data/machine-learning-hardware), licensed
+under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).
