@@ -1,0 +1,34 @@
+{
+  "apiVersion": "airunway.ai/v1alpha1",
+  "kind": "ModelDeployment",
+  "metadata": {
+    "name": "llama-3-1-8b-sglang-fp8",
+    "annotations": {
+      "neocloud.ai/required-provider": "dynamo"
+    }
+  },
+  "spec": {
+    "model": {
+      "id": "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8",
+      "source": "huggingface"
+    },
+    "provider": {
+      "name": "dynamo"
+    },
+    "engine": {
+      "type": "sglang",
+      "contextLength": 8192,
+      "args": {
+        "tool-call-parser": "llama3"
+      }
+    },
+    "resources": {
+      "gpu": {
+        "count": 1
+      }
+    },
+    "secrets": {
+      "huggingFaceToken": "hf-token-secret"
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "apiVersion": "airunway.ai/v1alpha1",
+  "kind": "ModelDeployment",
+  "metadata": {
+    "name": "qwen-2-5-14b-sglang-bf16",
+    "annotations": {
+      "neocloud.ai/required-provider": "dynamo"
+    }
+  },
+  "spec": {
+    "model": {
+      "id": "Qwen/Qwen2.5-14B-Instruct",
+      "source": "huggingface"
+    },
+    "provider": {
+      "name": "dynamo"
+    },
+    "engine": {
+      "type": "sglang",
+      "contextLength": 32768,
+      "args": {
+        "tool-call-parser": "qwen25"
+      }
+    },
+    "resources": {
+      "gpu": {
+        "count": 1
+      }
+    }
+  }
+}

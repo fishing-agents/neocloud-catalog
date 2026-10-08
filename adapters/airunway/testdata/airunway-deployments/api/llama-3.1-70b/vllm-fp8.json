@@ -1,0 +1,16 @@
+{
+  "name": "llama-3-1-70b-vllm-fp8",
+  "modelId": "RedHatAI/Meta-Llama-3.1-70B-Instruct-FP8",
+  "engine": "vllm",
+  "provider": "vllm",
+  "imageRef": "vllm/vllm-openai:v0.31.0",
+  "contextLength": 8192,
+  "resources": {
+    "gpu": 2
+  },
+  "engineArgs": {
+    "enable-auto-tool-choice": "",
+    "tool-call-parser": "llama3_json"
+  },
+  "hfTokenSecret": "hf-token-secret"
+}

@@ -1,0 +1,47 @@
+{
+  "hf_id": "RedHatAI/Qwen2.5-14B-Instruct-FP8-dynamic",
+  "meta": {
+    "title": "Qwen 2.5 14B",
+    "provider": "Qwen",
+    "hardware": {
+      "a100": "supported",
+      "a10g": "supported",
+      "h100": "supported",
+      "h200": "supported",
+      "l4": "supported",
+      "mi300x": "supported",
+      "rtx_4090": "supported"
+    },
+    "derived_from": "Qwen/Qwen2.5-14B-Instruct",
+    "variant": "fp8"
+  },
+  "recommended_command": {
+    "hardware": "h100",
+    "variant": "fp8",
+    "docker_image": "vllm/vllm-openai:v0.31.0",
+    "argv": [
+      "vllm",
+      "serve",
+      "RedHatAI/Qwen2.5-14B-Instruct-FP8-dynamic",
+      "--enable-auto-tool-choice",
+      "--tool-call-parser",
+      "hermes",
+      "--max-model-len=32768"
+    ],
+    "hardware_profile": {
+      "gpu_count": 1
+    }
+  },
+  "model": {
+    "model_id": "RedHatAI/Qwen2.5-14B-Instruct-FP8-dynamic",
+    "min_vllm_version": "0.31.0",
+    "parameter_count": "14B",
+    "context_length": 131072
+  },
+  "variants": {
+    "default": {
+      "precision": "fp8",
+      "vram_minimum_gb": 22.75
+    }
+  }
+}

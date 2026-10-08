@@ -1,0 +1,29 @@
+{
+  "apiVersion": "airunway.ai/v1alpha1",
+  "kind": "ModelDeployment",
+  "metadata": {
+    "name": "mixtral-8x7b-vllm-fp8",
+    "annotations": {
+      "neocloud.ai/required-provider": "vllm"
+    }
+  },
+  "spec": {
+    "model": {
+      "id": "RedHatAI/Mixtral-8x7B-Instruct-v0.1-FP8",
+      "source": "huggingface"
+    },
+    "provider": {
+      "name": "vllm"
+    },
+    "engine": {
+      "type": "vllm",
+      "image": "vllm/vllm-openai:v0.31.0",
+      "contextLength": 32768
+    },
+    "resources": {
+      "gpu": {
+        "count": 1
+      }
+    }
+  }
+}

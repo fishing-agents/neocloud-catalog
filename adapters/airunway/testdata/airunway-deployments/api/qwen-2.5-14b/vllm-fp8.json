@@ -1,0 +1,15 @@
+{
+  "name": "qwen-2-5-14b-vllm-fp8",
+  "modelId": "RedHatAI/Qwen2.5-14B-Instruct-FP8-dynamic",
+  "engine": "vllm",
+  "provider": "vllm",
+  "imageRef": "vllm/vllm-openai:v0.31.0",
+  "contextLength": 32768,
+  "resources": {
+    "gpu": 1
+  },
+  "engineArgs": {
+    "enable-auto-tool-choice": "",
+    "tool-call-parser": "hermes"
+  }
+}

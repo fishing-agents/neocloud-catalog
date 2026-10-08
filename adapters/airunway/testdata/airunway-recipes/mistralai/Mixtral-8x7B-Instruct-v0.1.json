@@ -1,0 +1,48 @@
+{
+  "hf_id": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+  "meta": {
+    "title": "Mixtral 8x7B",
+    "provider": "mistralai",
+    "hardware": {
+      "a100": "supported",
+      "a10g": "supported",
+      "h100": "supported",
+      "h200": "supported",
+      "l4": "supported",
+      "mi300x": "supported",
+      "rtx_4090": "supported"
+    }
+  },
+  "recommended_command": {
+    "hardware": "h100",
+    "variant": "default",
+    "docker_image": "vllm/vllm-openai:v0.31.0",
+    "argv": [
+      "vllm",
+      "serve",
+      "mistralai/Mixtral-8x7B-Instruct-v0.1",
+      "--max-model-len=32768"
+    ],
+    "hardware_profile": {
+      "gpu_count": 2
+    }
+  },
+  "model": {
+    "model_id": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+    "min_vllm_version": "0.31.0",
+    "parameter_count": "47B",
+    "context_length": 32768
+  },
+  "variants": {
+    "default": {
+      "precision": "bf16",
+      "vram_minimum_gb": 97.7
+    },
+    "fp8": {
+      "model_id": "RedHatAI/Mixtral-8x7B-Instruct-v0.1-FP8",
+      "precision": "fp8",
+      "vram_minimum_gb": 51.3,
+      "json": "RedHatAI/Mixtral-8x7B-Instruct-v0.1-FP8.json"
+    }
+  }
+}

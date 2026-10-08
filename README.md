@@ -40,7 +40,14 @@ itself.
   embeds (schema 3.0.0). `SnapshotV3()` returns it.
 - `cmd/catalog-generate` - the pipeline CLI: reads `data/` and writes the
   snapshot.
-- `.github/workflows/release.yml` - publishes and signs the snapshot on a tag.
+- `runrecord/` - the run-record contract: one serving configuration observed
+  over one window with its outcome (Go types, `schema/run-record.v1.json`,
+  strict `Decode`, `Validate`, the launch-flag allowlist `FilterArgs`).
+- `adapters/` - a nested module (own `go.mod`, so the core stays stdlib only):
+  the adapter contract and registry, one adapter per serving platform
+  (`gpustack/`, `airunway/`), and `cmd/catalog-export`.
+- `.github/workflows/release.yml` - publishes and signs the snapshot and the
+  platform exports on a tag.
 
 ## Snapshot contract
 
@@ -58,6 +65,44 @@ attached as an OCI referrer against that digest and the publisher's identity,
 refuses a version not newer than the one in use, pulls the layer, and accepts
 the snapshot only if its version matches the annotation and its schema major is
 3. Anything else keeps the last good snapshot.
+
+## Platform adapters
+
+An adapter fits the catalog to one serving platform using settings the
+platform already has. It declares what the platform can express
+(`Capabilities`), exports the snapshot in the platform's formats, and lists
+every preset it cannot express with a documented reason: `adapters.Coverage`
+fails an export where a preset is neither exported nor skipped. vLLM and SGLang
+presets are equally first-class. Adding a platform is adding a package that
+calls `adapters.Register` from `init`.
+
+```sh
+cd adapters && go run ./cmd/catalog-export -out ../dist   # every adapter and format
+go run ./cmd/catalog-export -adapter gpustack -out ../dist
+```
+
+Platforms without a fit matrix get the GPU count of the `-reference-family` fit
+(default `H100`, else the fit with the fewest GPUs).
+
+| Format | Use it with | Notes |
+|---|---|---|
+| `gpustack` (`model-catalog.yaml`) | GPUStack `--model-catalog-file <url>` or an admin catalog source | One spec per preset, `mode` = preset name (GPUStack shows one spec per mode). The pinned image goes in `image_name`, not `backend_version` (GPUStack refuses both, and its bundled runners predate our versions). vLLM specs come last per repo. Lost: source revision (no field), fit matrix. |
+| `airunway-recipes` | AI Runway `VLLM_RECIPES_BASE_URL=<base>` | vLLM presets only (the resolver is vLLM only; SGLang presets are skipped here). One recipe per Hugging Face repo; further vLLM presets are derived recipes (`meta.derived_from`). |
+| `airunway-deployments` | `kubectl apply -f deployments/...` or `POST /api/deployments` with `api/...` | Every vLLM and SGLang preset. SGLang runs only on AI Runway's Dynamo provider, on Dynamo's sglang-runtime image (the pinned SGLang image is not used); manifests carry `neocloud.ai/required-provider`. Gated models use AI Runway's `hf-token-secret`. Lost: source revision, ModelScope-only models. |
+
+A release publishes the exports with a cosign-signed `SHA256SUMS`
+(`SHA256SUMS.sigstore.json`) as release assets and on GitHub Pages, which serves
+the recipes tree. Neither platform verifies signatures itself; check by hand:
+
+```sh
+cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github\.com/fishing-agents/neocloud-catalog/\.github/workflows/release\.yml@refs/tags/v.*$'
+sha256sum -c SHA256SUMS
+```
+
+GitHub Pages must be enabled once in the repository settings (source: GitHub
+Actions) before the first release.
 
 ## Curate
 
@@ -115,11 +160,13 @@ cosign verify ghcr.io/fishing-agents/neocloud-catalog:v3 \
 ## Test
 
 ```sh
-go test ./...
+go test ./... && (cd adapters && go test ./...)
 ```
 
 Pure unit tests; no database. One test regenerates `data/` and fails when the
-committed snapshot is stale.
+committed snapshot is stale. Adapter exports are compared with golden files under
+`adapters/<platform>/testdata/`; after a deliberate change, regenerate them with
+`cd adapters && go test ./gpustack ./airunway -update` and review the diff.
 
 ## License
 

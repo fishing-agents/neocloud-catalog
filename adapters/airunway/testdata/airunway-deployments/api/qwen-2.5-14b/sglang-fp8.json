@@ -1,0 +1,13 @@
+{
+  "name": "qwen-2-5-14b-sglang-fp8",
+  "modelId": "RedHatAI/Qwen2.5-14B-Instruct-FP8-dynamic",
+  "engine": "sglang",
+  "provider": "dynamo",
+  "contextLength": 32768,
+  "resources": {
+    "gpu": 1
+  },
+  "engineArgs": {
+    "tool-call-parser": "qwen25"
+  }
+}

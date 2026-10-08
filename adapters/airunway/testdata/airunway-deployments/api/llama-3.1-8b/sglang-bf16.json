@@ -1,0 +1,14 @@
+{
+  "name": "llama-3-1-8b-sglang-bf16",
+  "modelId": "meta-llama/Llama-3.1-8B-Instruct",
+  "engine": "sglang",
+  "provider": "dynamo",
+  "contextLength": 8192,
+  "resources": {
+    "gpu": 1
+  },
+  "engineArgs": {
+    "tool-call-parser": "llama3"
+  },
+  "hfTokenSecret": "hf-token-secret"
+}

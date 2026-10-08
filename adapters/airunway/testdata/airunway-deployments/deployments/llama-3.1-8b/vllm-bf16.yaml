@@ -1,0 +1,36 @@
+{
+  "apiVersion": "airunway.ai/v1alpha1",
+  "kind": "ModelDeployment",
+  "metadata": {
+    "name": "llama-3-1-8b-vllm-bf16",
+    "annotations": {
+      "neocloud.ai/required-provider": "vllm"
+    }
+  },
+  "spec": {
+    "model": {
+      "id": "meta-llama/Llama-3.1-8B-Instruct",
+      "source": "huggingface"
+    },
+    "provider": {
+      "name": "vllm"
+    },
+    "engine": {
+      "type": "vllm",
+      "image": "vllm/vllm-openai:v0.31.0",
+      "contextLength": 8192,
+      "args": {
+        "enable-auto-tool-choice": "",
+        "tool-call-parser": "llama3_json"
+      }
+    },
+    "resources": {
+      "gpu": {
+        "count": 1
+      }
+    },
+    "secrets": {
+      "huggingFaceToken": "hf-token-secret"
+    }
+  }
+}

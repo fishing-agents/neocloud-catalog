@@ -1,0 +1,10 @@
+{
+  "name": "mixtral-8x7b-sglang-fp8",
+  "modelId": "RedHatAI/Mixtral-8x7B-Instruct-v0.1-FP8",
+  "engine": "sglang",
+  "provider": "dynamo",
+  "contextLength": 32768,
+  "resources": {
+    "gpu": 1
+  }
+}

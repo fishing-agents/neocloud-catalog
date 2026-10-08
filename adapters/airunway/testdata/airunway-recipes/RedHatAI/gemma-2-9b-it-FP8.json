@@ -1,0 +1,44 @@
+{
+  "hf_id": "RedHatAI/gemma-2-9b-it-FP8",
+  "meta": {
+    "title": "Gemma 2 9B",
+    "provider": "google",
+    "hardware": {
+      "a100": "supported",
+      "a10g": "supported",
+      "h100": "supported",
+      "h200": "supported",
+      "l4": "supported",
+      "mi300x": "supported",
+      "rtx_4090": "supported"
+    },
+    "derived_from": "google/gemma-2-9b-it",
+    "variant": "fp8"
+  },
+  "recommended_command": {
+    "hardware": "h100",
+    "variant": "fp8",
+    "docker_image": "vllm/vllm-openai:v0.31.0",
+    "argv": [
+      "vllm",
+      "serve",
+      "RedHatAI/gemma-2-9b-it-FP8",
+      "--max-model-len=8192"
+    ],
+    "hardware_profile": {
+      "gpu_count": 1
+    }
+  },
+  "model": {
+    "model_id": "RedHatAI/gemma-2-9b-it-FP8",
+    "min_vllm_version": "0.31.0",
+    "parameter_count": "9B",
+    "context_length": 8192
+  },
+  "variants": {
+    "default": {
+      "precision": "fp8",
+      "vram_minimum_gb": 13.02
+    }
+  }
+}

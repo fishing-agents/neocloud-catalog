@@ -1,0 +1,423 @@
+{
+  "model_sets": [
+    {
+      "name": "Llama 3.1 8B",
+      "home": "https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct",
+      "size": 8,
+      "categories": [
+        "llm"
+      ],
+      "capabilities": [
+        "context/128K"
+      ],
+      "licenses": [
+        "llama3.1"
+      ],
+      "specs": [
+        {
+          "mode": "sglang-bf16",
+          "quantization": "BF16",
+          "gpu_filters": {
+            "vendor": [
+              "nvidia"
+            ]
+          },
+          "source": "huggingface",
+          "huggingface_repo_id": "meta-llama/Llama-3.1-8B-Instruct",
+          "backend": "SGLang",
+          "image_name": "lmsysorg/sglang:v0.5.21",
+          "backend_parameters": [
+            "--tool-call-parser=llama3",
+            "--context-length=8192"
+          ]
+        },
+        {
+          "mode": "sglang-fp8",
+          "quantization": "FP8",
+          "gpu_filters": {
+            "vendor": [
+              "nvidia"
+            ]
+          },
+          "source": "huggingface",
+          "huggingface_repo_id": "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8",
+          "backend": "SGLang",
+          "image_name": "lmsysorg/sglang:v0.5.21",
+          "backend_parameters": [
+            "--tool-call-parser=llama3",
+            "--context-length=8192"
+          ]
+        },
+        {
+          "mode": "vllm-bf16",
+          "quantization": "BF16",
+          "gpu_filters": {
+            "vendor": [
+              "nvidia"
+            ]
+          },
+          "source": "huggingface",
+          "huggingface_repo_id": "meta-llama/Llama-3.1-8B-Instruct",
+          "backend": "vLLM",
+          "image_name": "vllm/vllm-openai:v0.31.0",
+          "backend_parameters": [
+            "--enable-auto-tool-choice",
+            "--tool-call-parser=llama3_json",
+            "--max-model-len=8192"
+          ]
+        },
+        {
+          "mode": "vllm-fp8",
+          "quantization": "FP8",
+          "gpu_filters": {
+            "vendor": [
+              "nvidia"
+            ]
+          },
+          "source": "huggingface",
+          "huggingface_repo_id": "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8",
+          "backend": "vLLM",
+          "image_name": "vllm/vllm-openai:v0.31.0",
+          "backend_parameters": [
+            "--enable-auto-tool-choice",
+            "--tool-call-parser=llama3_json",
+            "--max-model-len=8192"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Llama 3.1 70B",
+      "home": "https://huggingface.co/meta-llama/Llama-3.1-70B-Instruct",
+      "size": 70,
+      "categories": [
+        "llm"
+      ],
+      "capabilities": [
+        "context/128K"
+      ],
+      "licenses": [
+        "llama3.1"
+      ],
+      "specs": [
+        {
+          "mode": "sglang-bf16",
+          "quantization": "BF16",
+          "gpu_filters": {
+            "vendor": [
+              "nvidia"
+            ]
+          },
+          "source": "huggingface",
+          "huggingface_repo_id": "meta-llama/Llama-3.1-70B-Instruct",
+          "backend": "SGLang",
+          "image_name": "lmsysorg/sglang:v0.5.21",
+          "backend_parameters": [
+            "--tool-call-parser=llama3",
+            "--context-length=8192"
+          ]
+        },
+        {
+          "mode": "sglang-fp8",
+          "quantization": "FP8",
+          "gpu_filters": {
+            "vendor": [
+              "nvidia"
+            ]
+          },
+          "source": "huggingface",
+          "huggingface_repo_id": "RedHatAI/Meta-Llama-3.1-70B-Instruct-FP8",
+          "backend": "SGLang",
+          "image_name": "lmsysorg/sglang:v0.5.21",
+          "backend_parameters": [
+            "--tool-call-parser=llama3",
+            "--context-length=8192"
+          ]
+        },
+        {
+          "mode": "vllm-bf16",
+          "quantization": "BF16",
+          "gpu_filters": {
+            "vendor": [
+              "nvidia"
+            ]
+          },
+          "source": "huggingface",
+          "huggingface_repo_id": "meta-llama/Llama-3.1-70B-Instruct",
+          "backend": "vLLM",
+          "image_name": "vllm/vllm-openai:v0.31.0",
+          "backend_parameters": [
+            "--enable-auto-tool-choice",
+            "--tool-call-parser=llama3_json",
+            "--max-model-len=8192"
+          ]
+        },
+        {
+          "mode": "vllm-fp8",
+          "quantization": "FP8",
+          "gpu_filters": {
+            "vendor": [
+              "nvidia"
+            ]
+          },
+          "source": "huggingface",
+          "huggingface_repo_id": "RedHatAI/Meta-Llama-3.1-70B-Instruct-FP8",
+          "backend": "vLLM",
+          "image_name": "vllm/vllm-openai:v0.31.0",
+          "backend_parameters": [
+            "--enable-auto-tool-choice",
+            "--tool-call-parser=llama3_json",
+            "--max-model-len=8192"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Mixtral 8x7B",
+      "home": "https://huggingface.co/mistralai/Mixtral-8x7B-Instruct-v0.1",
+      "size": 47,
+      "categories": [
+        "llm"
+      ],
+      "capabilities": [
+        "context/32K"
+      ],
+      "licenses": [
+        "apache-2.0"
+      ],
+      "specs": [
+        {
+          "mode": "sglang-bf16",
+          "quantization": "BF16",
+          "gpu_filters": {
+            "vendor": [
+              "nvidia"
+            ]
+          },
+          "source": "huggingface",
+          "huggingface_repo_id": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+          "backend": "SGLang",
+          "image_name": "lmsysorg/sglang:v0.5.21",
+          "backend_parameters": [
+            "--context-length=32768"
+          ]
+        },
+        {
+          "mode": "sglang-fp8",
+          "quantization": "FP8",
+          "gpu_filters": {
+            "vendor": [
+              "nvidia"
+            ]
+          },
+          "source": "huggingface",
+          "huggingface_repo_id": "RedHatAI/Mixtral-8x7B-Instruct-v0.1-FP8",
+          "backend": "SGLang",
+          "image_name": "lmsysorg/sglang:v0.5.21",
+          "backend_parameters": [
+            "--context-length=32768"
+          ]
+        },
+        {
+          "mode": "vllm-bf16",
+          "quantization": "BF16",
+          "gpu_filters": {
+            "vendor": [
+              "nvidia"
+            ]
+          },
+          "source": "huggingface",
+          "huggingface_repo_id": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+          "backend": "vLLM",
+          "image_name": "vllm/vllm-openai:v0.31.0",
+          "backend_parameters": [
+            "--max-model-len=32768"
+          ]
+        },
+        {
+          "mode": "vllm-fp8",
+          "quantization": "FP8",
+          "gpu_filters": {
+            "vendor": [
+              "nvidia"
+            ]
+          },
+          "source": "huggingface",
+          "huggingface_repo_id": "RedHatAI/Mixtral-8x7B-Instruct-v0.1-FP8",
+          "backend": "vLLM",
+          "image_name": "vllm/vllm-openai:v0.31.0",
+          "backend_parameters": [
+            "--max-model-len=32768"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Gemma 2 9B",
+      "home": "https://huggingface.co/google/gemma-2-9b-it",
+      "size": 9,
+      "categories": [
+        "llm"
+      ],
+      "capabilities": [
+        "context/8K"
+      ],
+      "licenses": [
+        "gemma"
+      ],
+      "specs": [
+        {
+          "mode": "sglang-bf16",
+          "quantization": "BF16",
+          "gpu_filters": {
+            "vendor": [
+              "nvidia"
+            ]
+          },
+          "source": "huggingface",
+          "huggingface_repo_id": "google/gemma-2-9b-it",
+          "backend": "SGLang",
+          "image_name": "lmsysorg/sglang:v0.5.21",
+          "backend_parameters": [
+            "--context-length=8192"
+          ]
+        },
+        {
+          "mode": "sglang-fp8",
+          "quantization": "FP8",
+          "gpu_filters": {
+            "vendor": [
+              "nvidia"
+            ]
+          },
+          "source": "huggingface",
+          "huggingface_repo_id": "RedHatAI/gemma-2-9b-it-FP8",
+          "backend": "SGLang",
+          "image_name": "lmsysorg/sglang:v0.5.21",
+          "backend_parameters": [
+            "--context-length=8192"
+          ]
+        },
+        {
+          "mode": "vllm-bf16",
+          "quantization": "BF16",
+          "gpu_filters": {
+            "vendor": [
+              "nvidia"
+            ]
+          },
+          "source": "huggingface",
+          "huggingface_repo_id": "google/gemma-2-9b-it",
+          "backend": "vLLM",
+          "image_name": "vllm/vllm-openai:v0.31.0",
+          "backend_parameters": [
+            "--max-model-len=8192"
+          ]
+        },
+        {
+          "mode": "vllm-fp8",
+          "quantization": "FP8",
+          "gpu_filters": {
+            "vendor": [
+              "nvidia"
+            ]
+          },
+          "source": "huggingface",
+          "huggingface_repo_id": "RedHatAI/gemma-2-9b-it-FP8",
+          "backend": "vLLM",
+          "image_name": "vllm/vllm-openai:v0.31.0",
+          "backend_parameters": [
+            "--max-model-len=8192"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Qwen 2.5 14B",
+      "home": "https://huggingface.co/Qwen/Qwen2.5-14B-Instruct",
+      "size": 14,
+      "categories": [
+        "llm"
+      ],
+      "capabilities": [
+        "context/128K"
+      ],
+      "licenses": [
+        "apache-2.0"
+      ],
+      "specs": [
+        {
+          "mode": "sglang-bf16",
+          "quantization": "BF16",
+          "gpu_filters": {
+            "vendor": [
+              "nvidia"
+            ]
+          },
+          "source": "huggingface",
+          "huggingface_repo_id": "Qwen/Qwen2.5-14B-Instruct",
+          "backend": "SGLang",
+          "image_name": "lmsysorg/sglang:v0.5.21",
+          "backend_parameters": [
+            "--tool-call-parser=qwen25",
+            "--context-length=32768"
+          ]
+        },
+        {
+          "mode": "sglang-fp8",
+          "quantization": "FP8",
+          "gpu_filters": {
+            "vendor": [
+              "nvidia"
+            ]
+          },
+          "source": "huggingface",
+          "huggingface_repo_id": "RedHatAI/Qwen2.5-14B-Instruct-FP8-dynamic",
+          "backend": "SGLang",
+          "image_name": "lmsysorg/sglang:v0.5.21",
+          "backend_parameters": [
+            "--tool-call-parser=qwen25",
+            "--context-length=32768"
+          ]
+        },
+        {
+          "mode": "vllm-bf16",
+          "quantization": "BF16",
+          "gpu_filters": {
+            "vendor": [
+              "nvidia"
+            ]
+          },
+          "source": "huggingface",
+          "huggingface_repo_id": "Qwen/Qwen2.5-14B-Instruct",
+          "backend": "vLLM",
+          "image_name": "vllm/vllm-openai:v0.31.0",
+          "backend_parameters": [
+            "--enable-auto-tool-choice",
+            "--tool-call-parser=hermes",
+            "--max-model-len=32768"
+          ]
+        },
+        {
+          "mode": "vllm-fp8",
+          "quantization": "FP8",
+          "gpu_filters": {
+            "vendor": [
+              "nvidia"
+            ]
+          },
+          "source": "huggingface",
+          "huggingface_repo_id": "RedHatAI/Qwen2.5-14B-Instruct-FP8-dynamic",
+          "backend": "vLLM",
+          "image_name": "vllm/vllm-openai:v0.31.0",
+          "backend_parameters": [
+            "--enable-auto-tool-choice",
+            "--tool-call-parser=hermes",
+            "--max-model-len=32768"
+          ]
+        }
+      ]
+    }
+  ],
+  "draft_models": []
+}

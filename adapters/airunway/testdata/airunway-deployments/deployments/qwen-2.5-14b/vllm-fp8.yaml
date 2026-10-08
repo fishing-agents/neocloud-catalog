@@ -1,0 +1,33 @@
+{
+  "apiVersion": "airunway.ai/v1alpha1",
+  "kind": "ModelDeployment",
+  "metadata": {
+    "name": "qwen-2-5-14b-vllm-fp8",
+    "annotations": {
+      "neocloud.ai/required-provider": "vllm"
+    }
+  },
+  "spec": {
+    "model": {
+      "id": "RedHatAI/Qwen2.5-14B-Instruct-FP8-dynamic",
+      "source": "huggingface"
+    },
+    "provider": {
+      "name": "vllm"
+    },
+    "engine": {
+      "type": "vllm",
+      "image": "vllm/vllm-openai:v0.31.0",
+      "contextLength": 32768,
+      "args": {
+        "enable-auto-tool-choice": "",
+        "tool-call-parser": "hermes"
+      }
+    },
+    "resources": {
+      "gpu": {
+        "count": 1
+      }
+    }
+  }
+}

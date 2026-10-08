@@ -1,0 +1,11 @@
+{
+  "name": "gemma-2-9b-sglang-fp8",
+  "modelId": "RedHatAI/gemma-2-9b-it-FP8",
+  "engine": "sglang",
+  "provider": "dynamo",
+  "contextLength": 8192,
+  "resources": {
+    "gpu": 1
+  },
+  "hfTokenSecret": "hf-token-secret"
+}

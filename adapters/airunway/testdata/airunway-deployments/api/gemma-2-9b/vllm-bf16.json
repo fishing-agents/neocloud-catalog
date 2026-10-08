@@ -1,0 +1,12 @@
+{
+  "name": "gemma-2-9b-vllm-bf16",
+  "modelId": "google/gemma-2-9b-it",
+  "engine": "vllm",
+  "provider": "vllm",
+  "imageRef": "vllm/vllm-openai:v0.31.0",
+  "contextLength": 8192,
+  "resources": {
+    "gpu": 1
+  },
+  "hfTokenSecret": "hf-token-secret"
+}

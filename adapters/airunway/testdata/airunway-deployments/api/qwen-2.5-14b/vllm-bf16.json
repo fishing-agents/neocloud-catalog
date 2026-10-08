@@ -1,0 +1,15 @@
+{
+  "name": "qwen-2-5-14b-vllm-bf16",
+  "modelId": "Qwen/Qwen2.5-14B-Instruct",
+  "engine": "vllm",
+  "provider": "vllm",
+  "imageRef": "vllm/vllm-openai:v0.31.0",
+  "contextLength": 32768,
+  "resources": {
+    "gpu": 1
+  },
+  "engineArgs": {
+    "enable-auto-tool-choice": "",
+    "tool-call-parser": "hermes"
+  }
+}

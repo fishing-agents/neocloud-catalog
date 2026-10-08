@@ -1,0 +1,31 @@
+{
+  "apiVersion": "airunway.ai/v1alpha1",
+  "kind": "ModelDeployment",
+  "metadata": {
+    "name": "mixtral-8x7b-sglang-bf16",
+    "annotations": {
+      "neocloud.ai/required-provider": "dynamo"
+    }
+  },
+  "spec": {
+    "model": {
+      "id": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+      "source": "huggingface"
+    },
+    "provider": {
+      "name": "dynamo"
+    },
+    "engine": {
+      "type": "sglang",
+      "contextLength": 32768,
+      "args": {
+        "tp-size": "2"
+      }
+    },
+    "resources": {
+      "gpu": {
+        "count": 2
+      }
+    }
+  }
+}

@@ -1,5 +1,7 @@
-# Publishes the committed snapshot as a cosign-signed OCI artifact on GHCR.
-# Signing is keyless: the signature binds the manifest digest to this workflow's
+# Publishes the committed snapshot as a cosign-signed OCI artifact on GHCR, and
+# the platform-adapter exports (GPUStack catalog, AI Runway recipes and
+# deployments) with a cosign-signed SHA256SUMS as release assets and on GitHub
+# Pages. Signing is keyless: the signature binds the content to this workflow's
 # identity, https://github.com/<owner>/neocloud-catalog/.github/workflows/release.yml@refs/tags/<tag>,
 # which is what neocloud's catalog.identity pins.
 name: release
@@ -9,9 +11,10 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: read
+  contents: write
   packages: write
   id-token: write
+  pages: write
 
 jobs:
   publish:
@@ -23,9 +26,10 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - name: Snapshot is reproducible
+      - name: Snapshot and exports are reproducible
         run: |
           go test ./...
+          (cd adapters && go test ./...)
           go run ./cmd/catalog-generate
           git diff --exit-code snapshots/
       - uses: oras-project/setup-oras@v1
@@ -53,3 +57,33 @@ jobs:
           cosign verify "$REPO@${{ steps.push.outputs.digest }}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             --certificate-identity "$GITHUB_SERVER_URL/$GITHUB_WORKFLOW_REF" >/dev/null
+      - name: Export platform formats
+        run: (cd adapters && go run ./cmd/catalog-export -out ../dist)
+      - name: Sign the export checksums
+        run: |
+          cosign sign-blob --yes --bundle dist/SHA256SUMS.sigstore.json dist/SHA256SUMS
+          cosign verify-blob dist/SHA256SUMS --bundle dist/SHA256SUMS.sigstore.json \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity "$GITHUB_SERVER_URL/$GITHUB_WORKFLOW_REF"
+      - name: Release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tar -C dist -czf "neocloud-catalog-exports-$GITHUB_REF_NAME.tar.gz" .
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes "Catalog $(jq -r .version snapshots/v3/catalog.json)" \
+            "neocloud-catalog-exports-$GITHUB_REF_NAME.tar.gz" dist/SHA256SUMS dist/SHA256SUMS.sigstore.json dist/gpustack/model-catalog.yaml
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+
+  # GitHub Pages serves the latest release's exports as a directory tree, which
+  # AI Runway's recipes client needs (models.json plus <org>/<model>.json).
+  pages:
+    needs: publish
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
