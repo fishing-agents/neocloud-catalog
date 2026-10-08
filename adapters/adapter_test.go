@@ -1,6 +1,8 @@
 package adapters
 
 import (
+	"cmp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -45,24 +47,54 @@ func TestCoverage(t *testing.T) {
 
 func TestReferenceFit(t *testing.T) {
 	prof := "1g.10gb"
-	snap := catalog.CatalogSnapshot{Fits: []catalog.ModelFit{
-		{ModelSlug: "m", Quantization: "bf16", DeviceFamily: "A100", GPUCount: 2, MaxContext: 8192},
-		{ModelSlug: "m", Quantization: "bf16", DeviceFamily: "MI300X", GPUCount: 1, MaxContext: 32768},
-		{ModelSlug: "m", Quantization: "bf16", DeviceFamily: "L4", GPUCount: 1, MaxContext: 4096},
-		{ModelSlug: "m", Quantization: "bf16", DeviceFamily: "A100", Profile: &prof, GPUCount: 1, MaxContext: 99999},
-		{ModelSlug: "m", Quantization: "fp8", DeviceFamily: "H100", GPUCount: 1, MaxContext: 8192},
-	}}
-	if f, ok := ReferenceFit(snap, "m", "bf16", Options{ReferenceFamily: "A100"}); !ok || f.GPUCount != 2 || f.Profile != nil {
-		t.Errorf("A100 reference = %+v %v, want the whole-GPU A100 fit", f, ok)
+	fit := func(family string, gpus, ctx int, mode catalog.FitMode) catalog.ModelFit {
+		return catalog.ModelFit{ModelSlug: "m", Quantization: "fp8", KVCacheDType: "auto", DeviceFamily: family, Mode: mode, GPUCount: gpus, MaxContext: ctx}
 	}
-	if f, ok := ReferenceFit(snap, "m", "bf16", Options{}); !ok || f.DeviceFamily != "MI300X" {
-		t.Errorf("no H100 fit = %+v %v, want the fewest GPUs with the largest context (MI300X)", f, ok)
+	snap := catalog.CatalogSnapshot{
+		Families: []catalog.Family{{Name: "A100", Vendor: "nvidia"}, {Name: "L4", Vendor: "nvidia"}, {Name: "A10G", Vendor: "nvidia"}, {Name: "MI300X", Vendor: "amd"}},
+		Fits: []catalog.ModelFit{
+			fit("A100", 2, 8192, catalog.FitEmulated),
+			fit("A10G", 1, 4096, catalog.FitEmulated),
+			fit("L4", 4, 2048, catalog.FitNative),
+			fit("MI300X", 1, 32768, catalog.FitNative),
+			{ModelSlug: "m", Quantization: "fp8", KVCacheDType: "auto", DeviceFamily: "A100", Profile: &prof, Mode: catalog.FitEmulated, GPUCount: 1, MaxContext: 99999},
+			{ModelSlug: "m", Quantization: "fp8", KVCacheDType: "fp8", DeviceFamily: "A10G", Mode: catalog.FitEmulated, GPUCount: 1, MaxContext: 8192},
+			{ModelSlug: "m", Quantization: "bf16", KVCacheDType: "auto", DeviceFamily: "H100", Mode: catalog.FitNative, GPUCount: 1, MaxContext: 8192},
+		},
 	}
-	if f, ok := ReferenceFit(snap, "m", "fp8", Options{}); !ok || f.DeviceFamily != "H100" {
-		t.Errorf("default reference = %+v %v, want H100", f, ok)
+	ref := func(kv string) Ref {
+		return Ref{Model: catalog.ModelTemplate{Slug: "m"}, Preset: catalog.Preset{Quantization: "fp8", KVCacheDType: kv}}
 	}
-	if _, ok := ReferenceFit(snap, "m", "int4", Options{}); ok {
-		t.Error("a quantization without fits returned one")
+	nvidia, both := []string{"nvidia"}, []string{"amd", "nvidia"}
+	for name, c := range map[string]struct {
+		r       Ref
+		vendors []string
+		opts    Options
+		family  string
+	}{
+		"reference family, whole GPUs, even emulated": {ref(""), nvidia, Options{ReferenceFamily: "A100"}, "A100"},
+		"native before fewer GPUs":                    {ref(""), nvidia, Options{}, "L4"},
+		"other vendors excluded":                      {ref("auto"), both, Options{}, "MI300X"},
+		"reference family of another vendor ignored":  {ref(""), nvidia, Options{ReferenceFamily: "MI300X"}, "L4"},
+		"the preset's KV cache dtype":                 {ref("fp8"), nvidia, Options{}, "A10G"},
+	} {
+		f, ok := ReferenceFit(snap, c.r, c.vendors, c.opts)
+		if !ok || f.DeviceFamily != c.family || f.Profile != nil || f.KVCacheDType != cmp.Or(c.r.Preset.KVCacheDType, "auto") {
+			t.Errorf("%s: fit = %+v %v, want %s", name, f, ok, c.family)
+		}
+	}
+	if f, ok := ReferenceFit(snap, ref(""), []string{"cpu"}, Options{}); ok {
+		t.Errorf("a vendor without fits returned %+v", f)
+	}
+}
+
+func TestVendors(t *testing.T) {
+	bv := catalog.BackendVersion{Images: map[string]string{"nvidia": "n", "cpu": "c", "amd": "a"}}
+	if got := Vendors(catalog.Preset{}, bv); !slices.Equal(got, []string{"amd", "cpu", "nvidia"}) {
+		t.Errorf("vendors = %v, want every image's vendor, sorted", got)
+	}
+	if got := Vendors(catalog.Preset{Vendors: []string{"nvidia", "intel"}}, bv); !slices.Equal(got, []string{"nvidia"}) {
+		t.Errorf("vendors = %v, want the preset's vendors that have an image", got)
 	}
 }
 
@@ -77,4 +109,25 @@ func TestRegistry(t *testing.T) {
 		}
 	}()
 	Register(fake{})
+}
+
+type fakeExt struct{ ns, adapter string }
+
+func (x fakeExt) Namespace() string                                  { return x.ns }
+func (x fakeExt) Adapter() string                                    { return x.adapter }
+func (fakeExt) Apply(string, catalog.CatalogSnapshot, *Export) error { return nil }
+
+func TestExportExtensionRegistry(t *testing.T) {
+	b, a := fakeExt{"example.com/b", "gpustack"}, fakeExt{"example.com/a", "gpustack"}
+	RegisterExportExtension(b)
+	RegisterExportExtension(a)
+	if got := ExportExtensions(); !slices.Equal(got, []ExportExtension{a, b}) {
+		t.Fatalf("export extensions = %v, want both, by namespace", got)
+	}
+	defer func() {
+		if recover() == nil {
+			t.Error("a second extension of one namespace for one adapter did not panic")
+		}
+	}()
+	RegisterExportExtension(a)
 }

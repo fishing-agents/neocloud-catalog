@@ -1,7 +1,8 @@
 // Command catalog-export renders the catalog snapshot in the formats of the
 // registered platform adapters: <out>/<format>/... per format, and
-// <out>/SHA256SUMS over every file for the release to sign. An export whose
-// presets are not all exported or skipped with a documented reason fails.
+// <out>/SHA256SUMS over every file for the release to sign. Registered export
+// extensions then render their payloads into their adapter's formats. An export
+// whose presets are not all exported or skipped with a documented reason fails.
 package main
 
 import (
@@ -32,6 +33,7 @@ func main() {
 	flag.StringVar(&cfg.out, "out", "dist", "output directory")
 	flag.StringVar(&cfg.opts.ReferenceFamily, "reference-family", adapters.DefaultReferenceFamily, "device family whose fit sets the GPU count on platforms without a fit matrix")
 	flag.Parse()
+	cfg.extensions = adapters.ExportExtensions()
 	if err := run(cfg, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "catalog-export:", err)
 		os.Exit(1)
@@ -41,6 +43,7 @@ func main() {
 type config struct {
 	adapter, format, snapshot, out string
 	opts                           adapters.Options
+	extensions                     []adapters.ExportExtension
 }
 
 func run(cfg config, log io.Writer) error {
@@ -72,6 +75,9 @@ func run(cfg config, log io.Writer) error {
 			if err != nil {
 				return fmt.Errorf("%s %s: %w", name, format, err)
 			}
+			if err := extend(cfg.extensions, name, format, snap, &e); err != nil {
+				return err
+			}
 			if err := adapters.Coverage(a, snap, format, e); err != nil {
 				return err
 			}
@@ -96,7 +102,7 @@ func run(cfg config, log io.Writer) error {
 
 func load(path string) (catalog.CatalogSnapshot, error) {
 	if path == "" {
-		return catalog.SnapshotV3()
+		return catalog.SnapshotV4()
 	}
 	var snap catalog.CatalogSnapshot
 	b, err := os.ReadFile(path)
@@ -107,6 +113,24 @@ func load(path string) (catalog.CatalogSnapshot, error) {
 		return snap, fmt.Errorf("%s: %w", path, err)
 	}
 	return snap, snap.Validate()
+}
+
+// extend runs the extensions of adapter on its export of format. An extension
+// may change the files but not which presets are exported or skipped.
+func extend(xs []adapters.ExportExtension, adapter, format string, snap catalog.CatalogSnapshot, e *adapters.Export) error {
+	for _, x := range xs {
+		if x.Adapter() != adapter {
+			continue
+		}
+		exported, skipped := slices.Clone(e.Exported), slices.Clone(e.Skipped)
+		if err := x.Apply(format, snap, e); err != nil {
+			return fmt.Errorf("%s %s: extension %s: %w", adapter, format, x.Namespace(), err)
+		}
+		if !slices.Equal(e.Exported, exported) || !slices.Equal(e.Skipped, skipped) {
+			return fmt.Errorf("%s %s: extension %s changed the exported or skipped presets", adapter, format, x.Namespace())
+		}
+	}
+	return nil
 }
 
 func write(path string, body []byte) error {

@@ -1,0 +1,40 @@
+{
+  "apiVersion": "airunway.ai/v1alpha1",
+  "kind": "ModelDeployment",
+  "metadata": {
+    "name": "llama-3-1-8b-sglang-bf16-eagle3",
+    "annotations": {
+      "neocloud.io/required-provider": "dynamo"
+    }
+  },
+  "spec": {
+    "model": {
+      "id": "meta-llama/Llama-3.1-8B-Instruct",
+      "source": "huggingface"
+    },
+    "provider": {
+      "name": "dynamo"
+    },
+    "engine": {
+      "type": "sglang",
+      "contextLength": 8192,
+      "args": {
+        "speculative-algorithm": "EAGLE3",
+        "speculative-draft-model-path": "lmsys/sglang-EAGLE3-LLaMA3.1-Instruct-8B",
+        "speculative-draft-model-revision": "28a53ce8911434c031d7c78392abb26d898ec293",
+        "speculative-eagle-topk": "1",
+        "speculative-num-draft-tokens": "4",
+        "speculative-num-steps": "3",
+        "tool-call-parser": "llama3"
+      }
+    },
+    "resources": {
+      "gpu": {
+        "count": 1
+      }
+    },
+    "secrets": {
+      "huggingFaceToken": "hf-token-secret"
+    }
+  }
+}

@@ -4,12 +4,16 @@ import (
 	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	catalog "github.com/fishman/neocloud-catalog"
+	"github.com/fishman/neocloud-catalog/adapters"
 )
 
 // The release publishes this command's output and signs SHA256SUMS: the output
@@ -78,5 +82,72 @@ func TestRunRefusesUnknownSelection(t *testing.T) {
 		if err := run(cfg, io.Discard); err == nil {
 			t.Errorf("%s: run accepted it", name)
 		}
+	}
+}
+
+// annotate adds an annotation to one AI Runway manifest, as an enterprise
+// extension rendering its payload would.
+type annotate struct{}
+
+func (annotate) Namespace() string { return "example.com/test" }
+func (annotate) Adapter() string   { return "airunway" }
+func (annotate) Apply(format string, _ catalog.CatalogSnapshot, e *adapters.Export) error {
+	for i, art := range e.Artifacts {
+		if format != "airunway-deployments" || art.Path != "deployments/llama-3.1-8b/vllm-bf16.yaml" {
+			continue
+		}
+		var md map[string]any
+		if err := json.Unmarshal(art.Body, &md); err != nil {
+			return err
+		}
+		md["metadata"].(map[string]any)["annotations"].(map[string]any)["example.com/test"] = "on"
+		body, err := json.Marshal(md)
+		if err != nil {
+			return err
+		}
+		e.Artifacts[i].Body = body
+	}
+	return nil
+}
+
+// unexport drops a preset from the export it extends.
+type unexport struct{}
+
+func (unexport) Namespace() string { return "example.com/unexport" }
+func (unexport) Adapter() string   { return "airunway" }
+func (unexport) Apply(_ string, _ catalog.CatalogSnapshot, e *adapters.Export) error {
+	e.Exported = e.Exported[1:]
+	return nil
+}
+
+// Extensions run for their adapter after its export: they may change the
+// files, which the sums then cover, but not which presets are exported.
+func TestExportExtensions(t *testing.T) {
+	out := t.TempDir()
+	cfg := config{adapter: "airunway", format: "airunway-deployments", out: out, extensions: []adapters.ExportExtension{annotate{}}}
+	if err := run(cfg, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	path := "airunway-deployments/deployments/llama-3.1-8b/vllm-bf16.yaml"
+	body, err := os.ReadFile(filepath.Join(out, path))
+	if err != nil || !strings.Contains(string(body), `"example.com/test":"on"`) {
+		t.Errorf("%s = %s (err %v), want the extension's annotation", path, body, err)
+	}
+	sums, _ := os.ReadFile(filepath.Join(out, "SHA256SUMS"))
+	h := sha256.Sum256(body)
+	if !strings.Contains(string(sums), hex.EncodeToString(h[:])+"  "+path) {
+		t.Errorf("SHA256SUMS does not cover the extended %s", path)
+	}
+
+	cfg.extensions = []adapters.ExportExtension{unexport{}}
+	cfg.out = t.TempDir()
+	if err := run(cfg, io.Discard); err == nil || !strings.Contains(err.Error(), "example.com/unexport") {
+		t.Errorf("an extension changing the exported presets: err = %v", err)
+	}
+
+	// An extension of another adapter does not run.
+	cfg = config{adapter: "gpustack", out: t.TempDir(), extensions: []adapters.ExportExtension{unexport{}}}
+	if err := run(cfg, io.Discard); err != nil {
+		t.Errorf("an airunway extension ran on gpustack: %v", err)
 	}
 }

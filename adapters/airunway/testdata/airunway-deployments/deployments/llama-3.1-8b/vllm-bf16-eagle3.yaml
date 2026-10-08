@@ -1,0 +1,38 @@
+{
+  "apiVersion": "airunway.ai/v1alpha1",
+  "kind": "ModelDeployment",
+  "metadata": {
+    "name": "llama-3-1-8b-vllm-bf16-eagle3",
+    "annotations": {
+      "neocloud.io/required-provider": "vllm"
+    }
+  },
+  "spec": {
+    "model": {
+      "id": "meta-llama/Llama-3.1-8B-Instruct",
+      "source": "huggingface"
+    },
+    "provider": {
+      "name": "vllm"
+    },
+    "engine": {
+      "type": "vllm",
+      "image": "vllm/vllm-openai:v0.31.0",
+      "contextLength": 8192,
+      "args": {
+        "chat-template": "/vllm-workspace/examples/tool_chat_template_llama3.1_json.jinja",
+        "enable-auto-tool-choice": "",
+        "speculative-config": "{\"method\":\"eagle3\",\"model\":\"RedHatAI/Llama-3.1-8B-Instruct-speculator.eagle3\",\"num_speculative_tokens\":3,\"revision\":\"f4fa34a8f803a0ba75d048d6b3dbc1ad5149e9ac\"}",
+        "tool-call-parser": "llama3_json"
+      }
+    },
+    "resources": {
+      "gpu": {
+        "count": 1
+      }
+    },
+    "secrets": {
+      "huggingFaceToken": "hf-token-secret"
+    }
+  }
+}

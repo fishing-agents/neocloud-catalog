@@ -6,6 +6,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -39,7 +40,7 @@ func export(t *testing.T, snap catalog.CatalogSnapshot) (adapters.Export, docume
 
 func committed(t *testing.T) catalog.CatalogSnapshot {
 	t.Helper()
-	snap, err := catalog.SnapshotV3()
+	snap, err := catalog.SnapshotV4()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,58 +69,189 @@ func TestGolden(t *testing.T) {
 	}
 }
 
+// key names a preset.
+func key(model, preset string) adapters.PresetKey {
+	return adapters.PresetKey{Model: model, Preset: preset}
+}
+
+// specs returns the specs of a preset, in document order.
+func specs(doc document, r adapters.Ref) []spec {
+	var out []spec
+	for _, set := range doc.ModelSets {
+		if set.Name == r.Model.Name {
+			for _, s := range set.Specs {
+				if s.Mode == r.Preset.Name {
+					out = append(out, s)
+				}
+			}
+		}
+	}
+	return out
+}
+
+// Every preset GPUStack can run is one spec per GPU vendor it has an image
+// for, carrying Render's arguments without a GPU count (GPUStack's scheduler
+// sizes it) and the compute capability its backend version and fit mode need.
 func TestCommittedPresets(t *testing.T) {
 	snap := committed(t)
 	e, doc := export(t, snap)
-	if len(e.Skipped) > 0 {
-		t.Errorf("committed snapshot skips %v", e.Skipped)
+	wantSkips := []adapters.Skip{
+		{PresetKey: key("llama-3.1-70b", "sglang-bf16-pd"), Reason: SkipTopology},
+		{PresetKey: key("llama-3.1-70b", "vllm-bf16-2node"), Reason: SkipTopology},
 	}
-	wrongFlag := map[string]string{"vllm": "--context-length", "sglang": "--max-model-len"}
+	if !slices.Equal(e.Skipped, wantSkips) {
+		t.Errorf("skipped = %v, want %v", e.Skipped, wantSkips)
+	}
+	wantCC := map[string]string{"vllm/fp8": ">=7.5", "sglang/fp8": ">=8.0", "vllm/float": ">=8.0", "sglang/float": ">=8.0", "llamacpp/gguf": ""}
 	for _, r := range adapters.Presets(snap) {
-		set := doc.ModelSets[slices.IndexFunc(doc.ModelSets, func(s modelSet) bool { return s.Name == r.Model.Name })]
-		i := slices.IndexFunc(set.Specs, func(s spec) bool { return s.Mode == r.Preset.Name })
-		if i < 0 {
-			t.Errorf("%v: no spec with mode %q", r.Key(), r.Preset.Name)
+		if !slices.Contains(e.Exported, r.Key()) {
 			continue
 		}
-		params := set.Specs[i].BackendParameters
-		want, _ := adapters.ContextArg(r.Preset.Backend, r.Model.DefaultContext)
-		if params[len(params)-1] != want {
-			t.Errorf("%v: context = %q, want %q", r.Key(), params[len(params)-1], want)
+		bv, _ := adapters.BackendVersion(snap, r.Preset.Backend, r.Preset.BackendVersion)
+		q, _ := r.Quantization()
+		args, err := catalog.Render(r.Model, r.Preset, bv, catalog.ModelFit{}, adapters.Draft(snap, r.Preset))
+		if err != nil {
+			t.Fatal(err)
 		}
-		if slices.ContainsFunc(params, func(p string) bool { return strings.HasPrefix(p, wrongFlag[r.Preset.Backend]) }) {
-			t.Errorf("%v: %s carries the other backend's context flag: %v", r.Key(), r.Preset.Backend, params)
+		vendors := slices.DeleteFunc(adapters.Vendors(r.Preset, bv), func(v string) bool { return v == "cpu" })
+		got := specs(doc, r)
+		if len(got) != len(vendors) {
+			t.Errorf("%v: %d specs, want one per vendor of %v", r.Key(), len(got), vendors)
+			continue
+		}
+		for i, s := range got {
+			v := vendors[i]
+			cc := ""
+			if v == "nvidia" {
+				cc = wantCC[r.Preset.Backend+"/"+q.Kind]
+			}
+			if s.GPUFilters == nil || !slices.Equal(s.GPUFilters.Vendor, []string{v}) || s.GPUFilters.ComputeCapability != cc || s.ImageName != bv.Images[v] {
+				t.Errorf("%v: spec %d filters %+v on %s, want vendor %s, compute capability %q, image %s", r.Key(), i, s.GPUFilters, s.ImageName, v, cc, bv.Images[v])
+			}
+			if r.Preset.Backend == "llamacpp" {
+				if s.Backend != "Custom" || s.BackendParameters != nil || !strings.HasSuffix(s.RunCommand, " "+strings.Join(args, " ")) {
+					t.Errorf("%v: %s run_command %q parameters %q, want Custom ending in %q", r.Key(), s.Backend, s.RunCommand, s.BackendParameters, args)
+				}
+				continue
+			}
+			if want := parameters(args); !slices.Equal(s.BackendParameters, want) || s.RunCommand != "" {
+				t.Errorf("%v: backend_parameters = %q, want %q", r.Key(), s.BackendParameters, want)
+			}
 		}
 	}
 	// GPUStack takes a repository's defaults from its last spec; that must be
-	// the vLLM one, its default backend.
+	// a vLLM one, its default backend, without speculative decoding.
+	speculative := map[string]bool{}
+	for _, r := range adapters.Presets(snap) {
+		speculative[r.Preset.Name] = r.Preset.Speculative != nil
+	}
 	for _, set := range doc.ModelSets {
-		last := map[string]string{}
+		last := map[string]spec{}
+		vllm := map[string]bool{}
 		for _, s := range set.Specs {
-			last[s.HuggingFaceRepoID+s.ModelScopeModelID] = s.Backend
+			repo := s.HuggingFaceRepoID + s.ModelScopeModelID
+			last[repo] = s
+			vllm[repo] = vllm[repo] || s.Backend == "vLLM"
 		}
-		for repo, backend := range last {
-			if backend != "vLLM" {
-				t.Errorf("%s: last spec of %s is %s, want vLLM", set.Name, repo, backend)
+		for repo, s := range last {
+			if vllm[repo] && (s.Backend != "vLLM" || speculative[s.Mode]) {
+				t.Errorf("%s: last spec of %s is %s %s, want a plain vLLM spec", set.Name, repo, s.Backend, s.Mode)
 			}
+		}
+	}
+}
+
+// llama.cpp has no GPUStack backend, so it runs as Custom: the pinned image's
+// entrypoint is llama-server, run_command its arguments with GPUStack's
+// placeholders, and the GGUF file the source's filename.
+func TestLlamaCpp(t *testing.T) {
+	snap := committed(t)
+	_, doc := export(t, snap)
+	r := adapters.Presets(snap)[slices.IndexFunc(adapters.Presets(snap), func(r adapters.Ref) bool {
+		return r.Key() == key("llama-3.1-8b", "llamacpp-q4km")
+	})]
+	got := specs(doc, r)
+	want := spec{
+		Mode:                "llamacpp-q4km",
+		Quantization:        "Q4_K_M",
+		GPUFilters:          &gpuFilters{Vendor: []string{"nvidia"}},
+		Source:              "huggingface",
+		HuggingFaceRepoID:   "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
+		HuggingFaceFilename: "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+		Backend:             "Custom",
+		ImageName:           "ghcr.io/ggml-org/llama.cpp:server-cuda-b11429",
+		RunCommand:          "--model {{model_path}} --alias {{model_name}} --host 0.0.0.0 --port {{port}} -c 8192 --jinja",
+	}
+	if len(got) != 2 || !reflect.DeepEqual(got[1], want) || got[0].ImageName != "ghcr.io/ggml-org/llama.cpp:server-rocm-b11429" {
+		t.Errorf("specs = %+v, want an amd spec then %+v", got, want)
+	}
+}
+
+func TestComputeCapability(t *testing.T) {
+	images := map[string]string{"nvidia": "n", "amd": "a"}
+	snap := catalog.CatalogSnapshot{
+		Families: []catalog.Family{
+			{Name: "A100", Vendor: "nvidia", ComputeCapability: "8.0", DTypes: []string{"bf16"}},
+			{Name: "H100", Vendor: "nvidia", ComputeCapability: "9.0", DTypes: []string{"bf16", "fp8"}},
+			{Name: "L4", Vendor: "nvidia", ComputeCapability: "8.9", DTypes: []string{"bf16", "fp8"}},
+			{Name: "MI300X", Vendor: "amd", ComputeCapability: "gfx942", DTypes: []string{"bf16", "fp8"}},
+		},
+		Backends: []catalog.Backend{
+			{Name: "vllm", Versions: []catalog.BackendVersion{{Version: "v1", Images: images, MinComputeCapability: "7.5", Quantizations: map[string]catalog.QuantSupport{
+				"float": {NativeDType: "bf16"}, "fp8": {NativeDType: "fp8", EmulatedFrom: "7.5"},
+			}}}},
+			{Name: "sglang", Versions: []catalog.BackendVersion{{Version: "v1", Images: images, Quantizations: map[string]catalog.QuantSupport{
+				"fp8": {NativeDType: "fp8"},
+			}}}},
+		},
+		Models: []catalog.ModelTemplate{{
+			Slug: "m", Name: "M",
+			Quantizations: []catalog.Quantization{
+				{Name: "bf16", Kind: "float", Sources: []catalog.ModelSource{{Type: catalog.SourceHuggingFace, Repo: "o/m"}}},
+				{Name: "fp8", Kind: "fp8", Sources: []catalog.ModelSource{{Type: catalog.SourceHuggingFace, Repo: "o/m-fp8"}}},
+			},
+			Presets: []catalog.Preset{
+				{Name: "vllm-fp8", Quantization: "fp8", Backend: "vllm", BackendVersion: "v1"},
+				{Name: "sglang-fp8", Quantization: "fp8", Backend: "sglang", BackendVersion: "v1"},
+				{Name: "vllm-bf16", Quantization: "bf16", Backend: "vllm", BackendVersion: "v1"},
+			},
+		}},
+	}
+	_, doc := export(t, snap)
+	// Emulated FP8 from the backend version's floor, native FP8 from the
+	// families with the dtype, bf16 from its families above the backend's
+	// minimum; AMD gfx targets are not compute capabilities.
+	want := map[string]string{"vllm-fp8": ">=7.5", "sglang-fp8": ">=8.9", "vllm-bf16": ">=8.0"}
+	for _, s := range doc.ModelSets[0].Specs {
+		cc := want[s.Mode]
+		if s.GPUFilters.Vendor[0] == "amd" {
+			cc = ""
+		}
+		if s.GPUFilters.ComputeCapability != cc {
+			t.Errorf("%s on %v: compute_capability %q, want %q", s.Mode, s.GPUFilters.Vendor, s.GPUFilters.ComputeCapability, cc)
 		}
 	}
 }
 
 func TestSkips(t *testing.T) {
 	snap := catalog.CatalogSnapshot{
-		Backends: []catalog.Backend{{Name: "vllm", Versions: []catalog.BackendVersion{{Version: "v1", Image: "vllm/vllm-openai:v1", Vendors: []string{"nvidia"}}}}},
+		Backends: []catalog.Backend{{Name: "vllm", Versions: []catalog.BackendVersion{{
+			Version: "v1", Images: map[string]string{"nvidia": "vllm/vllm-openai:v1", "amd": "vllm/vllm-openai-rocm:v1"},
+			Quantizations: map[string]catalog.QuantSupport{"float": {}},
+			Flags:         catalog.FlagTable{Context: "--max-model-len", MultiNode: "vllm"},
+		}}}},
 		Models: []catalog.ModelTemplate{
 			{
 				Slug: "m", Name: "M", DefaultContext: 4096, ContextMax: 8192,
 				Quantizations: []catalog.Quantization{
-					{Name: "bf16", Sources: []catalog.ModelSource{{Type: catalog.SourceOCI, Repo: "reg/m"}, {Type: catalog.SourceModelScope, Repo: "ms/m"}}},
-					{Name: "int4", Sources: []catalog.ModelSource{{Type: catalog.SourceOCI, Repo: "reg/m-int4"}}},
+					{Name: "bf16", Kind: "float", Sources: []catalog.ModelSource{{Type: catalog.SourceOCI, Repo: "reg/m"}, {Type: catalog.SourceModelScope, Repo: "ms/m"}}},
+					{Name: "int4", Kind: "float", Sources: []catalog.ModelSource{{Type: catalog.SourceOCI, Repo: "reg/m-int4"}}},
 				},
 				Presets: []catalog.Preset{
-					{Name: "vllm-bf16", Quantization: "bf16", Backend: "vllm", BackendVersion: "v1", Vendors: []string{"amd"}},
+					{Name: "vllm-bf16", Quantization: "bf16", Backend: "vllm", BackendVersion: "v1", Context: 4096, Vendors: []string{"amd"}},
 					{Name: "vllm-int4", Quantization: "int4", Backend: "vllm", BackendVersion: "v1"},
 					{Name: "tgi-bf16", Quantization: "bf16", Backend: "tgi", BackendVersion: "v1"},
+					{Name: "vllm-bf16-2node", Quantization: "bf16", Backend: "vllm", BackendVersion: "v1", Topology: catalog.Topology{Kind: "multi-node", Nodes: 2}},
 				},
 			},
 			{
@@ -131,9 +263,10 @@ func TestSkips(t *testing.T) {
 	}
 	e, doc := export(t, snap)
 	wantSkips := []adapters.Skip{
-		{PresetKey: adapters.PresetKey{Model: "m", Preset: "vllm-int4"}, Reason: SkipNoSource},
-		{PresetKey: adapters.PresetKey{Model: "m", Preset: "tgi-bf16"}, Reason: SkipBackend},
-		{PresetKey: adapters.PresetKey{Model: "n", Preset: "tgi-bf16"}, Reason: SkipBackend},
+		{PresetKey: key("m", "vllm-int4"), Reason: SkipNoSource},
+		{PresetKey: key("m", "tgi-bf16"), Reason: SkipBackend},
+		{PresetKey: key("m", "vllm-bf16-2node"), Reason: SkipTopology},
+		{PresetKey: key("n", "tgi-bf16"), Reason: SkipBackend},
 	}
 	if !slices.Equal(e.Skipped, wantSkips) {
 		t.Errorf("skipped = %v, want %v", e.Skipped, wantSkips)
@@ -146,8 +279,11 @@ func TestSkips(t *testing.T) {
 	if s.Source != "model_scope" || s.ModelScopeModelID != "ms/m" || set.Home != "https://modelscope.cn/models/ms/m" {
 		t.Errorf("source = %s %q home %q, want the ModelScope fallback", s.Source, s.ModelScopeModelID, set.Home)
 	}
-	if s.GPUFilters == nil || !slices.Equal(s.GPUFilters.Vendor, []string{"amd"}) {
-		t.Errorf("gpu_filters = %+v, want the preset's vendors over the backend's", s.GPUFilters)
+	if s.GPUFilters == nil || !slices.Equal(s.GPUFilters.Vendor, []string{"amd"}) || s.ImageName != "vllm/vllm-openai-rocm:v1" {
+		t.Errorf("gpu_filters = %+v image %s, want only the preset's vendor with its image", s.GPUFilters, s.ImageName)
+	}
+	if !slices.Equal(s.BackendParameters, []string{"--max-model-len=4096"}) {
+		t.Errorf("backend_parameters = %q, want the preset's context", s.BackendParameters)
 	}
 }
 
@@ -158,11 +294,21 @@ func TestParameters(t *testing.T) {
 		// GPUStack would shlex-split "--chat-template=a b.jinja" into two tokens.
 		{[]string{"--chat-template", "a b.jinja"}, []string{"--chat-template", "a b.jinja"}},
 		{[]string{"--hf-overrides", `{"a":1}`}, []string{"--hf-overrides", `{"a":1}`}},
+		// and drop the quotes of a JSON value written "--flag=value".
+		{[]string{`--speculative-config={"method":"eagle3"}`}, []string{"--speculative-config", `{"method":"eagle3"}`}},
 		// A flag with several values keeps them as separate items.
 		{[]string{"--lora-modules", "a", "b", "--trust-remote-code"}, []string{"--lora-modules", "a", "b", "--trust-remote-code"}},
 	} {
 		if got := parameters(c.args); !slices.Equal(got, c.want) {
 			t.Errorf("parameters(%q) = %q, want %q", c.args, got, c.want)
 		}
+	}
+}
+
+// run_command is shlex-split by GPUStack after it fills the placeholders.
+func TestShellJoin(t *testing.T) {
+	got := shellJoin([]string{"-m", "{{model_path}}", "a b", `it's`, ""})
+	if want := `-m {{model_path}} 'a b' 'it'"'"'s' ''`; got != want {
+		t.Errorf("shellJoin = %s, want %s", got, want)
 	}
 }

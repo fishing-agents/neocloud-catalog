@@ -9,8 +9,8 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
-	"strconv"
 	"sync"
 
 	catalog "github.com/fishman/neocloud-catalog"
@@ -72,8 +72,9 @@ type Adapter interface {
 }
 
 var (
-	mu       sync.RWMutex
-	registry = map[string]Adapter{}
+	mu         sync.RWMutex
+	registry   = map[string]Adapter{}
+	extensions []ExportExtension
 )
 
 // Register makes an adapter available by name; adapters call it from init.
@@ -105,6 +106,39 @@ func Names() []string {
 	}
 	slices.Sort(names)
 	return names
+}
+
+// ExportExtension renders one catalog extension's payloads into a platform
+// format after the adapter's own rendering. Public builds register none.
+type ExportExtension interface {
+	Namespace() string
+	Adapter() string // adapter name it applies to
+	Apply(format string, snap catalog.CatalogSnapshot, e *Export) error
+}
+
+// RegisterExportExtension makes x run on its adapter's exports; extensions
+// call it from init. It panics on a second extension of one namespace for one
+// adapter.
+func RegisterExportExtension(x ExportExtension) {
+	mu.Lock()
+	defer mu.Unlock()
+	if slices.ContainsFunc(extensions, func(y ExportExtension) bool {
+		return y.Namespace() == x.Namespace() && y.Adapter() == x.Adapter()
+	}) {
+		panic("adapters: duplicate export extension " + x.Namespace() + " for " + x.Adapter())
+	}
+	extensions = append(extensions, x)
+	slices.SortFunc(extensions, func(a, b ExportExtension) int {
+		return cmp.Or(cmp.Compare(a.Adapter(), b.Adapter()), cmp.Compare(a.Namespace(), b.Namespace()))
+	})
+}
+
+// ExportExtensions lists the registered export extensions by adapter, then
+// namespace.
+func ExportExtensions() []ExportExtension {
+	mu.RLock()
+	defer mu.RUnlock()
+	return slices.Clone(extensions)
 }
 
 // Coverage checks an export against the snapshot: every preset is exported or
@@ -204,14 +238,41 @@ func BackendVersion(snap catalog.CatalogSnapshot, backend, version string) (cata
 	return catalog.BackendVersion{}, false
 }
 
-// ReferenceFit returns the whole-GPU fit of a model at a quantization on the
-// reference family, or, when that family has none, the fit with the fewest
-// GPUs (then the largest context, then the family name, for a stable choice).
-func ReferenceFit(snap catalog.CatalogSnapshot, slug, quant string, opts Options) (catalog.ModelFit, bool) {
+// Vendors lists the GPU vendors (and cpu) a preset runs on: those its backend
+// version has an image for, limited to the preset's vendors, sorted.
+func Vendors(p catalog.Preset, bv catalog.BackendVersion) []string {
+	return slices.DeleteFunc(slices.Sorted(maps.Keys(bv.Images)), func(v string) bool {
+		return len(p.Vendors) > 0 && !slices.Contains(p.Vendors, v)
+	})
+}
+
+// Draft returns the draft model a preset's speculative decoding loads, or nil.
+func Draft(snap catalog.CatalogSnapshot, p catalog.Preset) *catalog.DraftModel {
+	if p.Speculative == nil {
+		return nil
+	}
+	i := slices.IndexFunc(snap.DraftModels, func(d catalog.DraftModel) bool { return d.Slug == p.Speculative.DraftModel })
+	if i < 0 {
+		return nil
+	}
+	return &snap.DraftModels[i]
+}
+
+// ReferenceFit returns the whole-GPU fit of a preset's checkpoint at its KV
+// cache dtype on a family of one of vendors: the reference family's, else the
+// best of the others, native before emulated, then the fewest GPUs, the
+// largest context and the family name, for a stable choice.
+func ReferenceFit(snap catalog.CatalogSnapshot, r Ref, vendors []string, opts Options) (catalog.ModelFit, bool) {
 	family := cmp.Or(opts.ReferenceFamily, DefaultReferenceFamily)
+	vendor := map[string]string{}
+	for _, f := range snap.Families {
+		vendor[f.Name] = f.Vendor
+	}
+	kv := cmp.Or(r.Preset.KVCacheDType, "auto")
 	var fits []catalog.ModelFit
 	for _, f := range snap.Fits {
-		if f.ModelSlug == slug && f.Quantization == quant && f.Profile == nil {
+		if f.ModelSlug == r.Model.Slug && f.Quantization == r.Preset.Quantization && f.KVCacheDType == kv && f.Profile == nil &&
+			slices.Contains(vendors, vendor[f.DeviceFamily]) {
 			if f.DeviceFamily == family {
 				return f, true
 			}
@@ -221,27 +282,14 @@ func ReferenceFit(snap catalog.CatalogSnapshot, slug, quant string, opts Options
 	if len(fits) == 0 {
 		return catalog.ModelFit{}, false
 	}
+	emulated := func(f catalog.ModelFit) int {
+		if f.Mode == catalog.FitNative {
+			return 0
+		}
+		return 1
+	}
 	return slices.MinFunc(fits, func(a, b catalog.ModelFit) int {
-		return cmp.Or(cmp.Compare(a.GPUCount, b.GPUCount), cmp.Compare(b.MaxContext, a.MaxContext), cmp.Compare(a.DeviceFamily, b.DeviceFamily))
+		return cmp.Or(cmp.Compare(emulated(a), emulated(b)), cmp.Compare(a.GPUCount, b.GPUCount),
+			cmp.Compare(b.MaxContext, a.MaxContext), cmp.Compare(a.DeviceFamily, b.DeviceFamily))
 	}), true
-}
-
-// ContextFlag is the backend's flag for the maximum context length.
-func ContextFlag(backend string) (string, bool) {
-	switch backend {
-	case "vllm":
-		return "--max-model-len", true
-	case "sglang":
-		return "--context-length", true
-	}
-	return "", false
-}
-
-// ContextArg is the backend's "--flag=<n>" for a context length.
-func ContextArg(backend string, n int) (string, bool) {
-	flag, ok := ContextFlag(backend)
-	if !ok {
-		return "", false
-	}
-	return flag + "=" + strconv.Itoa(n), true
 }

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -18,12 +19,19 @@ const Format = "gpustack"
 
 // Reasons the gpustack format skips a preset.
 const (
+	// SkipNoSource also covers a source of several files, as GPUStack's
+	// source names at most one.
 	SkipNoSource = "no Hugging Face or ModelScope source"
 	SkipBackend  = "backend GPUStack cannot run"
+	// SkipTopology covers multi-node, which GPUStack's scheduler decides on
+	// itself, and disaggregated presets, whose GPUStack prefill/decode roles
+	// are not mapped.
+	SkipTopology = "topology GPUStack catalog cannot express"
 )
 
-// backends maps catalog backends to GPUStack's BackendEnum values.
-var backends = map[string]string{"vllm": "vLLM", "sglang": "SGLang"}
+// backends maps catalog backends to GPUStack's BackendEnum values. It has no
+// llama.cpp value (schemas/models.py), so llama.cpp runs as a Custom image.
+var backends = map[string]string{"vllm": "vLLM", "sglang": "SGLang", "llamacpp": "Custom"}
 
 func init() { adapters.Register(adapter{}) }
 
@@ -33,7 +41,7 @@ func (adapter) Name() string { return "gpustack" }
 
 func (adapter) Capabilities() adapters.Capabilities {
 	return adapters.Capabilities{
-		Backends: []string{"vllm", "sglang"},
+		Backends: []string{"vllm", "sglang", "llamacpp"},
 		Sources:  []string{catalog.SourceHuggingFace, catalog.SourceModelScope},
 	}
 }
@@ -44,7 +52,7 @@ func (adapter) SkipReasons(format string) []string {
 	if format != Format {
 		return nil
 	}
-	return []string{SkipNoSource, SkipBackend}
+	return []string{SkipNoSource, SkipBackend, SkipTopology}
 }
 
 // The document is JSON, which GPUStack's yaml.safe_load reads as YAML. Field
@@ -65,19 +73,24 @@ type modelSet struct {
 }
 
 type spec struct {
-	Mode              string      `json:"mode"`
-	Quantization      string      `json:"quantization"`
-	GPUFilters        *gpuFilters `json:"gpu_filters,omitempty"`
-	Source            string      `json:"source"`
-	HuggingFaceRepoID string      `json:"huggingface_repo_id,omitempty"`
-	ModelScopeModelID string      `json:"model_scope_model_id,omitempty"`
-	Backend           string      `json:"backend"`
-	ImageName         string      `json:"image_name"`
-	BackendParameters []string    `json:"backend_parameters"`
+	Mode                string            `json:"mode"`
+	Quantization        string            `json:"quantization"`
+	GPUFilters          *gpuFilters       `json:"gpu_filters,omitempty"`
+	Source              string            `json:"source"`
+	HuggingFaceRepoID   string            `json:"huggingface_repo_id,omitempty"`
+	HuggingFaceFilename string            `json:"huggingface_filename,omitempty"`
+	ModelScopeModelID   string            `json:"model_scope_model_id,omitempty"`
+	ModelScopeFilePath  string            `json:"model_scope_file_path,omitempty"`
+	Backend             string            `json:"backend"`
+	ImageName           string            `json:"image_name"`
+	RunCommand          string            `json:"run_command,omitempty"`
+	BackendParameters   []string          `json:"backend_parameters,omitempty"`
+	Env                 map[string]string `json:"env,omitempty"`
 }
 
 type gpuFilters struct {
-	Vendor []string `json:"vendor"`
+	Vendor            []string `json:"vendor"`
+	ComputeCapability string   `json:"compute_capability,omitempty"`
 }
 
 func (a adapter) Export(snap catalog.CatalogSnapshot, format string, _ adapters.Options) (adapters.Export, error) {
@@ -99,11 +112,11 @@ func (a adapter) Export(snap catalog.CatalogSnapshot, format string, _ adapters.
 		// GPUStack fills backend_parameters of a deployment made outside the
 		// catalog from the last spec with the same repository, whatever its
 		// backend (scheduler/evaluator.py set_default_spec); its default backend
-		// is vLLM, so vLLM specs go last.
-		var vllm []spec
+		// is vLLM, so vLLM specs go last, plain ones after speculative ones.
+		var groups [3][]spec
 		for _, p := range m.Presets {
 			r := adapters.Ref{Model: m, Preset: p}
-			s, reason, err := a.spec(snap, r)
+			specs, reason, err := a.specs(snap, r)
 			if err != nil {
 				return adapters.Export{}, err
 			}
@@ -112,16 +125,19 @@ func (a adapter) Export(snap catalog.CatalogSnapshot, format string, _ adapters.
 				continue
 			}
 			if set.Home == "" {
-				set.Home = home(s)
+				set.Home = home(specs[0])
 			}
+			group := 0
 			if p.Backend == "vllm" {
-				vllm = append(vllm, s)
-			} else {
-				set.Specs = append(set.Specs, s)
+				group = 2
+				if p.Speculative != nil {
+					group = 1
+				}
 			}
+			groups[group] = append(groups[group], specs...)
 			e.Exported = append(e.Exported, r.Key())
 		}
-		set.Specs = append(set.Specs, vllm...)
+		set.Specs = slices.Concat(groups[:]...)
 		if len(set.Specs) > 0 {
 			doc.ModelSets = append(doc.ModelSets, set)
 		}
@@ -137,48 +153,111 @@ func (a adapter) Export(snap catalog.CatalogSnapshot, format string, _ adapters.
 	return e, nil
 }
 
-// spec maps one preset, or names the reason it cannot be expressed.
-func (a adapter) spec(snap catalog.CatalogSnapshot, r adapters.Ref) (spec, string, error) {
+// specs maps one preset to a spec per GPU vendor it has an image for, or names
+// the reason it cannot be expressed.
+func (a adapter) specs(snap catalog.CatalogSnapshot, r adapters.Ref) ([]spec, string, error) {
 	p := r.Preset
 	backend, ok := backends[p.Backend]
 	if !ok {
-		return spec{}, SkipBackend, nil
+		return nil, SkipBackend, nil
+	}
+	if k := p.Topology.Kind; k != "" && k != "single" {
+		return nil, SkipTopology, nil
 	}
 	src, ok := r.Source(a.Capabilities().Sources...)
-	if !ok {
-		return spec{}, SkipNoSource, nil
+	if !ok || len(src.Files) > 1 {
+		return nil, SkipNoSource, nil
 	}
 	bv, ok := adapters.BackendVersion(snap, p.Backend, p.BackendVersion)
 	if !ok {
-		return spec{}, "", fmt.Errorf("gpustack: %s/%s: backend %s %s not in the snapshot", r.Model.Slug, p.Name, p.Backend, p.BackendVersion)
+		return nil, "", fmt.Errorf("gpustack: %s/%s: backend %s %s not in the snapshot", r.Model.Slug, p.Name, p.Backend, p.BackendVersion)
 	}
-	ctx, _ := adapters.ContextArg(p.Backend, r.Model.DefaultContext)
-	s := spec{
+	// GPUStack's scheduler sizes the GPU count, so no fit sets tensor
+	// parallelism.
+	args, err := catalog.Render(r.Model, p, bv, catalog.ModelFit{}, adapters.Draft(snap, p))
+	if err != nil {
+		return nil, "", fmt.Errorf("gpustack: %w", err)
+	}
+	base := spec{
 		// GPUStack offers one spec per mode (routes/model_sets.py
 		// filter_specs_by_gpu), so every preset needs its own.
 		Mode:         p.Name,
 		Quantization: strings.ToUpper(p.Quantization),
 		Backend:      backend,
-		// GPUStack rejects image_name together with backend_version
-		// (routes/models.py validate_model_in), and the pinned image is the pin.
-		ImageName:         bv.Image,
-		BackendParameters: append(parameters(p.Args), ctx),
+		Env:          p.Env,
+	}
+	if backend == "Custom" {
+		base.RunCommand = runCommand(bv.Command, args)
+	} else {
+		base.BackendParameters = parameters(args)
+	}
+	var file string
+	if len(src.Files) == 1 {
+		file = src.Files[0]
 	}
 	if src.Type == catalog.SourceHuggingFace {
-		s.Source, s.HuggingFaceRepoID = "huggingface", src.Repo
+		base.Source, base.HuggingFaceRepoID, base.HuggingFaceFilename = "huggingface", src.Repo, file
 	} else {
-		s.Source, s.ModelScopeModelID = "model_scope", src.Repo
+		base.Source, base.ModelScopeModelID, base.ModelScopeFilePath = "model_scope", src.Repo, file
 	}
-	// Catalog vendor names are GPUStack's (gpustack_runtime ManufacturerEnum),
-	// which it compares lower-cased; a vendor it does not know matches no GPU.
-	vendors := p.Vendors
-	if len(vendors) == 0 {
-		vendors = bv.Vendors
+	q, _ := r.Quantization()
+	cc := minComputeCapability(snap, q.Kind, bv)
+	var out []spec
+	for _, v := range adapters.Vendors(p, bv) {
+		// GPUStack matches a spec to GPUs by vendor; a CPU image has none.
+		if v == "cpu" {
+			continue
+		}
+		s := base
+		// GPUStack rejects image_name together with backend_version
+		// (routes/models.py validate_model_in), and the pinned image is the pin.
+		s.ImageName = bv.Images[v]
+		// Catalog vendor names are GPUStack's (gpustack_runtime
+		// ManufacturerEnum). Its compute capability check fails a GPU without
+		// an NVIDIA one, so only NVIDIA specs carry it.
+		s.GPUFilters = &gpuFilters{Vendor: []string{v}}
+		if v == "nvidia" && cc != "" {
+			s.GPUFilters.ComputeCapability = ">=" + cc
+		}
+		out = append(out, s)
 	}
-	if len(vendors) > 0 {
-		s.GPUFilters = &gpuFilters{Vendor: vendors}
+	if len(out) == 0 {
+		return nil, SkipBackend, nil
 	}
-	return s, "", nil
+	return out, "", nil
+}
+
+// minComputeCapability is the lowest NVIDIA compute capability a quantization
+// kind runs on with bv: emulated from the kind's emulated_from where bv
+// emulates it, else on the lowest family with its native dtype, never below
+// bv's minimum; "" when nothing bounds it.
+func minComputeCapability(snap catalog.CatalogSnapshot, kind string, bv catalog.BackendVersion) string {
+	qs := bv.Quantizations[kind]
+	floor := qs.EmulatedFrom
+	if floor == "" && qs.NativeDType != "" {
+		for _, f := range snap.Families {
+			if f.Vendor == "nvidia" && slices.Contains(f.DTypes, qs.NativeDType) && (floor == "" || ccLess(f.ComputeCapability, floor)) {
+				floor = f.ComputeCapability
+			}
+		}
+	}
+	if bv.MinComputeCapability != "" && (floor == "" || ccLess(floor, bv.MinComputeCapability)) {
+		floor = bv.MinComputeCapability
+	}
+	return floor
+}
+
+// ccLess compares compute capabilities numerically ("9.0" < "10.0").
+func ccLess(a, b string) bool {
+	parts := func(cc string) []int {
+		var n []int
+		for f := range strings.SplitSeq(cc, ".") {
+			i, _ := strconv.Atoi(f)
+			n = append(n, i)
+		}
+		return n
+	}
+	return slices.Compare(parts(a), parts(b)) < 0
 }
 
 func home(s spec) string {
@@ -188,16 +267,23 @@ func home(s spec) string {
 	return "https://modelscope.cn/models/" + s.ModelScopeModelID
 }
 
+// shlexSpecial are the characters GPUStack's shlex.split acts on.
+const shlexSpecial = " \t\n\v\f\r'\"\\"
+
 // parameters writes argv the way GPUStack's catalog does, "--flag=value" for a
 // flag with exactly one value. GPUStack re-splits an item that starts with a
 // flag through shlex (utils/command.py flatten_to_argv), so a value shlex would
-// change stays an item of its own, which GPUStack passes through verbatim.
+// change becomes an item of its own, which GPUStack passes through verbatim.
 func parameters(args []string) []string {
 	var out []string
 	for i := 0; i < len(args); i++ {
 		a := args[i]
+		if k, v, ok := strings.Cut(a, "="); ok && isKey(k) && strings.ContainsAny(v, shlexSpecial) {
+			out = append(out, k, v)
+			continue
+		}
 		if isKey(a) && !strings.Contains(a, "=") && i+1 < len(args) && !isKey(args[i+1]) &&
-			(i+2 == len(args) || isKey(args[i+2])) && !strings.ContainsAny(args[i+1], " \t\n\v\f\r'\"\\") {
+			(i+2 == len(args) || isKey(args[i+2])) && !strings.ContainsAny(args[i+1], shlexSpecial) {
 			out = append(out, a+"="+args[i+1])
 			i++
 			continue
@@ -214,4 +300,28 @@ func isKey(t string) bool {
 	}
 	_, err := strconv.ParseFloat(t, 64)
 	return err != nil
+}
+
+// runCommand is a Custom spec's run_command: GPUStack starts the image's own
+// entrypoint (worker/backends/custom.py), which in the pinned images is the
+// command's binary, with the rest of the command and the rendered arguments,
+// and fills {{model_path}}, {{port}} and {{model_name}} (the served name).
+func runCommand(command, args []string) string {
+	var tokens []string
+	for _, t := range command[min(1, len(command)):] {
+		tokens = append(tokens, strings.ReplaceAll(t, "{{model}}", "{{model_name}}"))
+	}
+	return shellJoin(append(tokens, args...))
+}
+
+// shellJoin quotes the tokens GPUStack's shlex.split would otherwise change.
+func shellJoin(tokens []string) string {
+	quoted := make([]string, len(tokens))
+	for i, t := range tokens {
+		if t == "" || strings.ContainsAny(t, shlexSpecial) {
+			t = "'" + strings.ReplaceAll(t, "'", `'"'"'`) + "'"
+		}
+		quoted[i] = t
+	}
+	return strings.Join(quoted, " ")
 }

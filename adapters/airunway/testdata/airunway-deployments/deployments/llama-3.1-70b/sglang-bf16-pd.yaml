@@ -1,0 +1,48 @@
+{
+  "apiVersion": "airunway.ai/v1alpha1",
+  "kind": "ModelDeployment",
+  "metadata": {
+    "name": "llama-3-1-70b-sglang-bf16-pd",
+    "annotations": {
+      "neocloud.io/required-provider": "dynamo"
+    }
+  },
+  "spec": {
+    "model": {
+      "id": "meta-llama/Llama-3.1-70B-Instruct",
+      "source": "huggingface"
+    },
+    "provider": {
+      "name": "dynamo"
+    },
+    "engine": {
+      "type": "sglang",
+      "contextLength": 8192,
+      "args": {
+        "disaggregation-transfer-backend": "nixl",
+        "tool-call-parser": "llama3",
+        "tp-size": "2"
+      }
+    },
+    "serving": {
+      "mode": "disaggregated"
+    },
+    "scaling": {
+      "prefill": {
+        "replicas": 1,
+        "gpu": {
+          "count": 2
+        }
+      },
+      "decode": {
+        "replicas": 1,
+        "gpu": {
+          "count": 2
+        }
+      }
+    },
+    "secrets": {
+      "huggingFaceToken": "hf-token-secret"
+    }
+  }
+}

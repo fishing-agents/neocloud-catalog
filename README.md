@@ -200,14 +200,20 @@ cd adapters && go run ./cmd/catalog-export -out ../dist   # every adapter and fo
 go run ./cmd/catalog-export -adapter gpustack -out ../dist
 ```
 
-Platforms without a fit matrix get the GPU count of the `-reference-family` fit
-(default `H100`, else the fit with the fewest GPUs).
+Adapters render every preset through `Render` (its flag table) and add only
+what the platform owns. Platforms without a fit matrix get the GPU count of
+the `-reference-family` fit (default `H100`), else of the best fit on a vendor
+the preset has an image for: native before emulated, then the fewest GPUs.
+Export extensions registered next to a catalog extension
+(`adapters.RegisterExportExtension`) render its payloads into their adapter's
+formats after the adapter; they may change the files but not which presets are
+exported. Public builds register none.
 
 | Format | Use it with | Notes |
 |---|---|---|
-| `gpustack` (`model-catalog.yaml`) | GPUStack `--model-catalog-file <url>` or an admin catalog source | One spec per preset, `mode` = preset name (GPUStack shows one spec per mode). The pinned image goes in `image_name`, not `backend_version` (GPUStack refuses both, and its bundled runners predate our versions). vLLM specs come last per repo. Lost: source revision (no field), fit matrix. |
-| `airunway-recipes` | AI Runway `VLLM_RECIPES_BASE_URL=<base>` | vLLM presets only (the resolver is vLLM only; SGLang presets are skipped here). One recipe per Hugging Face repo; further vLLM presets are derived recipes (`meta.derived_from`). |
-| `airunway-deployments` | `kubectl apply -f deployments/...` or `POST /api/deployments` with `api/...` | Every vLLM and SGLang preset. SGLang runs only on AI Runway's Dynamo provider, on Dynamo's sglang-runtime image (the pinned SGLang image is not used); manifests carry `neocloud.io/required-provider`. Gated models use AI Runway's `hf-token-secret`. Lost: source revision, ModelScope-only models. |
+| `gpustack` (`model-catalog.yaml`) | GPUStack `--model-catalog-file <url>` or an admin catalog source | One spec per preset and GPU vendor (each vendor has its own image), `mode` = preset name (GPUStack shows one spec per mode and picks the first whose `gpu_filters` match). NVIDIA specs carry `gpu_filters.compute_capability`: the backend version's `emulated_from` where it emulates the quantization (FP8: `>=7.5` vLLM, `>=8.0` SGLang), else the lowest family with its native dtype (native FP8 `>=8.9`, bf16 `>=8.0`). The pinned image goes in `image_name`, not `backend_version` (GPUStack refuses both, and its bundled runners predate our versions). No GPU count: GPUStack's scheduler sizes it. llama.cpp runs as `backend: Custom` (GPUStack has no llama.cpp backend): `run_command` holds llama-server's arguments, the GGUF file `huggingface_filename`. vLLM specs come last per repo, plain ones after speculative ones (GPUStack takes a repo's defaults from its last spec). Skipped: `topology GPUStack catalog cannot express` (multi-node, which GPUStack's scheduler decides; disaggregated, as GPUStack's prefill/decode roles are not mapped yet), `backend GPUStack cannot run`, `no Hugging Face or ModelScope source` (also a source of several files). Lost: source revision (no field), fit matrix, the CPU llama.cpp image (GPUStack matches specs by GPU vendor). |
+| `airunway-recipes` | AI Runway `VLLM_RECIPES_BASE_URL=<base>` | vLLM presets only. One recipe per Hugging Face repo; further vLLM presets are derived recipes (`meta.derived_from`). The NVIDIA image and families only (see deployments). Skipped: `recipes resolver is vLLM only` (SGLang, llama.cpp), `recipes resolve to one Direct vLLM server` (multi-node, disaggregated), `one recipe per Hugging Face repo`, `recipes need a Hugging Face org/model repo`, `no whole-GPU fit to size the GPU count`. |
+| `airunway-deployments` | `kubectl apply -f deployments/...` or `POST /api/deployments` with `api/...` | vLLM and SGLang presets on NVIDIA GPUs (AI Runway's API requests `nvidia.com/gpu`). SGLang runs only on AI Runway's Dynamo provider, on Dynamo's sglang-runtime image (the pinned SGLang image is not used); manifests carry `neocloud.io/required-provider`. A disaggregated SGLang preset uses `serving.mode: disaggregated` with `scaling.prefill`/`decode` GPU counts; Dynamo adds each worker's role. Gated models use AI Runway's `hf-token-secret`. Skipped: `KAITO runs llama.cpp only as an AIKit runner` (its template passes no context or engine flags to the pinned llama-server), `AI Runway has no multi-node deployments`, `topology needs Dynamo disaggregated mode` (vLLM, or roles needing different engine args), `backend AI Runway cannot run`, `ModelDeployment source is huggingface or custom only`, `no whole-GPU fit to size the GPU count`. Lost: source revision, ModelScope-only models, AMD. |
 
 A release publishes the exports with a cosign-signed `SHA256SUMS`
 (`SHA256SUMS.sigstore.json`) as release assets and on GitHub Pages, which serves

@@ -1,7 +1,9 @@
 package airunway
 
 import (
+	"cmp"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -78,6 +80,10 @@ func exportRecipes(snap catalog.CatalogSnapshot, opts adapters.Options) (adapter
 			skip(&e, r, SkipNotVLLM)
 			continue
 		}
+		if k := r.Preset.Topology.Kind; k != "" && k != "single" {
+			skip(&e, r, SkipRecipeTopology)
+			continue
+		}
 		t, reason, err := resolve(snap, r, opts, SkipRecipeNoHF)
 		if err != nil {
 			return adapters.Export{}, err
@@ -105,7 +111,10 @@ func exportRecipes(snap catalog.CatalogSnapshot, opts adapters.Options) (adapter
 	var files []adapters.Artifact
 	for _, group := range models {
 		for _, t := range group {
-			rc := newRecipe(snap, t, group)
+			rc, err := newRecipe(snap, t, group)
+			if err != nil {
+				return adapters.Export{}, err
+			}
 			body, err := encode(rc)
 			if err != nil {
 				return adapters.Export{}, err
@@ -128,18 +137,23 @@ func exportRecipes(snap catalog.CatalogSnapshot, opts adapters.Options) (adapter
 	return e, nil
 }
 
-func newRecipe(snap catalog.CatalogSnapshot, t target, group []target) recipe {
+func newRecipe(snap catalog.CatalogSnapshot, t target, group []target) (recipe, error) {
 	base := group[0]
 	org, _, _ := strings.Cut(base.source.Repo, "/")
-	ctx, _ := adapters.ContextArg("vllm", t.Model.DefaultContext)
+	// The Direct vLLM provider a recipe resolves to derives tensor parallelism
+	// from the GPU count, so no fit sets it.
+	args, err := catalog.Render(t.Model, t.Preset, t.release, catalog.ModelFit{}, t.draft)
+	if err != nil {
+		return recipe{}, err
+	}
 	rc := recipe{
 		HFID: t.source.Repo,
 		Meta: recipeMeta{Title: t.Model.Name, Provider: org, Hardware: map[string]string{}},
 		RecommendedCommand: recommendedCommand{
 			Hardware:        hardwareID(t.fit.DeviceFamily),
 			Variant:         "default",
-			DockerImage:     t.release.Image,
-			Argv:            append(append([]string{"vllm", "serve", t.source.Repo}, t.Preset.Args...), ctx),
+			DockerImage:     t.release.Images[gpuVendor],
+			Argv:            append([]string{"vllm", "serve", t.source.Repo}, args...),
 			HardwareProfile: hardwareProfile{GPUCount: t.fit.GPUCount},
 		},
 		Model: recipeModel{
@@ -151,7 +165,8 @@ func newRecipe(snap catalog.CatalogSnapshot, t target, group []target) recipe {
 		Variants: map[string]variant{"default": newVariant(t)},
 	}
 	for _, f := range snap.Fits {
-		if f.ModelSlug == t.Model.Slug && f.Quantization == t.Preset.Quantization && f.Profile == nil {
+		nvidia := slices.ContainsFunc(snap.Families, func(fam catalog.Family) bool { return fam.Name == f.DeviceFamily && fam.Vendor == gpuVendor })
+		if f.ModelSlug == t.Model.Slug && f.Quantization == t.Preset.Quantization && f.KVCacheDType == t.fit.KVCacheDType && f.Profile == nil && nvidia {
 			rc.Meta.Hardware[hardwareID(f.DeviceFamily)] = fitStatus
 		}
 	}
@@ -159,7 +174,7 @@ func newRecipe(snap catalog.CatalogSnapshot, t target, group []target) recipe {
 		rc.Meta.DerivedFrom = base.source.Repo
 		rc.Meta.Variant = t.Preset.Quantization
 		rc.RecommendedCommand.Variant = t.Preset.Quantization
-		return rc
+		return rc, nil
 	}
 	for _, d := range group[1:] {
 		v := newVariant(d)
@@ -167,13 +182,13 @@ func newRecipe(snap catalog.CatalogSnapshot, t target, group []target) recipe {
 		v.JSON = recipePath(d)
 		rc.Variants[d.Preset.Quantization] = v
 	}
-	return rc
+	return rc, nil
 }
 
 // newVariant sizes a checkpoint at the context its command serves, rounded up
 // to 0.01 GB like the fit matrix.
 func newVariant(t target) variant {
-	vram, _ := catalog.VRAMRequired(t.Model, t.Preset.Quantization, t.Model.DefaultContext)
+	vram, _ := catalog.VRAMRequired(t.Model, t.Preset.Quantization, cmp.Or(t.Preset.Context, t.Model.DefaultContext))
 	return variant{Precision: t.Preset.Quantization, VRAMMinimumGB: math.Ceil(vram*100) / 100}
 }
 

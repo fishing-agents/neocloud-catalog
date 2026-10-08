@@ -9,7 +9,6 @@
       "h100": "supported",
       "h200": "supported",
       "l4": "supported",
-      "mi300x": "supported",
       "rtx_4090": "supported"
     },
     "derived_from": "mistralai/Mixtral-8x7B-Instruct-v0.1",

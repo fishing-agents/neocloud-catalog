@@ -1,0 +1,18 @@
+{
+  "name": "llama-3-1-8b-vllm-bf16-eagle3",
+  "modelId": "meta-llama/Llama-3.1-8B-Instruct",
+  "engine": "vllm",
+  "provider": "vllm",
+  "imageRef": "vllm/vllm-openai:v0.31.0",
+  "contextLength": 8192,
+  "resources": {
+    "gpu": 1
+  },
+  "engineArgs": {
+    "chat-template": "/vllm-workspace/examples/tool_chat_template_llama3.1_json.jinja",
+    "enable-auto-tool-choice": "",
+    "speculative-config": "{\"method\":\"eagle3\",\"model\":\"RedHatAI/Llama-3.1-8B-Instruct-speculator.eagle3\",\"num_speculative_tokens\":3,\"revision\":\"f4fa34a8f803a0ba75d048d6b3dbc1ad5149e9ac\"}",
+    "tool-call-parser": "llama3_json"
+  },
+  "hfTokenSecret": "hf-token-secret"
+}

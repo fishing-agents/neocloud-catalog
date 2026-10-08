@@ -1,10 +1,11 @@
 package airunway
 
 import (
+	"cmp"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 
 	catalog "github.com/fishman/neocloud-catalog"
@@ -27,14 +28,16 @@ type runtime struct {
 	// (providers/dynamo/transformer.go), which the upstream SGLang image
 	// lacks, so SGLang keeps Dynamo's sglang-runtime image.
 	pinnedImage bool
-	// tpFlag is set when the provider does not derive tensor parallelism from
-	// resources.gpu.count (the vLLM provider does, Dynamo does not).
-	tpFlag string
+	// derivesTP: the provider sets tensor parallelism from the GPU count (the
+	// vLLM provider does, Dynamo does not), so no fit sets it.
+	derivesTP bool
+	// disaggregated: the provider runs serving.mode disaggregated.
+	disaggregated bool
 }
 
 var runtimes = map[string]runtime{
-	"vllm":   {provider: "vllm", pinnedImage: true},
-	"sglang": {provider: "dynamo", tpFlag: "--tp-size"},
+	"vllm":   {provider: "vllm", pinnedImage: true, derivesTP: true},
+	"sglang": {provider: "dynamo", disaggregated: true},
 }
 
 // The ModelDeployment fields set (controller/api/v1alpha1/modeldeployment_types.go).
@@ -51,11 +54,14 @@ type metadata struct {
 }
 
 type mdSpec struct {
-	Model     mdModel     `json:"model"`
-	Provider  mdProvider  `json:"provider"`
-	Engine    mdEngine    `json:"engine"`
-	Resources mdResources `json:"resources"`
-	Secrets   *mdSecrets  `json:"secrets,omitempty"`
+	Model     mdModel      `json:"model"`
+	Provider  mdProvider   `json:"provider"`
+	Engine    mdEngine     `json:"engine"`
+	Serving   *mdServing   `json:"serving,omitempty"`
+	Scaling   *mdScaling   `json:"scaling,omitempty"`
+	Resources *mdResources `json:"resources,omitempty"`
+	Env       []mdEnv      `json:"env,omitempty"`
+	Secrets   *mdSecrets   `json:"secrets,omitempty"`
 }
 
 type mdModel struct {
@@ -75,12 +81,31 @@ type mdEngine struct {
 	ExtraArgs     []string          `json:"extraArgs,omitempty"`
 }
 
+type mdServing struct {
+	Mode string `json:"mode"`
+}
+
+type mdScaling struct {
+	Prefill *mdComponent `json:"prefill"`
+	Decode  *mdComponent `json:"decode"`
+}
+
+type mdComponent struct {
+	Replicas int   `json:"replicas"`
+	GPU      mdGPU `json:"gpu"`
+}
+
 type mdResources struct {
 	GPU mdGPU `json:"gpu"`
 }
 
 type mdGPU struct {
 	Count int `json:"count"`
+}
+
+type mdEnv struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }
 
 type mdSecrets struct {
@@ -93,12 +118,16 @@ type apiBody struct {
 	Name            string            `json:"name"`
 	ModelID         string            `json:"modelId"`
 	Engine          string            `json:"engine"`
+	Mode            string            `json:"mode,omitempty"`
 	Provider        string            `json:"provider"`
 	ImageRef        string            `json:"imageRef,omitempty"`
 	ContextLength   int               `json:"contextLength"`
-	Resources       apiResources      `json:"resources"`
+	Resources       *apiResources     `json:"resources,omitempty"`
+	PrefillGpus     int               `json:"prefillGpus,omitempty"`
+	DecodeGpus      int               `json:"decodeGpus,omitempty"`
 	EngineArgs      map[string]string `json:"engineArgs,omitempty"`
 	EngineExtraArgs []string          `json:"engineExtraArgs,omitempty"`
+	Env             map[string]string `json:"env,omitempty"`
 	HFTokenSecret   string            `json:"hfTokenSecret,omitempty"`
 }
 
@@ -111,8 +140,19 @@ func exportDeployments(snap catalog.CatalogSnapshot, opts adapters.Options) (ada
 	names := map[string]adapters.PresetKey{}
 	for _, r := range adapters.Presets(snap) {
 		rt, ok := runtimes[r.Preset.Backend]
-		if !ok {
+		top := r.Preset.Topology
+		switch {
+		case r.Preset.Backend == "llamacpp":
+			skip(&e, r, SkipLlamaCpp)
+			continue
+		case !ok:
 			skip(&e, r, SkipBackend)
+			continue
+		case top.Kind == "multi-node":
+			skip(&e, r, SkipMultiNode)
+			continue
+		case top.Kind == "disaggregated" && !rt.disaggregated:
+			skip(&e, r, SkipDisaggregated)
 			continue
 		}
 		t, reason, err := resolve(snap, r, opts, SkipNoHF)
@@ -121,6 +161,14 @@ func exportDeployments(snap catalog.CatalogSnapshot, opts adapters.Options) (ada
 		}
 		if reason != "" {
 			skip(&e, r, reason)
+			continue
+		}
+		args, extra, ok, err := render(t, rt)
+		if err != nil {
+			return adapters.Export{}, err
+		}
+		if !ok {
+			skip(&e, r, SkipDisaggregated)
 			continue
 		}
 		name, err := dnsLabel(r.Model.Slug + "-" + r.Preset.Name)
@@ -132,15 +180,11 @@ func exportDeployments(snap catalog.CatalogSnapshot, opts adapters.Options) (ada
 		}
 		names[name] = r.Key()
 
-		tokens := r.Preset.Args
-		if rt.tpFlag != "" && t.fit.GPUCount > 1 && !setsTP(tokens) {
-			tokens = append(slices.Clip(tokens), rt.tpFlag, strconv.Itoa(t.fit.GPUCount))
-		}
-		args, extra := engineArgs(tokens)
 		image := ""
 		if rt.pinnedImage {
-			image = t.release.Image
+			image = t.release.Images[gpuVendor]
 		}
+		ctx := cmp.Or(r.Preset.Context, r.Model.DefaultContext)
 		md := modelDeployment{
 			APIVersion: "airunway.ai/v1alpha1",
 			Kind:       "ModelDeployment",
@@ -154,11 +198,10 @@ func exportDeployments(snap catalog.CatalogSnapshot, opts adapters.Options) (ada
 				Engine: mdEngine{
 					Type:          r.Preset.Backend,
 					Image:         image,
-					ContextLength: r.Model.DefaultContext,
+					ContextLength: ctx,
 					Args:          args,
 					ExtraArgs:     extra,
 				},
-				Resources: mdResources{GPU: mdGPU{Count: t.fit.GPUCount}},
 			},
 		}
 		body := apiBody{
@@ -167,11 +210,25 @@ func exportDeployments(snap catalog.CatalogSnapshot, opts adapters.Options) (ada
 			Engine:          r.Preset.Backend,
 			Provider:        rt.provider,
 			ImageRef:        image,
-			ContextLength:   r.Model.DefaultContext,
-			Resources:       apiResources{GPU: t.fit.GPUCount},
+			ContextLength:   ctx,
 			EngineArgs:      args,
 			EngineExtraArgs: extra,
 		}
+		if top.Kind == "disaggregated" {
+			md.Spec.Serving = &mdServing{Mode: "disaggregated"}
+			md.Spec.Scaling = &mdScaling{
+				Prefill: &mdComponent{Replicas: 1, GPU: mdGPU{Count: top.Prefill}},
+				Decode:  &mdComponent{Replicas: 1, GPU: mdGPU{Count: top.Decode}},
+			}
+			body.Mode, body.PrefillGpus, body.DecodeGpus = "disaggregated", top.Prefill, top.Decode
+		} else {
+			md.Spec.Resources = &mdResources{GPU: mdGPU{Count: t.fit.GPUCount}}
+			body.Resources = &apiResources{GPU: t.fit.GPUCount}
+		}
+		for _, k := range slices.Sorted(maps.Keys(r.Preset.Env)) {
+			md.Spec.Env = append(md.Spec.Env, mdEnv{Name: k, Value: r.Preset.Env[k]})
+		}
+		body.Env = r.Preset.Env
 		if r.Model.Gated {
 			md.Spec.Secrets = &mdSecrets{HuggingFaceToken: HFTokenSecret}
 			body.HFTokenSecret = HFTokenSecret
@@ -188,6 +245,40 @@ func exportDeployments(snap catalog.CatalogSnapshot, opts adapters.Options) (ada
 	}
 	slices.SortFunc(e.Artifacts, func(a, b adapters.Artifact) int { return strings.Compare(a.Path, b.Path) })
 	return e, nil
+}
+
+// render is a deployment's engine arguments without the context, which
+// contextLength carries and the providers write in the engine's flag. Dynamo
+// gives both workers of a disaggregated preset one set and adds each worker's
+// --disaggregation-mode itself (providers/dynamo/transformer.go), so ok is
+// false when the roles need different ones.
+func render(t target, rt runtime) (args map[string]string, extra []string, ok bool, err error) {
+	p := t.Preset
+	p.Context = 0
+	fit := t.fit
+	if rt.derivesTP {
+		fit = catalog.ModelFit{}
+	}
+	if p.Topology.Kind != "disaggregated" {
+		tokens, err := catalog.Render(t.Model, p, t.release, fit, t.draft)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		args, extra := engineArgs(tokens)
+		return args, extra, true, nil
+	}
+	var roleArgs [2]map[string]string
+	var roleExtra [2][]string
+	for i, role := range []string{"prefill", "decode"} {
+		tokens, err := catalog.RenderRole(t.Model, p, t.release, fit, t.draft, role, 0)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		roleArgs[i], roleExtra[i] = engineArgs(tokens)
+		delete(roleArgs[i], "disaggregation-mode")
+	}
+	ok = maps.Equal(roleArgs[0], roleArgs[1]) && slices.Equal(roleExtra[0], roleExtra[1])
+	return roleArgs[0], roleExtra[0], ok, nil
 }
 
 // dnsLabel turns s into a name the webhook accepts (no dots) that also fits the
@@ -227,11 +318,4 @@ func engineArgs(tokens []string) (map[string]string, []string) {
 		args[key] = value
 	}
 	return args, nil
-}
-
-func setsTP(tokens []string) bool {
-	return slices.ContainsFunc(tokens, func(t string) bool {
-		key, _, _ := strings.Cut(t, "=")
-		return key == "--tp-size" || key == "--tp" || key == "--tensor-parallel-size"
-	})
 }

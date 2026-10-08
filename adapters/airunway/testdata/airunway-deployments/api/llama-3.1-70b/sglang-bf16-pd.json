@@ -1,0 +1,16 @@
+{
+  "name": "llama-3-1-70b-sglang-bf16-pd",
+  "modelId": "meta-llama/Llama-3.1-70B-Instruct",
+  "engine": "sglang",
+  "mode": "disaggregated",
+  "provider": "dynamo",
+  "contextLength": 8192,
+  "prefillGpus": 2,
+  "decodeGpus": 2,
+  "engineArgs": {
+    "disaggregation-transfer-backend": "nixl",
+    "tool-call-parser": "llama3",
+    "tp-size": "2"
+  },
+  "hfTokenSecret": "hf-token-secret"
+}
