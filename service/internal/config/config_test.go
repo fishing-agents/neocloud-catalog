@@ -37,6 +37,7 @@ func TestLoadRefusesInvalidConfig(t *testing.T) {
 		"metrics on api port":   {"NEOCLOUD_CATALOG_TELEMETRY_METRICS_ADDR", "0.0.0.0:8080", "telemetry.metrics_addr"},
 		"zero timeout":          {"NEOCLOUD_CATALOG_SERVER_READ_TIMEOUT", "0s", "server.read_timeout"},
 		"zero job timeout":      {"NEOCLOUD_CATALOG_JOBS_JOB_TIMEOUT", "0s", "jobs.job_timeout"},
+		"zero publish timeout":  {"NEOCLOUD_CATALOG_RELEASE_PUBLISH_TIMEOUT", "0s", "release.publish_timeout"},
 		"rescue before timeout": {"NEOCLOUD_CATALOG_JOBS_RESCUE_AFTER", "1s", "jobs.rescue_after"},
 		"issuer, no audience":   {"NEOCLOUD_CATALOG_AUTH_ISSUER_URL", "https://icp.example.com", "auth.audience"},
 		"release ref, no key":   {"NEOCLOUD_CATALOG_RELEASE_REF", "ghcr.io/example/catalog:v4", "release.key"},

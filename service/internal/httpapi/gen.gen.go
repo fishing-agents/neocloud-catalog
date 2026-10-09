@@ -174,7 +174,7 @@ type EffectiveCatalog struct {
 
 // Error defines model for Error.
 type Error struct {
-	// Code stable, machine-readable (invalid_request, unauthorized, forbidden, not_found, conflict, not_configured, internal_error)
+	// Code stable, machine-readable (invalid_request, unauthorized, forbidden, not_found, conflict, not_configured, auth_unavailable, internal_error)
 	Code    string `json:"code"`
 	Message string `json:"message"`
 }
@@ -210,6 +210,12 @@ type GeneratorRun struct {
 
 	// Status queued until a worker starts the run
 	Status RunStatus `json:"status"`
+}
+
+// ImportCreate defines model for ImportCreate.
+type ImportCreate struct {
+	// Importer the importer's name (bootstrap-from-json, ...)
+	Importer string `json:"importer"`
 }
 
 // ImportRun defines model for ImportRun.
@@ -336,6 +342,9 @@ type Forbidden = Error
 // NotFound defines model for NotFound.
 type NotFound = Error
 
+// ServiceUnavailable defines model for ServiceUnavailable.
+type ServiceUnavailable = Error
+
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = Error
 
@@ -362,6 +371,9 @@ type ListImportsParams struct {
 
 // PutLocalPricesJSONBody defines parameters for PutLocalPrices.
 type PutLocalPricesJSONBody = []Price
+
+// StartImportJSONRequestBody defines body for StartImport for application/json ContentType.
+type StartImportJSONRequestBody = ImportCreate
 
 // PutLocalModelJSONRequestBody defines body for PutLocalModel for application/json ContentType.
 type PutLocalModelJSONRequestBody = ModelTemplate
@@ -463,12 +475,12 @@ type ServerInterface interface {
 	// ListImports Import runs, newest first, after the queued ones
 	// (GET /v1/imports)
 	ListImports(w http.ResponseWriter, r *http.Request, params ListImportsParams)
+	// StartImport Queue a run of an importer
+	// (POST /v1/imports)
+	StartImport(w http.ResponseWriter, r *http.Request)
 	// GetImport The import run id
 	// (GET /v1/imports/{id})
 	GetImport(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
-	// StartImport Queue a run of the importer id
-	// (POST /v1/imports/{id})
-	StartImport(w http.ResponseWriter, r *http.Request, id string)
 	// DeleteLocalModel Remove the local model of slug, which restores the upstream one
 	// (DELETE /v1/local/models/{slug})
 	DeleteLocalModel(w http.ResponseWriter, r *http.Request, slug string)
@@ -703,6 +715,20 @@ func (siw *ServerInterfaceWrapper) ListImports(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// StartImport operation middleware
+func (siw *ServerInterfaceWrapper) StartImport(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StartImport(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetImport operation middleware
 func (siw *ServerInterfaceWrapper) GetImport(w http.ResponseWriter, r *http.Request) {
 
@@ -720,32 +746,6 @@ func (siw *ServerInterfaceWrapper) GetImport(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetImport(w, r, id)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// StartImport operation middleware
-func (siw *ServerInterfaceWrapper) StartImport(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.StartImport(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1246,8 +1246,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/local/prices", wrapper.ListLocalPrices)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/local/prices", wrapper.PutLocalPrices)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports", wrapper.ListImports)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/imports", wrapper.StartImport)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports/{id}", wrapper.GetImport)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/imports/{id}", wrapper.StartImport)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/generator-runs", wrapper.StartGeneratorRun)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/generator-runs/{id}", wrapper.GetGeneratorRun)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/releases", wrapper.ListReleases)

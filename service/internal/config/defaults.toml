@@ -29,7 +29,8 @@ rescue_after = "1h"
 
 [release]
 # POST /v1/releases/{version}/publish pushes to ref (repository:tag), signed
-# with the cosign.key at key (its password in COSIGN_PASSWORD). Empty: the
-# API does not publish.
+# with the cosign.key at key (its password in COSIGN_PASSWORD), within
+# publish_timeout. Empty: the API does not publish.
 ref = ""
 key = ""
+publish_timeout = "2m"

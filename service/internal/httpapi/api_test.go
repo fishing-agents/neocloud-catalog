@@ -52,6 +52,8 @@ type env struct {
 	admin    string // ICP token with the admin role
 	reader   string // ICP token without it
 	ref      string // where publish pushes
+	handler  http.Handler
+	header   http.Header // of the last response
 }
 
 // newEnv starts the API; withPublish configures publishing to an in-memory
@@ -85,7 +87,8 @@ func newEnv(t *testing.T, suffix string, withPublish bool) *env {
 	}
 	e := &env{t: t, db: db, s: s, issuer: iss, operator: key,
 		admin: iss.Token(t, iss.Claims(audience, "viewer", auth.RoleAdmin)), reader: iss.Token(t, iss.Claims(audience, "viewer"))}
-	cfg := httpapi.Config{Store: s, Auth: auth.New(db, auth.OIDCConfig{IssuerURL: iss.URL, Audience: audience}), Jobs: c, Importers: reg}
+	cfg := httpapi.Config{Store: s, Auth: auth.New(db, auth.OIDCConfig{IssuerURL: iss.URL, Audience: audience}), Jobs: c, Importers: reg,
+		PublishTimeout: time.Minute}
 	if withPublish {
 		reg := httptest.NewServer(registry.New(registry.Logger(log.New(io.Discard, "", 0))))
 		t.Cleanup(reg.Close)
@@ -101,7 +104,8 @@ func newEnv(t *testing.T, suffix string, withPublish bool) *env {
 		}
 		cfg.Publish = &release.Target{Ref: e.ref, Signer: signer}
 	}
-	e.srv = httptest.NewServer(httpapi.New(cfg))
+	e.handler = httpapi.New(cfg)
+	e.srv = httptest.NewServer(e.handler)
 	t.Cleanup(e.srv.Close)
 	return e
 }
@@ -138,6 +142,7 @@ func (e *env) call(method, path, token string, body any) (int, []byte) {
 		e.t.Fatal(err)
 	}
 	checkContract(e.t, req, res, b)
+	e.header = res.Header
 	return res.StatusCode, b
 }
 
@@ -201,7 +206,7 @@ func checkContract(t *testing.T, req *http.Request, res *http.Response, body []b
 func (e *env) importBootstrap() httpapi.ImportRun {
 	e.t.Helper()
 	var queued httpapi.ImportRun
-	e.must(http.StatusAccepted, http.MethodPost, "/v1/imports/bootstrap-from-json", e.operator, nil, &queued)
+	e.must(http.StatusAccepted, http.MethodPost, "/v1/imports", e.operator, httpapi.ImportCreate{Importer: "bootstrap-from-json"}, &queued)
 	run := e.waitImport(queued.Id)
 	if run.Status != httpapi.Succeeded {
 		e.t.Fatalf("bootstrap import %+v", run)
@@ -463,6 +468,13 @@ func TestLocalPrices(t *testing.T) {
 	if len(got) != 2 {
 		t.Errorf("a refused PUT changed the prices: %+v", got)
 	}
+	if code, b := e.call(http.MethodPut, "/v1/local/prices", e.admin, json.RawMessage("null")); code != http.StatusBadRequest {
+		t.Errorf("PUT null = %d %s, want 400", code, b)
+	}
+	e.must(http.StatusOK, http.MethodGet, "/v1/local/prices", e.reader, nil, &got)
+	if len(got) != 2 {
+		t.Errorf("PUT null changed the prices: %+v", got)
+	}
 	e.must(http.StatusNoContent, http.MethodDelete, "/v1/local/prices", e.admin, nil, nil)
 	e.must(http.StatusOK, http.MethodGet, "/v1/local/prices", e.reader, nil, &got)
 	if len(got) != 0 {
@@ -515,7 +527,8 @@ func TestRunsAndReleases(t *testing.T) {
 	if len(runs) != 1 || runs[0].Id != imported.Id {
 		t.Errorf("GET /v1/imports = %+v", runs)
 	}
-	e.must(http.StatusNotFound, http.MethodPost, "/v1/imports/nope", e.operator, nil, nil)
+	e.must(http.StatusNotFound, http.MethodPost, "/v1/imports", e.operator, httpapi.ImportCreate{Importer: "nope"}, nil)
+	e.must(http.StatusBadRequest, http.MethodPost, "/v1/imports", e.operator, httpapi.ImportCreate{}, nil)
 	e.must(http.StatusNotFound, http.MethodGet, "/v1/imports/"+uuid.NewString(), e.reader, nil, nil)
 	e.must(http.StatusBadRequest, http.MethodGet, "/v1/imports/not-a-uuid", e.reader, nil, nil)
 
@@ -537,8 +550,16 @@ func TestRunsAndReleases(t *testing.T) {
 		t.Fatalf("releases %+v and %+v", oldRel, newRel)
 	}
 
+	// The publish answers although it outlasts the server's write timeout.
+	short := httptest.NewUnstartedServer(e.handler)
+	short.Config.WriteTimeout = time.Millisecond
+	short.Start()
+	defer short.Close()
+	defaultSrv := e.srv
+	e.srv = short
 	var published httpapi.Release
 	e.must(http.StatusOK, http.MethodPost, "/v1/releases/"+newRel.Version+"/publish", e.operator, nil, &published)
+	e.srv = defaultSrv
 	if published.PublishedAt == nil || !strings.HasPrefix(published.ArtifactRef, strings.TrimSuffix(e.ref, ":v4")+"@sha256:") {
 		t.Errorf("published release %+v", published)
 	}
@@ -623,7 +644,7 @@ func TestQueuedRuns(t *testing.T) {
 	t.Cleanup(e.srv.Close)
 
 	var queued httpapi.ImportRun
-	e.must(http.StatusAccepted, http.MethodPost, "/v1/imports/bootstrap-from-json", key, nil, &queued)
+	e.must(http.StatusAccepted, http.MethodPost, "/v1/imports", key, httpapi.ImportCreate{Importer: "bootstrap-from-json"}, &queued)
 	if queued.Status != httpapi.Queued || queued.Importer != "bootstrap-from-json" || queued.Layer != httpapi.Upstream {
 		t.Errorf("queued import %+v", queued)
 	}
@@ -731,4 +752,17 @@ func nodeTypeOf(t *testing.T, c httpapi.EffectiveCatalog, id string) httpapi.Nod
 	}
 	t.Fatalf("no node type %s", id)
 	return httpapi.NodeType{}
+}
+
+// A token that cannot be checked because the issuer is down is 503 with
+// Retry-After, not 401: the credential may be fine. API keys still work.
+func TestAuthUnavailable(t *testing.T) {
+	e := newEnv(t, "api_auth_down", false)
+	e.issuer.Down.Store(true)
+	if code, b := e.call(http.MethodGet, "/v1/catalog", e.admin, nil); code != http.StatusServiceUnavailable || e.header.Get("Retry-After") == "" {
+		t.Errorf("GET with the issuer down = %d %s (Retry-After %q), want 503 with Retry-After", code, b, e.header.Get("Retry-After"))
+	}
+	e.must(http.StatusOK, http.MethodGet, "/v1/catalog", e.operator, nil, nil)
+	e.issuer.Down.Store(false)
+	e.must(http.StatusOK, http.MethodGet, "/v1/catalog", e.admin, nil, nil)
 }

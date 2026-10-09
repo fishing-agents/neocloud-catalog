@@ -170,6 +170,18 @@ func (c *Client) Start(ctx context.Context) error {
 	return c.Client.Start(ctx)
 }
 
+// Shutdown stops working the queue: it lets running jobs finish within
+// grace, then cancels them, so a long import does not hold the process; a
+// cancelled run is recorded as failed.
+func (c *Client) Shutdown(grace time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), grace)
+	defer cancel()
+	if err := c.Stop(ctx); ctx.Err() == nil {
+		return err
+	}
+	return c.StopAndCancel(context.Background())
+}
+
 // Job returns the job of kind ("import" or "generate") running run, or nil.
 func (c *Client) Job(ctx context.Context, kind string, run uuid.UUID) (*rivertype.JobRow, error) {
 	res, err := c.JobList(ctx, river.NewJobListParams().Kinds(kind).

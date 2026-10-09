@@ -43,6 +43,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/local/models/{slug}:
     parameters:
       - name: slug
@@ -62,6 +64,8 @@ paths:
                 $ref: "#/components/schemas/ModelTemplate"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         "404":
           $ref: "#/components/responses/NotFound"
     put:
@@ -85,6 +89,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         "403":
           $ref: "#/components/responses/Forbidden"
     delete:
@@ -95,6 +101,8 @@ paths:
           description: removed
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
@@ -123,6 +131,8 @@ paths:
                 $ref: "#/components/schemas/Preset"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         "404":
           $ref: "#/components/responses/NotFound"
     put:
@@ -146,6 +156,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
@@ -158,6 +170,8 @@ paths:
           description: removed
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
@@ -182,6 +196,8 @@ paths:
                 $ref: "#/components/schemas/NodeType"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         "404":
           $ref: "#/components/responses/NotFound"
     put:
@@ -204,6 +220,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         "403":
           $ref: "#/components/responses/Forbidden"
     delete:
@@ -214,6 +232,8 @@ paths:
           description: removed
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
@@ -233,6 +253,8 @@ paths:
                   $ref: "#/components/schemas/Price"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
     put:
       operationId: putLocalPrices
       summary: Replace the local node type prices (internal)
@@ -258,6 +280,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         "403":
           $ref: "#/components/responses/Forbidden"
     delete:
@@ -268,6 +292,8 @@ paths:
           description: removed
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         "403":
           $ref: "#/components/responses/Forbidden"
   /v1/imports:
@@ -300,18 +326,18 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
-  /v1/imports/{id}:
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
     post:
       operationId: startImport
-      summary: Queue a run of the importer id
-      description: Enqueues the importer named id on the catalog queue; the response is the queued run, whose id GET /v1/imports/{id} follows.
-      parameters:
-        - name: id
-          in: path
-          required: true
-          description: the importer's name (bootstrap-from-json, ...)
-          schema:
-            type: string
+      summary: Queue a run of an importer
+      description: Enqueues the importer on the catalog queue; the response is the queued run, which GET /v1/imports/{id} follows.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportCreate"
       responses:
         "202":
           description: the queued run
@@ -324,12 +350,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImportRun"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+  /v1/imports/{id}:
     get:
       operationId: getImport
       summary: The import run id
@@ -352,6 +383,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         "404":
           $ref: "#/components/responses/NotFound"
   /v1/generator-runs:
@@ -372,6 +405,8 @@ paths:
                 $ref: "#/components/schemas/GeneratorRun"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         "403":
           $ref: "#/components/responses/Forbidden"
   /v1/generator-runs/{id}:
@@ -396,6 +431,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         "404":
           $ref: "#/components/responses/NotFound"
   /v1/releases:
@@ -413,6 +450,8 @@ paths:
                   $ref: "#/components/schemas/Release"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
     post:
       operationId: createRelease
       summary: Freeze a succeeded generator run as a release
@@ -434,6 +473,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
@@ -467,7 +508,12 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
         "503":
-          description: publishing is not configured (release.ref, release.key)
+          description: publishing is not configured (release.ref, release.key), or authentication is unavailable (with Retry-After)
+          headers:
+            Retry-After:
+              description: seconds, when authentication is unavailable
+              schema:
+                type: integer
           content:
             application/json:
               schema:
@@ -502,6 +548,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
 components:
   securitySchemes:
     bearerAuth:
@@ -532,6 +580,17 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    ServiceUnavailable:
+      description: authentication is unavailable (the database or the OIDC issuer failed); retry after Retry-After
+      headers:
+        Retry-After:
+          description: seconds
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     Conflict:
       description: the request conflicts with the current state
       content:
@@ -545,7 +604,7 @@ components:
       properties:
         code:
           type: string
-          description: stable, machine-readable (invalid_request, unauthorized, forbidden, not_found, conflict, not_configured, internal_error)
+          description: stable, machine-readable (invalid_request, unauthorized, forbidden, not_found, conflict, not_configured, auth_unavailable, internal_error)
         message:
           type: string
     Layer:
@@ -758,6 +817,13 @@ components:
             type: string
         error:
           type: string
+    ImportCreate:
+      type: object
+      required: [importer]
+      properties:
+        importer:
+          type: string
+          description: the importer's name (bootstrap-from-json, ...)
     ReleaseCreate:
       type: object
       required: [generator_run]

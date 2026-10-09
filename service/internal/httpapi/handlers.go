@@ -199,6 +199,10 @@ func (h *handlers) PutLocalPrices(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
+	if in == nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "body: a list of prices required; DELETE removes them all")
+		return
+	}
 	prices := make([]model.NodeTypePrice, len(in))
 	for i, p := range in {
 		prices[i] = model.NodeTypePrice{NodeTypeID: p.NodeTypeId, Region: p.Region, Billing: string(p.Billing), USDPerHour: p.UsdPerHour}
@@ -218,14 +222,22 @@ func (h *handlers) DeleteLocalPrices(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *handlers) StartImport(w http.ResponseWriter, r *http.Request, id string) {
-	imp := h.Importers[id]
+func (h *handlers) StartImport(w http.ResponseWriter, r *http.Request) {
+	var in ImportCreate
+	if !decode(w, r, &in) {
+		return
+	}
+	if in.Importer == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "importer required")
+		return
+	}
+	imp := h.Importers[in.Importer]
 	if imp == nil {
-		fail(w, r, fmt.Errorf("importer %q: %w", id, store.ErrNotFound))
+		fail(w, r, fmt.Errorf("importer %q: %w", in.Importer, store.ErrNotFound))
 		return
 	}
 	run := uuid.New()
-	if _, err := h.Jobs.Insert(r.Context(), jobs.ImportArgs{Importer: id, Run: run}, nil); err != nil {
+	if _, err := h.Jobs.Insert(r.Context(), jobs.ImportArgs{Importer: in.Importer, Run: run}, nil); err != nil {
 		fail(w, r, err)
 		return
 	}
@@ -435,16 +447,21 @@ func (h *handlers) PublishRelease(w http.ResponseWriter, r *http.Request, versio
 		writeError(w, http.StatusServiceUnavailable, "not_configured", "publishing needs release.ref and release.key")
 		return
 	}
-	rel, err := release.Get(r.Context(), h.Store, version)
+	// Pushing and signing outlast server.write_timeout; publishing again is a
+	// no-op, so a client that lost the answer may retry.
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(h.PublishTimeout + publishAnswerTime))
+	ctx, cancel := context.WithTimeout(r.Context(), h.PublishTimeout)
+	defer cancel()
+	rel, err := release.Get(ctx, h.Store, version)
 	if err != nil {
 		fail(w, r, err)
 		return
 	}
-	if err := release.Publish(r.Context(), rel, *h.Publish); err != nil {
+	if err := release.Publish(ctx, rel, *h.Publish); err != nil {
 		fail(w, r, err)
 		return
 	}
-	if rel, err = release.Get(r.Context(), h.Store, version); err != nil {
+	if rel, err = release.Get(ctx, h.Store, version); err != nil {
 		fail(w, r, err)
 		return
 	}

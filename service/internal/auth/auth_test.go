@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -130,5 +132,21 @@ func TestGenerateKey(t *testing.T) {
 	}
 	if _, _, err := GenerateKey("a_b"); err == nil {
 		t.Error("a prefix with an underscore was accepted")
+	}
+}
+
+// A hanging issuer fails discovery after the client's timeout instead of
+// holding every OIDC request.
+func TestOIDCDiscoveryTimesOut(t *testing.T) {
+	hang := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-hang }))
+	defer srv.Close()
+	defer close(hang)
+	a := New(nil, OIDCConfig{IssuerURL: srv.URL, Audience: testAudience}).(*dispatcher)
+	a.oidc.(*oidcBackend).client.Timeout = 200 * time.Millisecond
+	start := time.Now()
+	_, err := a.Authenticate(context.Background(), "a.b.c")
+	if err == nil || errors.Is(err, ErrUnauthorized) || time.Since(start) > 5*time.Second {
+		t.Fatalf("authenticate against a hanging issuer: %v after %s, want a discovery error within the timeout", err, time.Since(start))
 	}
 }

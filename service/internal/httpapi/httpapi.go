@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/fishman/neocloud-catalog/service/internal/auth"
 	"github.com/fishman/neocloud-catalog/service/internal/importers"
@@ -24,8 +25,14 @@ type Config struct {
 	Jobs      *jobs.Client
 	Importers importers.Registry
 	// Publish is where releases are published; nil refuses publishing.
-	Publish *release.Target
+	// PublishTimeout bounds one publish request.
+	Publish        *release.Target
+	PublishTimeout time.Duration
 }
+
+// publishAnswerTime is how long answering a publish may take after its
+// PublishTimeout.
+const publishAnswerTime = 10 * time.Second
 
 type handlers struct{ Config }
 
@@ -40,9 +47,10 @@ func New(c Config) http.Handler {
 	return authenticate(c.Auth, api)
 }
 
-// authenticate answers 401 without a valid bearer token and 403 to a write
-// (any method but GET and HEAD) by a principal that may only read. It never
-// logs the token.
+// authenticate answers 401 without a valid bearer token, 503 when the token
+// cannot be checked (database or OIDC issuer down), and 403 to a write (any
+// method but GET and HEAD) by a principal that may only read. It never logs
+// the token.
 func authenticate(a auth.Authenticator, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		scheme, token, _ := strings.Cut(r.Header.Get("Authorization"), " ")
@@ -51,11 +59,14 @@ func authenticate(a auth.Authenticator, next http.Handler) http.Handler {
 			return
 		}
 		p, err := a.Authenticate(r.Context(), token)
-		if err != nil {
-			if !errors.Is(err, auth.ErrUnauthorized) {
-				log.Printf("authenticate: %v", err)
-			}
+		if errors.Is(err, auth.ErrUnauthorized) {
 			unauthorized(w)
+			return
+		}
+		if err != nil {
+			log.Printf("authenticate: %v", err)
+			w.Header().Set("Retry-After", "5")
+			writeError(w, http.StatusServiceUnavailable, "auth_unavailable", "authentication is unavailable; retry later")
 			return
 		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead && !p.CanWrite() {

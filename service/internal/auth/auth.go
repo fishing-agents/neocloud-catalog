@@ -14,6 +14,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"slices"
 	"strings"
@@ -55,7 +56,7 @@ type OIDCConfig struct {
 func New(db *gorm.DB, oc OIDCConfig) Authenticator {
 	d := &dispatcher{apikey: &apikeyBackend{db: db}}
 	if oc.IssuerURL != "" {
-		d.oidc = &oidcBackend{issuer: oc.IssuerURL, audience: oc.Audience}
+		d.oidc = &oidcBackend{issuer: oc.IssuerURL, audience: oc.Audience, client: &http.Client{Timeout: oidcTimeout}}
 	}
 	return d
 }

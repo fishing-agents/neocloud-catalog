@@ -3,13 +3,20 @@ package auth
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sync"
+	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 )
 
+// oidcTimeout bounds each discovery and JWKS request to the issuer: discovery
+// holds the backend's lock, so a hanging issuer would queue every token.
+const oidcTimeout = 10 * time.Second
+
 type oidcBackend struct {
 	issuer, audience string
+	client           *http.Client
 
 	mu       sync.Mutex
 	verifier *oidc.IDTokenVerifier
@@ -23,7 +30,8 @@ func (o *oidcBackend) verifierFor(ctx context.Context) (*oidc.IDTokenVerifier, e
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.verifier == nil {
-		p, err := oidc.NewProvider(ctx, o.issuer)
+		// The key set keeps this context's client for its later JWKS fetches.
+		p, err := oidc.NewProvider(oidc.ClientContext(ctx, o.client), o.issuer)
 		if err != nil {
 			return nil, fmt.Errorf("auth: oidc discovery: %w", err)
 		}

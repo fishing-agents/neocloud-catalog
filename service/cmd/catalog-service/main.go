@@ -134,11 +134,13 @@ func cmdServe() {
 	if err := c.Start(ctx); err != nil {
 		log.Fatalf("jobs: %v", err)
 	}
-	defer c.Stop(context.WithoutCancel(ctx))
-	api := httpapi.New(httpapi.Config{Store: s, Jobs: c, Importers: reg, Publish: publish,
+	api := httpapi.New(httpapi.Config{Store: s, Jobs: c, Importers: reg, Publish: publish, PublishTimeout: cfg.Release.PublishTimeout,
 		Auth: auth.New(gormDB, auth.OIDCConfig{IssuerURL: cfg.Auth.IssuerURL, Audience: cfg.Auth.Audience})})
 	log.Printf("serving on %s (metrics %s)", cfg.Server.Addr, cfg.Telemetry.MetricsAddr)
-	if err := server.Serve(ctx, cfg, server.Handler(sqlDB.PingContext, api)); err != nil {
+	err = server.Serve(ctx, cfg, server.Handler(sqlDB.PingContext, api))
+	// Runs still going after server.write_timeout are cancelled and recorded
+	// as failed rather than holding the shutdown for up to jobs.job_timeout.
+	if err = errors.Join(err, c.Shutdown(cfg.Server.WriteTimeout)); err != nil {
 		log.Fatalf("serve: %v", err)
 	}
 }
@@ -210,7 +212,7 @@ func work(ctx context.Context, cfg *config.Config, sqlDB *sql.DB, s *store.Store
 	if err := c.Start(ctx); err != nil {
 		return nil, err
 	}
-	defer c.Stop(context.WithoutCancel(ctx))
+	defer c.Shutdown(cfg.Server.WriteTimeout)
 	res, err := c.Insert(ctx, args, nil)
 	if err != nil {
 		return nil, err

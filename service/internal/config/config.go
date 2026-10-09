@@ -73,10 +73,12 @@ type JobsConfig struct {
 
 // ReleaseConfig is where the API publishes releases: Ref names the
 // repository and tag, Key the cosign.key signing them (its password in
-// COSIGN_PASSWORD). Both empty: the API does not publish.
+// COSIGN_PASSWORD). Both empty: the API does not publish. PublishTimeout
+// bounds one publish request, which outlasts server.write_timeout.
 type ReleaseConfig struct {
-	Ref string `koanf:"ref"`
-	Key string `koanf:"key"`
+	Ref            string        `koanf:"ref"`
+	Key            string        `koanf:"key"`
+	PublishTimeout time.Duration `koanf:"publish_timeout"`
 }
 
 // applyEnv sets NEOCLOUD_CATALOG_<NAME> on the known key whose path, with "."
@@ -170,7 +172,8 @@ func (c *Config) Validate() error {
 	for _, d := range []struct {
 		key string
 		d   time.Duration
-	}{{"server.read_timeout", c.Server.ReadTimeout}, {"server.write_timeout", c.Server.WriteTimeout}, {"jobs.job_timeout", c.Jobs.JobTimeout}} {
+	}{{"server.read_timeout", c.Server.ReadTimeout}, {"server.write_timeout", c.Server.WriteTimeout}, {"jobs.job_timeout", c.Jobs.JobTimeout},
+		{"release.publish_timeout", c.Release.PublishTimeout}} {
 		if d.d <= 0 {
 			return fmt.Errorf("%s must be a positive duration, got %s", d.key, d.d)
 		}

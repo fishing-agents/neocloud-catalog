@@ -204,3 +204,49 @@ func TestJobTimeoutFailsTheRun(t *testing.T) {
 		t.Errorf("run of the timed-out job: %s %q", r.Status, r.Error)
 	}
 }
+
+// Shutdown cancels a run still going after the grace period and the run is
+// recorded as failed, instead of waiting for its job timeout.
+func TestShutdownCancelsRunningRuns(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	sqlDB, db := dbtest.Fresh(t, "jobs_shutdown")
+	dbtest.Migrate(t, sqlDB)
+	if err := jobs.Migrate(ctx, sqlDB); err != nil {
+		t.Fatal(err)
+	}
+	c, err := jobs.New(sqlDB, store.New(db), importers.NewRegistry(blocking{}), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	id := uuid.New()
+	if _, err := c.Insert(ctx, jobs.ImportArgs{Importer: "blocking", Run: id}, nil); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		var n int64
+		if err := db.Model(&model.ImportRun{}).Where("id = ?", id).Count(&n).Error; err != nil {
+			t.Fatal(err)
+		}
+		if n == 1 {
+			break
+		}
+		if ctx.Err() != nil {
+			t.Fatal("the import never started")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	start := time.Now()
+	if err := c.Shutdown(200 * time.Millisecond); err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("shutdown took %s", d)
+	}
+	if r := statusOf(t, db, id); r.Status != model.RunFailed || !strings.Contains(r.Error, "context canceled") {
+		t.Errorf("run cancelled by shutdown: %s %q", r.Status, r.Error)
+	}
+}
