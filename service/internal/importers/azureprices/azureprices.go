@@ -120,7 +120,7 @@ func (i *Importer) Run(ctx context.Context, s *store.Store, run uuid.UUID) (impo
 	}
 	h := sha256.Sum256(input)
 	sum.InputVersion = "sha256:" + hex.EncodeToString(h[:])
-	if sum.Sources.Read == 0 {
+	if sum.Sources.Read == 0 && len(ids) > 0 {
 		return sum, fmt.Errorf("no node type's prices could be read (Azure node types %q): %s", ids, strings.Join(sum.Errors, "; "))
 	}
 	sum.Changes, _, err = s.Patch(ctx, run, store.Patch{Prices: &p})

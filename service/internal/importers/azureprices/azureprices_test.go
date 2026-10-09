@@ -288,6 +288,33 @@ func TestUnreadablePrices(t *testing.T) {
 	}
 }
 
+// A catalog without Azure node types reads nothing and is no failure: the run
+// succeeds and the upstream Azure prices go.
+func TestNoAzureNodeTypes(t *testing.T) {
+	sqlDB, db := dbtest.Fresh(t, "azure_none")
+	dbtest.Migrate(t, sqlDB)
+	for _, p := range []*model.NodeTypePrice{
+		price(model.LayerUpstream, "aws/p5.48xlarge", "us-east-1", model.BillingOnDemand, 55.04),
+		price(model.LayerUpstream, h100, "eastus", model.BillingOnDemand, 98.32),
+	} {
+		if err := db.Create(p).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	api := newPricesAPI(t)
+	run, err := importers.Execute(ctx, store.New(db), testImporter(api.URL, defaultRegions...), uuid.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum := summaryOf(t, run); run.Status != model.RunSucceeded || len(api.queries) != 0 || *sum.Sources != (importers.SourceCounts{}) ||
+		!reflect.DeepEqual(sum.Changes, store.Changes{"node_type_prices": {Deleted: 1}}) {
+		t.Errorf("run %s summary %+v after %d queries, want a succeeded run deleting the Azure price", run.Status, sum, len(api.queries))
+	}
+	if got := usd(prices(t, db, model.LayerUpstream), ""); !reflect.DeepEqual(got, map[string]float64{"aws/p5.48xlarge us-east-1 on_demand": 55.04}) {
+		t.Errorf("upstream prices %v, want the AWS price only", got)
+	}
+}
+
 // Rows the importer does not price are skipped, zero prices among them; a
 // node type left without a row has no prices. Prices it cannot take as USD
 // per hour, or two prices of one region and billing, fail the node type.
