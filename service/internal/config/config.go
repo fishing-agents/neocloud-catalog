@@ -29,6 +29,7 @@ type Config struct {
 	Server    ServerConfig    `koanf:"server"`
 	Database  DatabaseConfig  `koanf:"database"`
 	Telemetry TelemetryConfig `koanf:"telemetry"`
+	Bootstrap BootstrapConfig `koanf:"bootstrap"`
 }
 
 type ServerConfig struct {
@@ -44,6 +45,12 @@ type DatabaseConfig struct {
 
 type TelemetryConfig struct {
 	MetricsAddr string `koanf:"metrics_addr"`
+}
+
+// BootstrapConfig locates the core repository's data/*.json the bootstrap
+// importer reads; relative to the working directory.
+type BootstrapConfig struct {
+	DataDir string `koanf:"data_dir"`
 }
 
 // applyEnv sets NEOCLOUD_CATALOG_<NAME> on the known key whose path, with "."

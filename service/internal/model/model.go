@@ -408,7 +408,8 @@ type ImportRun struct {
 
 // GeneratorRun is one generation over the effective catalog; InputDigest
 // identifies the inputs it read, InputImportRuns the import runs that wrote
-// them, and Report lists what it reported.
+// them, and Report lists what it reported. Snapshot is the public snapshot a
+// succeeded run generated, its version left to the release that freezes it.
 type GeneratorRun struct {
 	Base
 	Timestamps
@@ -419,6 +420,7 @@ type GeneratorRun struct {
 	InputImportRuns datatypes.JSONSlice[uuid.UUID] `gorm:"not null"`
 	SchemaVersion   string                         `gorm:"not null"`
 	Report          datatypes.JSONSlice[string]    `gorm:"not null"`
+	Snapshot        *catalog.CatalogSnapshot       `gorm:"type:jsonb;serializer:json"`
 	Error           string                         `gorm:"not null"`
 }
 

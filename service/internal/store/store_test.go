@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -225,7 +227,7 @@ func TestReplaceLayerRoundTripsCommittedData(t *testing.T) {
 	s, db := newStore(t, "roundtrip")
 	in := committedWithEmptyLists(t)
 	first := startRun(t, db, model.LayerUpstream, model.SourceCuration)
-	if err := s.ReplaceLayer(ctx, model.LayerUpstream, first, in); err != nil {
+	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, first, in); err != nil {
 		t.Fatal(err)
 	}
 	got := effective(t, s)
@@ -244,7 +246,7 @@ func TestReplaceLayerRoundTripsCommittedData(t *testing.T) {
 
 	written := rowsOf(t, db, first)
 	second := startRun(t, db, model.LayerUpstream, model.SourceCuration)
-	if err := s.ReplaceLayer(ctx, model.LayerUpstream, second, committedWithEmptyLists(t)); err != nil {
+	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, second, committedWithEmptyLists(t)); err != nil {
 		t.Fatal(err)
 	}
 	if n := rowsOf(t, db, second); n != 0 {
@@ -257,7 +259,7 @@ func TestReplaceLayerRoundTripsCommittedData(t *testing.T) {
 
 	every := everyField()
 	requireEveryField(t, "fixture", reflect.ValueOf(every), map[string]bool{"fixture.Models[0].Presets[0].PrefixCaching": true})
-	if err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, model.SourceCuration), every); err != nil {
+	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, model.SourceCuration), every); err != nil {
 		t.Fatal(err)
 	}
 	sameCore(t, effective(t, s), every)
@@ -267,7 +269,7 @@ func TestEffectiveCatalogLayering(t *testing.T) {
 	s, db := newStore(t, "layering")
 	in := committed(t)
 	run := startRun(t, db, model.LayerUpstream, model.SourceCuration)
-	if err := s.ReplaceLayer(ctx, model.LayerUpstream, run, in); err != nil {
+	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, run, in); err != nil {
 		t.Fatal(err)
 	}
 	upstream := effective(t, s)
@@ -319,7 +321,7 @@ func TestEffectiveCatalogLayering(t *testing.T) {
 
 func TestReplaceLayerIsAtomic(t *testing.T) {
 	s, db := newStore(t, "atomic")
-	if err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, model.SourceCuration), committed(t)); err != nil {
+	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, model.SourceCuration), committed(t)); err != nil {
 		t.Fatal(err)
 	}
 	before := effective(t, s)
@@ -333,7 +335,7 @@ func TestReplaceLayerIsAtomic(t *testing.T) {
 	last := &bad.Backends[len(bad.Backends)-1]
 	last.Versions[0].HealthPath = "/health\x00"
 	run := startRun(t, db, model.LayerUpstream, model.SourceCuration)
-	err := s.ReplaceLayer(ctx, model.LayerUpstream, run, bad)
+	_, err := s.ReplaceLayer(ctx, model.LayerUpstream, run, bad)
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) {
 		t.Fatalf("replace with a failing row: %v, want the database's error", err)
@@ -347,7 +349,7 @@ func TestReplaceLayerIsAtomic(t *testing.T) {
 func TestOverlayOnlyAddsPayloads(t *testing.T) {
 	s, db := newStore(t, "overlay")
 	upRun := startRun(t, db, model.LayerUpstream, model.SourceCuration)
-	if err := s.ReplaceLayer(ctx, model.LayerUpstream, upRun, committed(t)); err != nil {
+	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, upRun, committed(t)); err != nil {
 		t.Fatal(err)
 	}
 	before := effective(t, s)
@@ -365,7 +367,7 @@ func TestOverlayOnlyAddsPayloads(t *testing.T) {
 		Backends: map[string]catalog.Extensions{b.Name + "/" + b.Versions[0].Version: payload},
 	}
 	ovRun := startRun(t, db, model.LayerOverlay, "overlay-import")
-	if err := s.ReplaceLayer(ctx, model.LayerOverlay, ovRun, store.Inputs{Extensions: ov}); err != nil {
+	if _, err := s.ReplaceLayer(ctx, model.LayerOverlay, ovRun, store.Inputs{Extensions: ov}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -391,22 +393,26 @@ func TestOverlayOnlyAddsPayloads(t *testing.T) {
 		t.Errorf("merged %d family, model, preset and backend payloads, want 4", n)
 	}
 
+	replace := func(layer string, run uuid.UUID, in store.Inputs) error {
+		_, err := s.ReplaceLayer(ctx, layer, run, in)
+		return err
+	}
 	refused := map[string]func() error{
 		"payload of an unknown model": func() error {
-			return s.ReplaceLayer(ctx, model.LayerOverlay, ovRun, store.Inputs{Extensions: catalog.Overlay{
+			return replace(model.LayerOverlay, ovRun, store.Inputs{Extensions: catalog.Overlay{
 				Models: map[string]catalog.Extensions{"no-such-model": payload}}})
 		},
 		"payload of a fit of an unknown family": func() error {
-			return s.ReplaceLayer(ctx, model.LayerOverlay, ovRun, store.Inputs{Extensions: catalog.Overlay{
+			return replace(model.LayerOverlay, ovRun, store.Inputs{Extensions: catalog.Overlay{
 				Fits: map[string]catalog.Extensions{m.Slug + "/B200/-/bf16/auto": payload}}})
 		},
 		"core object in the overlay": func() error {
-			return s.ReplaceLayer(ctx, model.LayerOverlay, ovRun, store.Inputs{Extensions: ov, Families: before.Families[:1]})
+			return replace(model.LayerOverlay, ovRun, store.Inputs{Extensions: ov, Families: before.Families[:1]})
 		},
 		"payloads in upstream": func() error {
 			in := committed(t)
 			in.Extensions = ov
-			return s.ReplaceLayer(ctx, model.LayerUpstream, upRun, in)
+			return replace(model.LayerUpstream, upRun, in)
 		},
 		"payload inside a local object": func() error {
 			f := before.Families[0]
@@ -429,7 +435,7 @@ func TestOverlayOnlyAddsPayloads(t *testing.T) {
 func TestImporterKeepsCuratedFields(t *testing.T) {
 	s, db := newStore(t, "curated")
 	h100 := committed(t).Families[2]
-	if err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, model.SourceCuration),
+	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, model.SourceCuration),
 		store.Inputs{Families: []catalog.Family{h100}}); err != nil {
 		t.Fatal(err)
 	}
@@ -439,12 +445,12 @@ func TestImporterKeepsCuratedFields(t *testing.T) {
 	x := clone(t, h100)
 	x.Name, x.MemoryGB = "X100", 100
 	epoch := startRun(t, db, model.LayerUpstream, "epoch")
-	if err := s.ReplaceLayer(ctx, model.LayerUpstream, epoch, store.Inputs{Families: []catalog.Family{imported, x}}); err != nil {
+	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, epoch, store.Inputs{Families: []catalog.Family{imported, x}}); err != nil {
 		t.Fatal(err)
 	}
 	x.MemoryGB = 120
 	again := startRun(t, db, model.LayerUpstream, "epoch")
-	if err := s.ReplaceLayer(ctx, model.LayerUpstream, again, store.Inputs{Families: []catalog.Family{imported, x}}); err != nil {
+	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, again, store.Inputs{Families: []catalog.Family{imported, x}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -462,7 +468,7 @@ func TestImporterKeepsCuratedFields(t *testing.T) {
 
 	curated := clone(t, h100)
 	curated.MemoryGB = 81
-	if err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, model.SourceCuration),
+	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, model.SourceCuration),
 		store.Inputs{Families: []catalog.Family{curated}}); err != nil {
 		t.Fatal(err)
 	}
@@ -494,11 +500,63 @@ func TestReplaceLayerRefusesBadRunsAndKeys(t *testing.T) {
 		"duplicate model":      {model.LayerUpstream, up, dupModel},
 		"duplicate file path":  {model.LayerUpstream, up, dupFile},
 	} {
-		if err := s.ReplaceLayer(ctx, c.layer, c.run, c.in); err == nil {
+		if _, err := s.ReplaceLayer(ctx, c.layer, c.run, c.in); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
 	if got := effective(t, s); len(got.Models)+len(got.Families) != 0 {
 		t.Errorf("refused writes left %d models and %d families", len(got.Models), len(got.Families))
 	}
+}
+
+// The effective catalog's import runs are the runs of its rows and of their
+// values, in the layer each object is taken from, plus the overlay's: not
+// just the latest run, and not the runs of overridden rows.
+func TestEffectiveWithRunsListsRunsOfEffectiveValues(t *testing.T) {
+	s, db := newStore(t, "runs")
+	replace := func(layer string, run uuid.UUID, in store.Inputs) {
+		t.Helper()
+		if _, err := s.ReplaceLayer(ctx, layer, run, in); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runsOf := func(want ...uuid.UUID) {
+		t.Helper()
+		in, got, err := s.EffectiveWithRuns(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sameCore(t, in, effective(t, s))
+		slices.SortFunc(want, func(a, b uuid.UUID) int { return bytes.Compare(a[:], b[:]) })
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("effective import runs = %v, want %v", got, want)
+		}
+	}
+	in := committed(t)
+	all := startRun(t, db, model.LayerUpstream, model.SourceCuration)
+	replace(model.LayerUpstream, all, in)
+	h100 := &in.Families[2]
+	h100.MemoryGB++
+	memory := startRun(t, db, model.LayerUpstream, model.SourceCuration)
+	replace(model.LayerUpstream, memory, in)
+	runsOf(all, memory)
+
+	// added is left only in the field provenance of X100's unchanged values.
+	x := clone(t, *h100)
+	x.Name = "X100"
+	in.Families = append(in.Families, x)
+	added := startRun(t, db, model.LayerUpstream, "epoch")
+	replace(model.LayerUpstream, added, in)
+	in.Families[len(in.Families)-1].MemoryGB++
+	updated := startRun(t, db, model.LayerUpstream, "epoch")
+	replace(model.LayerUpstream, updated, in)
+	overlay := startRun(t, db, model.LayerOverlay, "overlay-import")
+	replace(model.LayerOverlay, overlay, store.Inputs{Extensions: catalog.Overlay{
+		Families: map[string]catalog.Extensions{"X100": {"example.com/tier": json.RawMessage(`{}`)}}}})
+	runsOf(all, memory, added, updated, overlay)
+
+	if err := s.Upsert(ctx, *h100); err != nil {
+		t.Fatal(err)
+	}
+	runsOf(all, added, updated, overlay)
 }

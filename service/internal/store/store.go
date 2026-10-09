@@ -107,6 +107,16 @@ func (st stamp) field() model.FieldSource {
 	return model.FieldSource{Source: st.source, SourceURL: st.sourceURL, AsOf: st.asOf, ImportRunID: st.run}
 }
 
+// Change counts the rows a write inserted, updated and deleted in one table.
+type Change struct {
+	Inserted int `json:"inserted,omitempty"`
+	Updated  int `json:"updated,omitempty"`
+	Deleted  int `json:"deleted,omitempty"`
+}
+
+// Changes are a write's changes by table; a table it left alone is absent.
+type Changes map[string]Change
+
 // ReplaceLayer makes layer hold exactly in, in one transaction, written by the
 // running import run of that layer; positions follow input order. A row whose
 // content is unchanged keeps its provenance, so re-running the same input
@@ -115,12 +125,13 @@ func (st stamp) field() model.FieldSource {
 // and an importer run (source other than curation) keeps a curated value
 // (R12). The overlay layer takes only in.Extensions, whose ids must exist in
 // the effective catalog; the other layers take no payloads.
-func (s *Store) ReplaceLayer(ctx context.Context, layer string, run uuid.UUID, in Inputs) error {
+func (s *Store) ReplaceLayer(ctx context.Context, layer string, run uuid.UUID, in Inputs) (Changes, error) {
 	want, err := toRows(layer, in)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return s.write(ctx, func(tx *gorm.DB) error {
+	var changes Changes
+	err = s.write(ctx, func(tx *gorm.DB) error {
 		var r model.ImportRun
 		if err := tx.Take(&r, "id = ?", run).Error; err != nil {
 			return fmt.Errorf("import run %s: %w", run, err)
@@ -137,8 +148,13 @@ func (s *Store) ReplaceLayer(ctx context.Context, layer string, run uuid.UUID, i
 		if err != nil {
 			return err
 		}
-		return apply(tx, stamp{layer, r.Source, r.SourceURL, r.StartedAt, &r.ID}, have, want)
+		changes, err = apply(tx, stamp{layer, r.Source, r.SourceURL, r.StartedAt, &r.ID}, have, want)
+		return err
 	})
+	if err != nil {
+		return nil, err
+	}
+	return changes, nil
 }
 
 // Upsert curates object in the local layer, replacing the local object of its
@@ -190,7 +206,8 @@ func (s *Store) Upsert(ctx context.Context, object any) error {
 		if err != nil {
 			return err
 		}
-		return apply(tx, stamp{layer: model.LayerLocal, source: model.SourceCuration, asOf: time.Now()}, have, want)
+		_, err = apply(tx, stamp{layer: model.LayerLocal, source: model.SourceCuration, asOf: time.Now()}, have, want)
+		return err
 	})
 }
 
@@ -208,7 +225,8 @@ func (s *Store) Delete(ctx context.Context, kind, key string) error {
 		if have.size() == 0 {
 			return fmt.Errorf("local %s %q: %w", kind, key, ErrNotFound)
 		}
-		return apply(tx, stamp{}, have, rowSet{})
+		_, err = apply(tx, stamp{}, have, rowSet{})
+		return err
 	})
 }
 
@@ -454,10 +472,10 @@ func payloadKinds(o *catalog.Overlay) []payloadKind {
 
 func keyOf(parts ...string) string { return strings.Join(parts, "\x00") }
 
-// apply turns the rows have into want table by table (see syncTable). Files
-// follow their source by its id.
-func apply(tx *gorm.DB, st stamp, have, want rowSet) error {
-	files := func() error {
+// apply turns the rows have into want table by table (see syncTable) and
+// returns what it changed. Files follow their source by its id.
+func apply(tx *gorm.DB, st stamp, have, want rowSet) (Changes, error) {
+	files := func() (Change, error) {
 		var old, fresh []model.ModelFile
 		for _, fs := range have.files {
 			old = append(old, fs...)
@@ -470,62 +488,71 @@ func apply(tx *gorm.DB, st stamp, have, want rowSet) error {
 		}
 		return syncTable(tx, st, old, fresh, func(r *model.ModelFile) string { return keyOf(r.ModelSourceID.String(), r.Path) })
 	}
-	for _, step := range []func() error{
-		func() error {
+	changes := Changes{}
+	for _, step := range []struct {
+		table string
+		sync  func() (Change, error)
+	}{
+		{"families", func() (Change, error) {
 			return syncTable(tx, st, have.families, want.families, func(r *model.Family) string { return r.Name })
-		},
-		func() error {
+		}},
+		{"node_types", func() (Change, error) {
 			return syncTable(tx, st, have.nodeTypes, want.nodeTypes, func(r *model.NodeType) string { return r.NodeTypeID })
-		},
-		func() error {
+		}},
+		{"models", func() (Change, error) {
 			return syncTable(tx, st, have.models, want.models, func(r *model.Model) string { return r.Slug })
-		},
-		func() error {
+		}},
+		{"model_quantizations", func() (Change, error) {
 			return syncTable(tx, st, have.quants, want.quants, func(r *model.ModelQuantization) string { return keyOf(r.ModelSlug, r.Name) })
-		},
-		func() error {
+		}},
+		{"presets", func() (Change, error) {
 			return syncTable(tx, st, have.presets, want.presets, func(r *model.Preset) string { return keyOf(r.ModelSlug, r.Name) })
-		},
-		func() error {
+		}},
+		{"model_sources", func() (Change, error) {
 			return syncTable(tx, st, have.sources, want.sources, func(r *model.ModelSource) string {
 				return keyOf(r.ModelSlug, r.Quantization, r.DraftSlug, r.Type, r.Repo)
 			})
-		},
-		files,
-		func() error {
+		}},
+		{"model_files", files},
+		{"draft_models", func() (Change, error) {
 			return syncTable(tx, st, have.drafts, want.drafts, func(r *model.DraftModel) string { return r.Slug })
-		},
-		func() error {
+		}},
+		{"backends", func() (Change, error) {
 			return syncTable(tx, st, have.backends, want.backends, func(r *model.Backend) string { return r.Name })
-		},
-		func() error {
+		}},
+		{"backend_versions", func() (Change, error) {
 			return syncTable(tx, st, have.versions, want.versions, func(r *model.BackendVersion) string { return keyOf(r.Backend, r.Version) })
-		},
-		func() error {
+		}},
+		{"flag_tables", func() (Change, error) {
 			return syncTable(tx, st, have.flags, want.flags, func(r *model.FlagTable) string { return keyOf(r.Backend, r.BackendVersion) })
-		},
-		func() error {
+		}},
+		{"extension_payloads", func() (Change, error) {
 			return syncTable(tx, st, have.payloads, want.payloads, func(r *model.ExtensionPayload) string {
 				return keyOf(r.ObjectKind, r.ObjectKey, r.Namespace)
 			})
-		},
+		}},
 	} {
-		if err := step(); err != nil {
-			return err
+		c, err := step.sync()
+		if err != nil {
+			return nil, err
+		}
+		if c != (Change{}) {
+			changes[step.table] = c
 		}
 	}
-	return nil
+	return changes, nil
 }
 
 // syncTable turns the rows have of one table into want by key: an unchanged
 // row stays as it is, a changed one is updated in place with st's provenance,
 // a new one is inserted and a row want lacks is deleted. Every want row ends
 // with its id.
-func syncTable[T any](tx *gorm.DB, st stamp, have, want []T, key func(*T) string) error {
+func syncTable[T any](tx *gorm.DB, st stamp, have, want []T, key func(*T) string) (Change, error) {
 	old := make(map[string]*T, len(have))
 	for i := range have {
 		old[key(&have[i])] = &have[i]
 	}
+	var c Change
 	var fresh []int
 	for i := range want {
 		w := &want[i]
@@ -534,15 +561,16 @@ func syncTable[T any](tx *gorm.DB, st stamp, have, want []T, key func(*T) string
 		changed, err := stampRow(tx, st, w, o)
 		switch {
 		case err != nil:
-			return err
+			return c, err
 		case !changed:
 			*w = *o
 		case o == nil:
 			fresh = append(fresh, i)
 		default:
 			if err := tx.Save(w).Error; err != nil {
-				return err
+				return c, err
 			}
+			c.Updated++
 		}
 	}
 	if len(old) > 0 {
@@ -551,23 +579,25 @@ func syncTable[T any](tx *gorm.DB, st stamp, have, want []T, key func(*T) string
 			ids = append(ids, meta(o).base.ID)
 		}
 		if err := tx.Where("id IN ?", ids).Delete(new(T)).Error; err != nil {
-			return err
+			return c, err
 		}
+		c.Deleted = len(ids)
 	}
 	if len(fresh) == 0 {
-		return nil
+		return c, nil
 	}
 	rows := make([]T, len(fresh))
 	for j, i := range fresh {
 		rows[j] = want[i]
 	}
 	if err := tx.CreateInBatches(&rows, 500).Error; err != nil {
-		return err
+		return c, err
 	}
 	for j, i := range fresh {
 		want[i] = rows[j]
 	}
-	return nil
+	c.Inserted = len(rows)
+	return c, nil
 }
 
 // rowMeta points at the identity, audit and provenance parts of a curated

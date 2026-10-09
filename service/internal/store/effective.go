@@ -38,28 +38,43 @@ func (s *Store) read(ctx context.Context, fn func(tx *gorm.DB) error) error {
 }
 
 func effective(tx *gorm.DB) (Inputs, error) {
-	var layers [2]objects
-	for i, layer := range []string{model.LayerUpstream, model.LayerLocal} {
-		rs, err := load(tx, layer, scope{})
-		if err != nil {
-			return Inputs{}, err
-		}
-		if layers[i], err = assemble(rs); err != nil {
-			return Inputs{}, fmt.Errorf("%s layer: %w", layer, err)
-		}
-	}
-	up, local := layers[0], layers[1]
-	in := Inputs{
-		Families:   pick(up.families, local.families),
-		NodeTypes:  pick(up.nodeTypes, local.nodeTypes),
-		Models:     pick(up.models, local.models),
-		Drafts:     pick(up.drafts, local.drafts),
-		Backends:   pick(up.backends, local.backends),
-		Extensions: catalog.Overlay{SchemaVersion: catalog.SchemaVersion},
-	}
-	var payloads []model.ExtensionPayload
-	if err := tx.Where("layer = ?", model.LayerOverlay).Find(&payloads).Error; err != nil {
+	up, local, payloads, err := loadEffective(tx)
+	if err != nil {
 		return Inputs{}, err
+	}
+	return merge(up, local, payloads)
+}
+
+// loadEffective reads the rows the effective catalog is made of.
+func loadEffective(tx *gorm.DB) (up, local rowSet, payloads []model.ExtensionPayload, err error) {
+	if up, err = load(tx, model.LayerUpstream, scope{}); err != nil {
+		return
+	}
+	if local, err = load(tx, model.LayerLocal, scope{}); err != nil {
+		return
+	}
+	err = tx.Where("layer = ?", model.LayerOverlay).Find(&payloads).Error
+	return
+}
+
+// merge builds the effective catalog from the upstream and local rows and the
+// overlay's payloads.
+func merge(up, local rowSet, payloads []model.ExtensionPayload) (Inputs, error) {
+	u, err := assemble(up)
+	if err != nil {
+		return Inputs{}, fmt.Errorf("%s layer: %w", model.LayerUpstream, err)
+	}
+	l, err := assemble(local)
+	if err != nil {
+		return Inputs{}, fmt.Errorf("%s layer: %w", model.LayerLocal, err)
+	}
+	in := Inputs{
+		Families:   pick(u.families, l.families),
+		NodeTypes:  pick(u.nodeTypes, l.nodeTypes),
+		Models:     pick(u.models, l.models),
+		Drafts:     pick(u.drafts, l.drafts),
+		Backends:   pick(u.backends, l.backends),
+		Extensions: catalog.Overlay{SchemaVersion: catalog.SchemaVersion},
 	}
 	kinds := payloadKinds(&in.Extensions)
 	for _, p := range payloads {
