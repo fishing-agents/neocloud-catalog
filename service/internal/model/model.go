@@ -374,16 +374,21 @@ type ExtensionPayload struct {
 }
 
 // Release freezes a generator run; Version is its generation time in
-// catalog.VersionLayout. ArtifactRef and PublishedAt are set on publish.
+// catalog.VersionLayout and Digest the digest of the run's snapshot at that
+// version. Overlay holds the overlay layer's payloads as of the release,
+// pinned to Digest. ArtifactRef and PublishedAt are set on publish; a
+// database trigger refuses any other change, and any change or delete once
+// published.
 type Release struct {
 	Base
 	Timestamps
-	Version        string        `gorm:"not null;uniqueIndex"`
-	Digest         string        `gorm:"not null"`
-	SchemaVersion  string        `gorm:"not null"`
-	ArtifactRef    string        `gorm:"not null"`
-	GeneratorRunID uuid.UUID     `gorm:"type:uuid;not null;index"`
-	GeneratorRun   *GeneratorRun `gorm:"foreignKey:GeneratorRunID"`
+	Version        string          `gorm:"not null;uniqueIndex"`
+	Digest         string          `gorm:"not null"`
+	SchemaVersion  string          `gorm:"not null"`
+	ArtifactRef    string          `gorm:"not null"`
+	GeneratorRunID uuid.UUID       `gorm:"type:uuid;not null;index"`
+	GeneratorRun   *GeneratorRun   `gorm:"foreignKey:GeneratorRunID"`
+	Overlay        catalog.Overlay `gorm:"type:jsonb;serializer:json;not null"`
 	PublishedAt    *time.Time
 }
 

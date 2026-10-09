@@ -68,15 +68,27 @@ func merge(up, local rowSet, payloads []model.ExtensionPayload) (Inputs, error) 
 	if err != nil {
 		return Inputs{}, fmt.Errorf("%s layer: %w", model.LayerLocal, err)
 	}
-	in := Inputs{
+	return Inputs{
 		Families:   pick(u.families, l.families),
 		NodeTypes:  pick(u.nodeTypes, l.nodeTypes),
 		Models:     pick(u.models, l.models),
 		Drafts:     pick(u.drafts, l.drafts),
 		Backends:   pick(u.backends, l.backends),
-		Extensions: catalog.Overlay{SchemaVersion: catalog.SchemaVersion},
-	}
-	kinds := payloadKinds(&in.Extensions)
+		Extensions: overlay(payloads),
+	}, nil
+}
+
+// Overlay is the overlay layer's payloads keyed as catalog.Merge expects, its
+// SnapshotDigest empty.
+func (s *Store) Overlay(ctx context.Context) (catalog.Overlay, error) {
+	var payloads []model.ExtensionPayload
+	err := s.db.WithContext(ctx).Where("layer = ?", model.LayerOverlay).Find(&payloads).Error
+	return overlay(payloads), err
+}
+
+func overlay(payloads []model.ExtensionPayload) catalog.Overlay {
+	o := catalog.Overlay{SchemaVersion: catalog.SchemaVersion}
+	kinds := payloadKinds(&o)
 	for _, p := range payloads {
 		ids := kinds[slices.IndexFunc(kinds, func(k payloadKind) bool { return k.kind == p.ObjectKind })].ids
 		if *ids == nil {
@@ -87,7 +99,7 @@ func merge(up, local rowSet, payloads []model.ExtensionPayload) (Inputs, error) 
 		}
 		(*ids)[p.ObjectKey][p.Namespace] = json.RawMessage(p.Payload)
 	}
-	return in, nil
+	return o
 }
 
 // entry is one layer's object with its place in curated order.
