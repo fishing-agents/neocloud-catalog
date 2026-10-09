@@ -31,6 +31,7 @@ import (
 	"github.com/fishman/neocloud-catalog/service/internal/release"
 	"github.com/fishman/neocloud-catalog/service/internal/server"
 	"github.com/fishman/neocloud-catalog/service/internal/store"
+	"github.com/fishman/neocloud-catalog/service/migrations"
 )
 
 func main() {
@@ -63,10 +64,9 @@ func usage() {
 commands:
   serve             serve /healthz and /readyz on server.addr and Prometheus
                     metrics on telemetry.metrics_addr
-  migrate           apply the schema with GORM AutoMigrate (dev and tests);
-                    production applies the versioned Atlas migrations (make
-                    migrate-apply), which alone install the trigger keeping
-                    releases immutable
+  migrate           apply the schema with GORM AutoMigrate plus the releases
+                    immutability trigger (dev and tests); production applies
+                    the versioned Atlas migrations (make migrate-apply)
   import <importer> run an importer (bootstrap-from-json: bootstrap.data_dir
                     into the upstream layer) as a job on the catalog queue,
                     and print its run
@@ -113,9 +113,15 @@ func cmdServe() {
 }
 
 func cmdMigrate() {
-	_, _, gormDB := open()
+	_, sqlDB, gormDB := open()
 	if err := gormDB.AutoMigrate(model.All()...); err != nil {
 		log.Fatalf("migrate: %v", err)
+	}
+	// One statement batch, so one transaction: re-running replaces the trigger.
+	trigger := `DROP TRIGGER IF EXISTS "releases_immutable" ON "releases"; DROP FUNCTION IF EXISTS "releases_immutable"();` +
+		migrations.ReleasesImmutable
+	if _, err := sqlDB.Exec(trigger); err != nil {
+		log.Fatalf("migrate: releases trigger: %v", err)
 	}
 	fmt.Println("schema applied")
 }

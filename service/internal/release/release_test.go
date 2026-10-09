@@ -332,6 +332,85 @@ func TestReleaseImmutable(t *testing.T) {
 	}
 }
 
+// Clients refuse a catalog that is not newer than theirs, so a release older
+// than a published one is never published: the tag stays on the newer one.
+func TestPublishRefusesOlderRelease(t *testing.T) {
+	s, db, older := generated(t, "release_older")
+	if err := db.Exec(`UPDATE generator_runs SET snapshot = jsonb_set(snapshot, '{generated_at}', '"2026-01-01T00:00:00Z"') WHERE id = ?`, older.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	newer, err := generator.Run(ctx, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldRel, newRel := create(t, s, older), create(t, s, newer)
+	if oldRel.Version >= newRel.Version {
+		t.Fatalf("release versions %s and %s are not in generation order", oldRel.Version, newRel.Version)
+	}
+	signer, _ := keySigner(t)
+	target := release.Target{Ref: registryHost(t) + "/neocloud/catalog:v4", Signer: signer}
+	if err := release.Publish(ctx, newRel, target); err != nil {
+		t.Fatal(err)
+	}
+	tagged := manifestDigest(t, target.Ref)
+
+	if err := release.Publish(ctx, oldRel, target); err == nil {
+		t.Error("a release older than the published one was published")
+	}
+	if got := manifestDigest(t, target.Ref); got != tagged {
+		t.Errorf("the tag moved back to %s", got)
+	}
+	if got, err := release.Get(ctx, s, oldRel.Version); err != nil || got.PublishedAt != nil {
+		t.Errorf("the older release is recorded as published at %v (err %v)", got.PublishedAt, err)
+	}
+}
+
+// Keyless runs cosign as the release workflow does, and a failing cosign
+// fails the signature with cosign's output.
+func TestKeylessRunsCosign(t *testing.T) {
+	dir := t.TempDir()
+	argv := filepath.Join(dir, "argv")
+	stub := "#!/bin/sh\nprintf '%s\\n' \"$@\" END >> \"$COSIGN_ARGV\"\n[ -z \"$COSIGN_FAIL\" ] || { echo \"$COSIGN_FAIL\" >&2; exit 1; }\n"
+	if err := os.WriteFile(filepath.Join(dir, "cosign"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	t.Setenv("COSIGN_ARGV", argv)
+	t.Setenv("COSIGN_FAIL", "")
+
+	repo, err := name.NewRepository("registry.example/neocloud/catalog")
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := v1.Hash{Algorithm: "sha256", Hex: strings.Repeat("ab", 32)}
+	var k release.Keyless
+	if err := k.SignManifest(ctx, repo, v1.Descriptor{Digest: digest, Size: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := k.SignBlob(ctx, "dist/SHA256SUMS", "dist/SHA256SUMS.sigstore.json"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(argv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Join([]string{
+		"sign", "--yes", "registry.example/neocloud/catalog@" + digest.String(), "END",
+		"sign-blob", "--yes", "--bundle", "dist/SHA256SUMS.sigstore.json", "dist/SHA256SUMS", "END", "",
+	}, "\n")
+	if string(got) != want {
+		t.Errorf("cosign ran with\n%s\nwant\n%s", got, want)
+	}
+
+	t.Setenv("COSIGN_FAIL", "no OIDC token")
+	if err := k.SignBlob(ctx, "dist/SHA256SUMS", "dist/SHA256SUMS.sigstore.json"); err == nil || !strings.Contains(err.Error(), "no OIDC token") {
+		t.Errorf("a failing cosign: err = %v, want its output", err)
+	}
+	if err := k.SignManifest(ctx, repo, v1.Descriptor{Digest: digest, Size: 1}); err == nil || !strings.Contains(err.Error(), "no OIDC token") {
+		t.Errorf("a failing cosign: err = %v, want its output", err)
+	}
+}
+
 // replaceOverlay makes ov the overlay layer.
 func replaceOverlay(t *testing.T, s *store.Store, ov catalog.Overlay) {
 	t.Helper()

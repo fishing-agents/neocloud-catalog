@@ -37,6 +37,19 @@ func (s *Store) Release(ctx context.Context, version string) (model.Release, err
 	return rel, err
 }
 
+// NewerPublished returns the newest published release version after
+// version, or "". Versions are fixed-width UTC times, so they sort in time
+// order as strings.
+func (s *Store) NewerPublished(ctx context.Context, version string) (string, error) {
+	var newer []string
+	err := s.db.WithContext(ctx).Model(&model.Release{}).Where("published_at IS NOT NULL AND version > ?", version).
+		Order("version DESC").Limit(1).Pluck("version", &newer).Error
+	if err != nil || len(newer) == 0 {
+		return "", err
+	}
+	return newer[0], nil
+}
+
 // PublishRelease records that the release id was published as ref, now. A
 // release published as ref already stays as it is; one published as another
 // ref is an error.

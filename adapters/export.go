@@ -17,8 +17,8 @@ import (
 
 // Exporter writes a snapshot in platform formats. Adapter and Format select
 // one adapter and one of its formats; empty selects every registered adapter
-// and every format. Extensions run on their adapter's exports; Log gets a
-// line per format and per skipped preset.
+// and every format. Extensions run on their adapter's exports; Log, if set,
+// gets a line per format and per skipped preset.
 type Exporter struct {
 	Adapter, Format string
 	Options         Options
@@ -30,6 +30,9 @@ type Exporter struct {
 // export whose presets are not all exported or skipped with a documented
 // reason, and writes out/SHA256SUMS over every file for the release to sign.
 func (x Exporter) Write(out string, snap catalog.CatalogSnapshot) error {
+	if x.Log == nil {
+		x.Log = io.Discard
+	}
 	names := Names()
 	if x.Adapter != "" {
 		names = []string{x.Adapter}

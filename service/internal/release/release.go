@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"path/filepath"
 
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -115,7 +114,8 @@ type Target struct {
 // its manifest, then points t.Ref's tag at it and records the release as
 // published there. A published release is not pushed again: publishing it
 // again changes nothing when its content still makes the published manifest,
-// and is refused otherwise.
+// and is refused otherwise. A release older than a published one is refused,
+// as clients refuse a catalog that is not newer than theirs.
 func Publish(ctx context.Context, rel Release, t Target) error {
 	if t.Signer == nil {
 		return errors.New("publish: no signer")
@@ -148,6 +148,13 @@ func Publish(ctx context.Context, rel Release, t Target) error {
 		}
 		return nil
 	}
+	newer, err := cur.s.NewerPublished(ctx, cur.Version)
+	if err != nil {
+		return err
+	}
+	if newer != "" {
+		return fmt.Errorf("release %s is older than the published release %s", cur.Version, newer)
+	}
 	opts := remoteOptions(ctx)
 	if err := a.push(repo, opts); err != nil {
 		return fmt.Errorf("push %s: %w", at, err)
@@ -173,7 +180,7 @@ func WriteExports(ctx context.Context, rel Release, dir string, signer Signer) e
 	if err != nil {
 		return err
 	}
-	x := adapters.Exporter{Extensions: adapters.ExportExtensions(), Log: io.Discard}
+	x := adapters.Exporter{Extensions: adapters.ExportExtensions()}
 	if err := x.Write(dir, snap); err != nil {
 		return fmt.Errorf("release %s exports: %w", rel.Version, err)
 	}
