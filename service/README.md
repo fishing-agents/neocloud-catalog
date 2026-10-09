@@ -59,11 +59,13 @@ models) also carry `field_provenance`: per field, where its value came from.
   own position and key, so upstream reorders never move them.
 - `overlay` - extension payloads only, never core fields (core `Merge` rules).
 
-An importer never overwrites a field whose provenance is curation, and lists
-the disagreement instead. The bootstrap run records its rows as
-`bootstrap-from-json`, not as curation, so later importers may correct them;
-curation enters only through curation writes (the local layer and the curated
-`families.overlay.json`).
+An importer never overwrites a field whose provenance is curation; its run
+summary lists each curated value kept over a differing imported one under
+`conflicts` (curated and imported value), the whole-layer imports
+(`bootstrap-from-json`, `upstream`) included. The bootstrap run records its
+rows as `bootstrap-from-json`, not as curation, so later importers may correct
+them; curation enters only through curation writes (the local layer and the
+curated `families.overlay.json`).
 
 ## Importers
 
@@ -90,7 +92,8 @@ changes nothing.
   the Hub returns.
 - Azure prices: a node type priced in none of the configured regions is an
   error of the run and loses its upstream price rows; a price of 0 counts as
-  unpriced.
+  unpriced. The run fails only when Azure node types exist and none could be
+  priced; a catalog without `azure/` node types succeeds.
 - Upstream: verified as neocloud-api verifies a release (cosign bundle as an
   OCI referrer, keyless identity or public key), and refused when older than
   a release already imported.
@@ -153,8 +156,9 @@ kubectl exec deploy/catalog-service -- /catalog-service auth issue -name ops
 
 Endpoints: `GET /v1/catalog` (effective catalog), `/v1/local/models/{slug}`
 and its `presets/{name}`, `/v1/local/node-types/{id}`, `/v1/local/prices`,
-`/v1/imports`, `/v1/generator-runs`, `/v1/releases`,
-`/v1/releases/{version}/publish`, `/v1/cost-estimates`.
+`/v1/imports` and `/v1/imports/{id}`, `/v1/generator-runs` and
+`/v1/generator-runs/{id}`, `/v1/releases`, `/v1/releases/{version}/publish`,
+`/v1/cost-estimates`.
 
 ## Configuration
 
@@ -166,7 +170,14 @@ key), then `$NEOCLOUD_CATALOG_CONFIG_DIR/*.toml` in lexical order, then
 
 `jobs.job_timeout` cancels a run on the catalog queue (runs are never
 retried); a run still running after `jobs.rescue_after` was left by a worker
-that exited and is failed.
+that exited and is failed. On SIGTERM `serve` gives running jobs
+`server.write_timeout` to finish, then cancels them and records them as
+failed.
+
+`import` and `generate` share the queue with `serve`'s worker: they work it
+until their own job finished, then until any job of another process they
+took finished (at most `jobs.job_timeout`), and never cancel such a job. A
+signal cancels only their own job; a second signal exits at once.
 
 ## Schema
 

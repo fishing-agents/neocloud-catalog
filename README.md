@@ -100,7 +100,8 @@ service). neocloud ingests the snapshot; it does not curate models itself.
   `data/families.overlay.json` (the SKU each family name stands for, its Epoch
   row, architecture, compute capability or gfx target, native dtypes,
   interconnect, and Epoch gaps or corrections), every value with its source
-  URL. The core holds no network code.
+  URL. The core holds no network code; this importer replaces the removed
+  `cmd/families-import`.
 - `runrecord/` - the run-record contract: one serving configuration observed
   over one window with its outcome (Go types, `schema/run-record.v1.json`,
   strict `Decode`, `Validate`, the launch-flag allowlist `FilterArgs`).
