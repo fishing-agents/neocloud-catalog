@@ -20,7 +20,7 @@ const Format = "gpustack"
 
 // Reasons the gpustack format skips a preset.
 const (
-	// SkipNoSource also covers a source of several files, as GPUStack's
+	// SkipNoSource also covers a gguf source of several files, as GPUStack's
 	// source names at most one.
 	SkipNoSource = "no Hugging Face or ModelScope source"
 	SkipBackend  = "backend GPUStack cannot run"
@@ -188,8 +188,20 @@ func (a adapter) specs(snap catalog.CatalogSnapshot, r adapters.Ref) ([]spec, st
 		return nil, SkipTopology, nil
 	}
 	src, ok := r.Source(a.Capabilities().Sources...)
-	if !ok || len(src.Files) > 1 {
+	if !ok {
 		return nil, SkipNoSource, nil
+	}
+	q, _ := r.Quantization()
+	// GPUStack downloads the whole repository unless it names one GGUF file;
+	// other manifests list the revision's files (R10).
+	var file string
+	if q.Kind == "gguf" {
+		if len(src.Files) > 1 {
+			return nil, SkipNoSource, nil
+		}
+		if len(src.Files) == 1 {
+			file = src.Files[0].Path
+		}
 	}
 	bv, ok := adapters.BackendVersion(snap, p.Backend, p.BackendVersion)
 	if !ok {
@@ -203,16 +215,11 @@ func (a adapter) specs(snap catalog.CatalogSnapshot, r adapters.Ref) ([]spec, st
 		Backend:      backend,
 		Env:          p.Env,
 	}
-	var file string
-	if len(src.Files) == 1 {
-		file = src.Files[0].Path
-	}
 	if src.Type == catalog.SourceHuggingFace {
 		base.Source, base.HuggingFaceRepoID, base.HuggingFaceFilename = "huggingface", src.Repo, file
 	} else {
 		base.Source, base.ModelScopeModelID, base.ModelScopeFilePath = "model_scope", src.Repo, file
 	}
-	q, _ := r.Quantization()
 	cc := minComputeCapability(snap, q.Kind, bv)
 	var out []spec
 	for _, v := range adapters.Vendors(p, bv) {

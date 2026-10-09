@@ -187,6 +187,34 @@ func TestLlamaCpp(t *testing.T) {
 	}
 }
 
+// A safetensors manifest lists the revision's files, which GPUStack downloads
+// whole anyway: only a gguf quantization names its file (R10), and a gguf
+// source of several files has no one file to name.
+func TestOnlyGGUFNamesItsFile(t *testing.T) {
+	snap := committed(t)
+	m := &snap.Models[slices.IndexFunc(snap.Models, func(m catalog.ModelTemplate) bool { return m.Slug == "llama-3.1-8b" })]
+	file := func(path string) catalog.ModelFile {
+		return catalog.ModelFile{Path: path, Size: 1, Digest: "sha256:" + strings.Repeat("ab", 32)}
+	}
+	m.Quantizations[0].Sources[0].Files = []catalog.ModelFile{file("config.json"), file("model.safetensors")}
+	gguf := &m.Quantizations[2].Sources[0]
+	gguf.Files = append(gguf.Files, file("other.gguf"))
+	e, doc := export(t, snap)
+	refs := adapters.Presets(snap)
+	bf16 := specs(doc, refs[slices.IndexFunc(refs, func(r adapters.Ref) bool { return r.Key() == key("llama-3.1-8b", "vllm-bf16") })])
+	if len(bf16) == 0 {
+		t.Fatal("vllm-bf16 has no spec")
+	}
+	for _, s := range bf16 {
+		if s.HuggingFaceRepoID != "meta-llama/Llama-3.1-8B-Instruct" || s.HuggingFaceFilename != "" {
+			t.Errorf("vllm-bf16 source %q file %q, want the repository without a file", s.HuggingFaceRepoID, s.HuggingFaceFilename)
+		}
+	}
+	if want := (adapters.Skip{PresetKey: key("llama-3.1-8b", "llamacpp-q4km"), Reason: SkipNoSource}); !slices.Contains(e.Skipped, want) {
+		t.Errorf("skipped = %v, want %v", e.Skipped, want)
+	}
+}
+
 // A model set carries the model's metadata in GPUStack's vocabulary: task as a
 // category, the context and capabilities GPUStack names (long-context is its
 // context/<N>K), the active size of a mixture of experts.
