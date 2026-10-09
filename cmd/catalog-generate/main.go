@@ -69,7 +69,11 @@ func run() error {
 		snap.GeneratedAt = time.Now().UTC()
 		snap.Version = snap.GeneratedAt.Format(catalog.VersionLayout)
 	}
-	if err := writeJSON(snapshotPath, snap); err != nil {
+	out, err := snap.Encode()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(snapshotPath, out, 0o644); err != nil {
 		return err
 	}
 	fmt.Printf("wrote %s (version=%s models=%d fits=%d backends=%d digest=%s)\n",
@@ -110,12 +114,4 @@ func loadJSON(path string, v any) error {
 		return err
 	}
 	return json.Unmarshal(b, v)
-}
-
-func writeJSON(path string, v any) error {
-	out, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, append(out, '\n'), 0o644)
 }

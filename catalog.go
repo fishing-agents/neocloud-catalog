@@ -378,3 +378,13 @@ func (s CatalogSnapshot) Digest() string {
 	_ = json.NewEncoder(h).Encode(s)
 	return hex.EncodeToString(h.Sum(nil))
 }
+
+// Encode returns the snapshot as published: indented JSON ending in a newline,
+// the bytes catalog-generate commits and a release pushes.
+func (s CatalogSnapshot) Encode() ([]byte, error) {
+	b, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(b, '\n'), nil
+}
