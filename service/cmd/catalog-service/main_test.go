@@ -176,3 +176,43 @@ func TestWorkSignalCancelsItsJob(t *testing.T) {
 		t.Errorf("run of the interrupted job: %+v %v, want failed", run, err)
 	}
 }
+
+// On a signal serve gives running jobs the grace to finish: one that finishes
+// within it succeeds, one that overruns it is cancelled and recorded failed.
+func TestServeShutdownGrace(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	open := make(chan struct{})
+	cfg, sqlDB, s, reg := workSetup(t, "serve_grace", gate{"finishes", open}, gate{"overruns", make(chan struct{})})
+	serve := func(importer string, grace time.Duration, onSignal func()) model.ImportRun {
+		t.Helper()
+		c, err := jobs.New(sqlDB, s, reg, jobsConfig(cfg))
+		if err != nil {
+			t.Fatal(err)
+		}
+		sig, signal := context.WithCancel(ctx)
+		done := make(chan error, 1)
+		go func() { done <- runServe(sig, c, grace, func() error { <-sig.Done(); return nil }) }()
+		id := uuid.New()
+		if _, err := c.Insert(ctx, jobs.ImportArgs{Importer: importer, Run: id}, nil); err != nil {
+			t.Fatal(err)
+		}
+		awaitRun(ctx, t, s, id, model.RunRunning)
+		signal()
+		onSignal()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		run, err := s.ImportRun(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return run
+	}
+	if run := serve("finishes", 5*time.Second, func() { time.Sleep(200 * time.Millisecond); close(open) }); run.Status != model.RunSucceeded {
+		t.Errorf("run finishing within the grace: %s %q, want succeeded", run.Status, run.Error)
+	}
+	if run := serve("overruns", 200*time.Millisecond, func() {}); run.Status != model.RunFailed || !strings.Contains(run.Error, "context canceled") {
+		t.Errorf("run overrunning the grace: %s %q, want failed, cancelled", run.Status, run.Error)
+	}
+}

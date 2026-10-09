@@ -157,18 +157,26 @@ func cmdServe() {
 	if err != nil {
 		log.Fatalf("jobs: %v", err)
 	}
-	if err := c.Start(ctx); err != nil {
-		log.Fatalf("jobs: %v", err)
-	}
 	api := httpapi.New(httpapi.Config{Store: s, Jobs: c, Importers: reg, Publish: publish, PublishTimeout: cfg.Release.PublishTimeout,
 		Auth: auth.New(gormDB, auth.OIDCConfig{IssuerURL: cfg.Auth.IssuerURL, Audience: cfg.Auth.Audience})})
 	log.Printf("serving on %s (metrics %s)", cfg.Server.Addr, cfg.Telemetry.MetricsAddr)
-	err = server.Serve(ctx, cfg, server.Handler(sqlDB.PingContext, api))
-	// Runs still going after server.write_timeout are cancelled and recorded
-	// as failed rather than holding the shutdown for up to jobs.job_timeout.
-	if err = errors.Join(err, c.Shutdown(cfg.Server.WriteTimeout)); err != nil {
+	err = runServe(ctx, c, cfg.Server.WriteTimeout, func() error {
+		return server.Serve(ctx, cfg, server.Handler(sqlDB.PingContext, api))
+	})
+	if err != nil {
 		log.Fatalf("serve: %v", err)
 	}
+}
+
+// runServe works the catalog queue on c while serve runs until ctx ends. Runs
+// still going then get grace to finish, and are then cancelled and recorded
+// as failed rather than holding the shutdown for up to jobs.job_timeout.
+func runServe(ctx context.Context, c *jobs.Client, grace time.Duration, serve func() error) error {
+	// Detached: cancelling River's start context would cancel the jobs at once.
+	if err := c.Start(context.WithoutCancel(ctx)); err != nil {
+		return fmt.Errorf("jobs: %w", err)
+	}
+	return errors.Join(serve(), c.Shutdown(grace))
 }
 
 func jobsConfig(cfg *config.Config) jobs.Config {
