@@ -628,8 +628,19 @@ func (src ModelSource) validate() error {
 		return fmt.Errorf("%s source %q: revision required", src.Type, src.Repo)
 	}
 	var errs []error
-	for _, f := range src.Files {
-		if err := f.validate(); err != nil {
+	seen := make(map[string]bool, len(src.Files))
+	for i, f := range src.Files {
+		var err error
+		switch {
+		case f.Path == "":
+			err = fmt.Errorf("file %d: path required", i)
+		case seen[f.Path]:
+			err = fmt.Errorf("file %d %q: duplicate path", i, f.Path)
+		default:
+			err = f.validate()
+		}
+		seen[f.Path] = true
+		if err != nil {
 			errs = append(errs, fmt.Errorf("%s source %q: %w", src.Type, src.Repo, err))
 		}
 	}
@@ -643,8 +654,6 @@ var digestHexLen = map[string][]int{"sha256": {64}, "git-oid": {40, 64}}
 func (f ModelFile) validate() error {
 	alg, sum, _ := strings.Cut(f.Digest, ":")
 	switch {
-	case f.Path == "":
-		return errors.New("file path required")
 	case f.Size <= 0:
 		return fmt.Errorf("file %q: size %d, want > 0", f.Path, f.Size)
 	case !slices.Contains(digestHexLen[alg], len(sum)) || strings.Trim(sum, "0123456789abcdef") != "":

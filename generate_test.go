@@ -470,8 +470,13 @@ func TestGenerateRejectsUnresolvedPresetsAndUnpinnedSources(t *testing.T) {
 			m.Quantizations[0].Sources[0].Files = []ModelFile{{Path: "m.gguf", Digest: "sha256:" + strings.Repeat("7b", 32)}}
 		}, `file "m.gguf": size 0`},
 		{"file without path", func(m *ModelTemplate) {
-			m.Quantizations[0].Sources[0].Files = []ModelFile{{Size: 1, Digest: "sha256:" + strings.Repeat("7b", 32)}}
-		}, "file path required"},
+			m.Quantizations[0].Sources[0].Files = []ModelFile{{Path: "m.gguf", Size: 1, Digest: "sha256:" + strings.Repeat("7b", 32)},
+				{Size: 1, Digest: "sha256:" + strings.Repeat("7b", 32)}}
+		}, "file 1: path required"},
+		{"duplicate file path", func(m *ModelTemplate) {
+			m.Quantizations[0].Sources[0].Files = []ModelFile{{Path: "m.gguf", Size: 1, Digest: "sha256:" + strings.Repeat("7b", 32)},
+				{Path: "m.gguf", Size: 2, Digest: "sha256:" + strings.Repeat("7c", 32)}}
+		}, `file 1 "m.gguf": duplicate path`},
 		{"bare digest", func(m *ModelTemplate) {
 			m.Quantizations[0].Sources[0].Files = []ModelFile{{Path: "m.gguf", Size: 1, Digest: strings.Repeat("7b", 32)}}
 		}, `file "m.gguf": digest`},
