@@ -3,7 +3,7 @@ ATLAS ?= atlas
 NAME ?= change
 TEST_DSN ?= postgres://neocloud:neocloud@localhost:5432/catalog_service_test?sslmode=disable
 
-.PHONY: all build generate vet fmt lint test test-unit test-integration chart-test migrate migrate-diff migrate-apply serve image
+.PHONY: all build generate vet fmt lint test test-unit test-integration chart-test compose-test migrate migrate-diff migrate-apply serve image
 
 all: build
 
@@ -31,6 +31,9 @@ test-unit:
 # Skipped without helm.
 chart-test:
 	$(GO) test ./charts/catalog-service/tests/ -count=1
+
+compose-test:
+	deploy/test.sh && deploy/test.sh down
 
 # Each DB test creates and drops its own database next to TEST_DSN's.
 test-integration:

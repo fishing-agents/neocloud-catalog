@@ -121,11 +121,17 @@ make image                   # from repo root context: docker build -f service/D
 make test-unit               # DB tests skip
 make test-integration        # Postgres at TEST_DSN
 make chart-test              # helm template + lint; skipped without helm
+make compose-test            # deploy/: upstream publishes, operator imports (docker)
 NEOCLOUD_CATALOG_LIVE=1 go test ./internal/importers/... -run TestLive
 ```
 
 Local run: `make migrate`, `go run ./cmd/catalog-service import bootstrap-from-json`,
 `go run ./cmd/catalog-service generate`, `make serve`.
+
+Compose test: `deploy/test.sh` builds the image and starts postgres, a registry,
+an upstream and an operator instance, then publishes a signed release upstream
+and checks that the operator imports it. `deploy/test.sh down` removes the stack
+and its volumes.
 
 ## Deploy
 
