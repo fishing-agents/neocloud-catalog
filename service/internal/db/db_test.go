@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -120,9 +122,35 @@ func TestMigrationsApplyFromScratch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}
-	if len(rec.stmts) > 0 {
-		t.Errorf("models drift from migrations; AutoMigrate wants:\n%s", strings.Join(rec.stmts, "\n"))
+	var drift []string
+	for _, stmt := range rec.stmts {
+		if !resetsCurrentDefault(t, sqlDB, stmt) {
+			drift = append(drift, stmt)
+		}
 	}
+	if len(drift) > 0 {
+		t.Errorf("models drift from migrations; AutoMigrate wants:\n%s", strings.Join(drift, "\n"))
+	}
+}
+
+var setDefault = regexp.MustCompile(`^ALTER TABLE "(\w+)" ALTER COLUMN "(\w+)" SET DEFAULT (.+)$`)
+
+// resetsCurrentDefault reports whether stmt sets a column default the column
+// already has. GORM's postgres migrator re-sets every default it cannot parse
+// into a Go value (jsonb '{}') on each run, so such a statement is no drift.
+func resetsCurrentDefault(t *testing.T, sqlDB *sql.DB, stmt string) bool {
+	t.Helper()
+	m := setDefault.FindStringSubmatch(stmt)
+	if m == nil {
+		return false
+	}
+	var current sql.NullString
+	err := sqlDB.QueryRow(`SELECT column_default FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2`, m[1], m[2]).Scan(&current)
+	if err != nil {
+		t.Fatalf("default of %s.%s: %v", m[1], m[2], err)
+	}
+	value, _, _ := strings.Cut(current.String, "::")
+	return current.Valid && value == m[3]
 }
 
 func pgError(err error) *pgconn.PgError {
@@ -230,5 +258,40 @@ func TestConstraintsRefuseInvalidRows(t *testing.T) {
 				t.Fatalf("got %v, want %s violation of %s", err, c.code, c.constraint)
 			}
 		})
+	}
+}
+
+func TestFieldProvenanceRoundTrip(t *testing.T) {
+	sqlDB, gormDB := freshDB(t, "fieldprov")
+	applyMigrations(t, sqlDB)
+
+	run := uuid.New()
+	asOf := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	want := model.FieldProvenance{
+		"params_b":    {Source: "huggingface", SourceURL: "https://huggingface.co/meta/llama", AsOf: asOf, ImportRunID: &run},
+		"description": {Source: model.SourceCuration, AsOf: asOf},
+	}
+	curated := model.Model{Provenance: model.Provenance{Layer: model.LayerLocal}, Slug: "llama",
+		FieldProvenance: datatypes.NewJSONType(want)}
+	bare := model.Model{Provenance: model.Provenance{Layer: model.LayerUpstream}, Slug: "llama"}
+	for _, m := range []*model.Model{&curated, &bare} {
+		if err := gormDB.Create(m).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var got model.Model
+	if err := gormDB.First(&got, "id = ?", curated.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.FieldProvenance.Data(), want) {
+		t.Errorf("field provenance = %+v, want %+v", got.FieldProvenance.Data(), want)
+	}
+	var raw string
+	if err := sqlDB.QueryRow(`SELECT field_provenance::text FROM models WHERE id = $1`, bare.ID).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	if raw != "{}" {
+		t.Errorf("unset field provenance stored as %s, want {}", raw)
 	}
 }

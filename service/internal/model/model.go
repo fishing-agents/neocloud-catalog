@@ -6,6 +6,7 @@
 package model
 
 import (
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -67,11 +68,41 @@ type Derivation struct {
 	GeneratorRun   *GeneratorRun `gorm:"foreignKey:GeneratorRunID;constraint:OnDelete:CASCADE"`
 }
 
+// SourceCuration is the source of a hand-curated value.
+const SourceCuration = "curation"
+
+// FieldSource is where one field's value came from.
+type FieldSource struct {
+	Source      string     `json:"source"`
+	SourceURL   string     `json:"source_url,omitempty"`
+	AsOf        time.Time  `json:"as_of"`
+	ImportRunID *uuid.UUID `json:"import_run_id,omitempty"`
+}
+
+// FieldProvenance maps a field name to where that field's value came from;
+// the row's Provenance stays the row's origin.
+type FieldProvenance map[string]FieldSource
+
+// CuratedFields returns the fields whose value is curated, sorted; importers
+// leave them alone.
+func (p FieldProvenance) CuratedFields() []string {
+	var fields []string
+	for f, s := range p {
+		if s.Source == SourceCuration {
+			fields = append(fields, f)
+		}
+	}
+	slices.Sort(fields)
+	return fields
+}
+
 type Family struct {
 	Base
 	Timestamps
 	Provenance
 	Name               string                                 `gorm:"not null;uniqueIndex:,composite:natural,priority:2"`
+	Position           int                                    `gorm:"not null"`
+	FieldProvenance    datatypes.JSONType[FieldProvenance]    `gorm:"not null;default:'{}'"`
 	Vendor             string                                 `gorm:"not null"`
 	Architecture       string                                 `gorm:"not null"`
 	ComputeCapability  string                                 `gorm:"not null"`
@@ -88,9 +119,13 @@ type NodeType struct {
 	Base
 	Timestamps
 	Provenance
-	NodeTypeID string `gorm:"column:node_type_id;not null;uniqueIndex:,composite:natural,priority:2"`
-	Family     string `gorm:"not null;index"`
-	GPUs       int    `gorm:"column:gpus;not null"`
+	NodeTypeID      string                              `gorm:"column:node_type_id;not null;uniqueIndex:,composite:natural,priority:2"`
+	FieldProvenance datatypes.JSONType[FieldProvenance] `gorm:"not null;default:'{}'"`
+	Family          string                              `gorm:"not null;index"`
+	GPUs            int                                 `gorm:"column:gpus;not null"`
+	// DocURL is the exported catalog.NodeType.Source, the page documenting
+	// the node type.
+	DocURL string `gorm:"column:doc_url;not null"`
 }
 
 // NodeTypePrice is internal: no price leaves the service in an export.
@@ -110,6 +145,8 @@ type Model struct {
 	Timestamps
 	Provenance
 	Slug            string                                   `gorm:"not null;uniqueIndex:,composite:natural,priority:2"`
+	Position        int                                      `gorm:"not null"`
+	FieldProvenance datatypes.JSONType[FieldProvenance]      `gorm:"not null;default:'{}'"`
 	Name            string                                   `gorm:"not null"`
 	Family          string                                   `gorm:"not null"`
 	Task            string                                   `gorm:"not null"`
@@ -124,7 +161,6 @@ type Model struct {
 	License         string                                   `gorm:"not null"`
 	Gated           bool                                     `gorm:"not null"`
 	Architecture    datatypes.JSONType[catalog.Architecture] `gorm:"not null"`
-	KVBytesPerToken float64                                  `gorm:"column:kv_bytes_per_token;not null"`
 	DefaultContext  int                                      `gorm:"not null"`
 	ContextMax      int                                      `gorm:"not null"`
 }
@@ -135,12 +171,13 @@ type ModelQuantization struct {
 	Base
 	Timestamps
 	Provenance
-	ModelSlug     string  `gorm:"not null;uniqueIndex:,composite:natural,priority:2"`
-	Name          string  `gorm:"not null;uniqueIndex:,composite:natural,priority:3"`
-	Position      int     `gorm:"not null"`
-	Kind          string  `gorm:"not null"`
-	RequiresDType string  `gorm:"column:requires_dtype;not null"`
-	WeightsGB     float64 `gorm:"column:weights_gb;not null"`
+	ModelSlug       string                              `gorm:"not null;uniqueIndex:,composite:natural,priority:2"`
+	Name            string                              `gorm:"not null;uniqueIndex:,composite:natural,priority:3"`
+	Position        int                                 `gorm:"not null"`
+	FieldProvenance datatypes.JSONType[FieldProvenance] `gorm:"not null;default:'{}'"`
+	Kind            string                              `gorm:"not null"`
+	RequiresDType   string                              `gorm:"column:requires_dtype;not null"`
+	WeightsGB       float64                             `gorm:"column:weights_gb;not null"`
 }
 
 // ModelSource locates the weights of a quantization (ModelSlug, Quantization)
@@ -177,7 +214,8 @@ type Backend struct {
 	Base
 	Timestamps
 	Provenance
-	Name string `gorm:"not null;uniqueIndex:,composite:natural,priority:2"`
+	Name     string `gorm:"not null;uniqueIndex:,composite:natural,priority:2"`
+	Position int    `gorm:"not null"`
 }
 
 // BackendVersion's flag table lives in flag_tables under the same key.
@@ -236,11 +274,13 @@ type DraftModel struct {
 	Base
 	Timestamps
 	Provenance
-	Slug      string                      `gorm:"not null;uniqueIndex:,composite:natural,priority:2"`
-	Method    string                      `gorm:"not null"`
-	Targets   datatypes.JSONSlice[string] `gorm:"not null"`
-	WeightsGB float64                     `gorm:"column:weights_gb;not null"`
-	Backends  datatypes.JSONSlice[string] `gorm:"not null"`
+	Slug            string                              `gorm:"not null;uniqueIndex:,composite:natural,priority:2"`
+	Position        int                                 `gorm:"not null"`
+	FieldProvenance datatypes.JSONType[FieldProvenance] `gorm:"not null;default:'{}'"`
+	Method          string                              `gorm:"not null"`
+	Targets         datatypes.JSONSlice[string]         `gorm:"not null"`
+	WeightsGB       float64                             `gorm:"column:weights_gb;not null"`
+	Backends        datatypes.JSONSlice[string]         `gorm:"not null"`
 }
 
 // Fit is keyed by catalog.FitKey: Profile is NULL for whole GPUs, which a
@@ -363,17 +403,19 @@ type ImportRun struct {
 }
 
 // GeneratorRun is one generation over the effective catalog; InputDigest
-// identifies the inputs it read and Report lists what it reported.
+// identifies the inputs it read, InputImportRuns the import runs that wrote
+// them, and Report lists what it reported.
 type GeneratorRun struct {
 	Base
 	Timestamps
-	Status        string    `gorm:"not null;check:status IN ('running', 'succeeded', 'failed')"`
-	StartedAt     time.Time `gorm:"not null"`
-	FinishedAt    *time.Time
-	InputDigest   string                      `gorm:"not null"`
-	SchemaVersion string                      `gorm:"not null"`
-	Report        datatypes.JSONSlice[string] `gorm:"not null"`
-	Error         string                      `gorm:"not null"`
+	Status          string    `gorm:"not null;check:status IN ('running', 'succeeded', 'failed')"`
+	StartedAt       time.Time `gorm:"not null"`
+	FinishedAt      *time.Time
+	InputDigest     string                         `gorm:"not null"`
+	InputImportRuns datatypes.JSONSlice[uuid.UUID] `gorm:"not null"`
+	SchemaVersion   string                         `gorm:"not null"`
+	Report          datatypes.JSONSlice[string]    `gorm:"not null"`
+	Error           string                         `gorm:"not null"`
 }
 
 // All lists every model, referenced tables first, for the schema dump and
