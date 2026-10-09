@@ -11,10 +11,11 @@
 // operator to review, not a value to take.
 //
 // An entry lacking a value is listed in the run's errors and its other values
-// are compared; the summary counts the entries compared in full and those
-// with errors. The run fails when the catalog cannot be read or lists no
-// model, or when it is cancelled. Its input version hashes the entries it
-// compared, so entries of models the catalog lacks leave it unchanged.
+// are compared; the summary counts the catalog's models compared in full
+// with an entry and those whose entry lacked a value. The run fails when the
+// catalog cannot be read or lists no model, or when it is cancelled. Its
+// input version hashes the entries it compared, so entries of models the
+// catalog lacks leave it unchanged.
 package kaito
 
 import (
@@ -70,15 +71,16 @@ func (i *Importer) Origin() importers.Origin {
 
 // entry is the part of a KAITO catalog entry the cross-check compares, as
 // KAITO's generator writes it: a value config.json lacks is 0, and HeadDim is
-// 0 unless it differs from hidden size / attention heads.
+// 0 unless it differs from hidden size / attention heads. Its JSON is what
+// the input version hashes.
 type entry struct {
-	Name       string `yaml:"name"`
-	TokenLimit int    `yaml:"modelTokenLimit"`
-	Hidden     int    `yaml:"hiddenSize"`
-	Layers     int    `yaml:"numHiddenLayers"`
-	Heads      int    `yaml:"numAttentionHeads"`
-	KVHeads    int    `yaml:"numKeyValueHeads"`
-	HeadDim    int    `yaml:"headDim"`
+	Name       string `yaml:"name" json:"Name"`
+	TokenLimit int    `yaml:"modelTokenLimit" json:"TokenLimit"`
+	Hidden     int    `yaml:"hiddenSize" json:"Hidden"`
+	Layers     int    `yaml:"numHiddenLayers" json:"Layers"`
+	Heads      int    `yaml:"numAttentionHeads" json:"Heads"`
+	KVHeads    int    `yaml:"numKeyValueHeads" json:"KVHeads"`
+	HeadDim    int    `yaml:"headDim" json:"HeadDim"`
 }
 
 // architecture is e's architecture read as the huggingface importer reads

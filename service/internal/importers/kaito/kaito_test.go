@@ -29,6 +29,9 @@ const (
 	// fixtureSHA256 is the sha256 of model_catalog.yaml at Revision.
 	fixtureSHA256 = "f726754e71c93d1e2c1a2c652c9101b5fb952d71080e3f4056baf1e09d6931f2"
 	llama         = "meta-llama/Llama-3.1-8B-Instruct"
+	// recordedVersion is the input version of the fixture over the committed
+	// catalog; it changes only with the compared facts.
+	recordedVersion = "sha256:b30a1bc2c5f5b230ef56d748ff74e5c6f7a623213c1481baa1bb05d9dcee99d7"
 )
 
 var ctx = context.Background()
@@ -144,7 +147,7 @@ func TestRecordedCatalogAgrees(t *testing.T) {
 		t.Fatal(err)
 	}
 	if first.Importer != "kaito" || first.Layer != model.LayerUpstream || first.Source != "kaito" || first.SourceURL != imp.url ||
-		first.Status != model.RunSucceeded || !strings.HasPrefix(first.InputVersion, "sha256:") {
+		first.Status != model.RunSucceeded || first.InputVersion != recordedVersion {
 		t.Fatalf("run = %+v, want a succeeded kaito run", first)
 	}
 	sum := summaryOf(t, first)
