@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -150,29 +151,85 @@ func (s *Store) ReplaceLayer(ctx context.Context, layer string, run uuid.UUID, i
 	}
 	var changes Changes
 	err = s.write(ctx, func(tx *gorm.DB) error {
-		var r model.ImportRun
-		if err := tx.Take(&r, "id = ?", run).Error; err != nil {
-			return fmt.Errorf("import run %s: %w", run, err)
-		}
-		if r.Layer != layer || r.Status != model.RunRunning {
-			return fmt.Errorf("import run %s is %s in layer %s, not running in layer %s", run, r.Status, r.Layer, layer)
+		st, err := runningRun(tx, run, layer)
+		if err != nil {
+			return err
 		}
 		if layer == model.LayerOverlay {
 			if err := checkPayloadIDs(tx, in.Extensions); err != nil {
 				return err
 			}
 		}
-		have, err := load(tx, layer, scope{})
-		if err != nil {
-			return err
-		}
-		changes, err = apply(tx, stamp{layer: layer, source: r.Source, sourceURL: r.SourceURL, asOf: r.StartedAt, run: &r.ID}, have, want)
+		changes, err = replace(tx, st, want)
 		return err
 	})
 	if err != nil {
 		return nil, err
 	}
 	return changes, nil
+}
+
+// ReplaceUpstream makes the upstream layer hold in's core objects and the
+// overlay layer exactly in.Extensions, in one transaction, written by the
+// running upstream import run run as ReplaceLayer writes each. An operator
+// deployment imports a release with the overlay pinned to it this way: the
+// overlay layer never holds another release's payloads, and an overlay that
+// does not apply changes neither layer. The payload rows take the run's
+// provenance with overlayURL as their source URL, although the run writes the
+// upstream layer: R13's layer match is relaxed here only.
+func (s *Store) ReplaceUpstream(ctx context.Context, run uuid.UUID, in Inputs, overlayURL string) (Changes, error) {
+	ov := Inputs{Extensions: in.Extensions}
+	in.Extensions = catalog.Overlay{}
+	core, err := toRows(model.LayerUpstream, in)
+	if err != nil {
+		return nil, err
+	}
+	payloads, err := toRows(model.LayerOverlay, ov)
+	if err != nil {
+		return nil, err
+	}
+	var changes Changes
+	err = s.write(ctx, func(tx *gorm.DB) error {
+		st, err := runningRun(tx, run, model.LayerUpstream)
+		if err != nil {
+			return err
+		}
+		if changes, err = replace(tx, st, core); err != nil {
+			return err
+		}
+		if err := checkPayloadIDs(tx, ov.Extensions); err != nil {
+			return err
+		}
+		st.layer, st.sourceURL = model.LayerOverlay, overlayURL
+		c, err := replace(tx, st, payloads)
+		maps.Copy(changes, c)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return changes, nil
+}
+
+// runningRun is the stamp of the running import run run of layer.
+func runningRun(tx *gorm.DB, run uuid.UUID, layer string) (stamp, error) {
+	var r model.ImportRun
+	if err := tx.Take(&r, "id = ?", run).Error; err != nil {
+		return stamp{}, fmt.Errorf("import run %s: %w", run, err)
+	}
+	if r.Layer != layer || r.Status != model.RunRunning {
+		return stamp{}, fmt.Errorf("import run %s is %s in layer %s, not running in layer %s", run, r.Status, r.Layer, layer)
+	}
+	return stamp{layer: layer, source: r.Source, sourceURL: r.SourceURL, asOf: r.StartedAt, run: &r.ID}, nil
+}
+
+// replace makes st's layer hold want.
+func replace(tx *gorm.DB, st stamp, want rowSet) (Changes, error) {
+	have, err := load(tx, st.layer, scope{})
+	if err != nil {
+		return nil, err
+	}
+	return apply(tx, st, have, want)
 }
 
 // Upsert curates object in the local layer, replacing the local object of its

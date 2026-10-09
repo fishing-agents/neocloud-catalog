@@ -33,6 +33,7 @@ import (
 	"github.com/fishman/neocloud-catalog/service/internal/importers/epoch"
 	"github.com/fishman/neocloud-catalog/service/internal/importers/huggingface"
 	"github.com/fishman/neocloud-catalog/service/internal/importers/kaito"
+	"github.com/fishman/neocloud-catalog/service/internal/importers/upstream"
 	"github.com/fishman/neocloud-catalog/service/internal/jobs"
 	"github.com/fishman/neocloud-catalog/service/internal/model"
 	"github.com/fishman/neocloud-catalog/service/internal/release"
@@ -86,23 +87,30 @@ commands:
                     upstream sources at their pinned revisions; gated
                     repositories need huggingface.token_file),
                     azure-prices (Azure Retail Prices of the azure/ node
-                    types in azure_prices.regions, internal) or kaito
+                    types in azure_prices.regions, internal), kaito
                     (cross-check of model architectures and context limits
                     against KAITO's model catalog at its pinned release;
-                    lists disagreements, writes nothing)
+                    lists disagreements, writes nothing) or, in an operator
+                    deployment with upstream.ref set, upstream (our signed
+                    release into the upstream layer and, with
+                    upstream.overlay_ref, our signed overlay pinned to it
+                    into the overlay layer; refuses a release older than the
+                    one imported last)
   generate          run the generator over the effective catalog as a job on
                     the catalog queue, and print its run
   release create <generator-run-id>
                     freeze a succeeded generator run as a release at its
                     generation time, and print the release
   release publish -ref <repository:tag> (-key <cosign.key> | -keyless)
-                  [-exports <dir>] <version>
+                  [-overlay-ref <repository:tag>] [-exports <dir>] <version>
                     push the release's snapshot to the repository as the
                     signed catalog artifact and point the tag at it (once:
                     again with identical content changes nothing); -key signs
                     with a cosign key pair (password in COSIGN_PASSWORD),
-                    -keyless runs cosign's keyless flow (CI); -exports also
-                    writes the adapter exports and a signed SHA256SUMS to dir
+                    -keyless runs cosign's keyless flow (CI); -overlay-ref
+                    also pushes the release's overlay, pinned to its digest,
+                    as the signed overlay artifact; -exports also writes the
+                    adapter exports and a signed SHA256SUMS to dir
   auth issue [-name <name>] [-prefix <prefix>] [-expires <duration>]
                     mint an API key for the /v1 API (neocatalog_<prefix>_...);
                     it is printed once and stored only as its SHA-256
@@ -135,7 +143,7 @@ func cmdServe() {
 		if err != nil {
 			log.Fatalf("release.key: %v", err)
 		}
-		publish = &release.Target{Ref: cfg.Release.Ref, Signer: signer}
+		publish = &release.Target{Ref: cfg.Release.Ref, OverlayRef: cfg.Release.OverlayRef, Signer: signer}
 	}
 	s := store.New(gormDB)
 	reg := registry(cfg)
@@ -209,8 +217,22 @@ func registry(cfg *config.Config) importers.Registry {
 	if err != nil {
 		log.Fatalf("bootstrap.data_dir: %v", err)
 	}
-	return importers.NewRegistry(boot, hardware, huggingface.New(huggingface.Endpoint, token),
-		azureprices.New(azureprices.Endpoint, cfg.AzurePrices.Regions), kaito.New(kaito.Catalog))
+	imps := []importers.Importer{boot, hardware, huggingface.New(huggingface.Endpoint, token),
+		azureprices.New(azureprices.Endpoint, cfg.AzurePrices.Regions), kaito.New(kaito.Catalog)}
+	u := cfg.Upstream
+	rel, err := upstream.NewSource(upstream.Config{Ref: u.Ref, IdentityIssuer: u.IdentityIssuer, Identity: u.Identity, PublicKey: u.PublicKey})
+	if err != nil {
+		log.Fatal(err)
+	}
+	overlay, err := upstream.NewSource(upstream.Config{Ref: u.OverlayRef, IdentityIssuer: u.OverlayIdentityIssuer,
+		Identity: u.OverlayIdentity, PublicKey: u.OverlayPublicKey, Overlay: true})
+	if err != nil {
+		log.Fatal(err)
+	}
+	if rel != nil {
+		imps = append(imps, upstream.New(rel, overlay))
+	}
+	return importers.NewRegistry(imps...)
 }
 
 // runJob enqueues args and works the catalog queue until the job finished,
@@ -273,6 +295,7 @@ func cmdReleasePublish(args []string) {
 	key := fs.String("key", "", "cosign.key to sign with; its password in COSIGN_PASSWORD")
 	keyless := fs.Bool("keyless", false, "sign with cosign's keyless flow (CI)")
 	exports := fs.String("exports", "", "directory to write the adapter exports and a signed SHA256SUMS to")
+	overlayRef := fs.String("overlay-ref", "", "repository and tag of the release's overlay, e.g. registry.example/org/neocloud-catalog-overlay:v4")
 	_ = fs.Parse(args)
 	if fs.NArg() != 1 || *ref == "" {
 		usage()
@@ -290,7 +313,7 @@ func cmdReleasePublish(args []string) {
 	if err != nil {
 		log.Fatalf("release publish: %v", err)
 	}
-	if err := release.Publish(ctx, rel, release.Target{Ref: *ref, Signer: signer}); err != nil {
+	if err := release.Publish(ctx, rel, release.Target{Ref: *ref, OverlayRef: *overlayRef, Signer: signer}); err != nil {
 		log.Fatalf("release publish: %v", err)
 	}
 	if *exports != "" {

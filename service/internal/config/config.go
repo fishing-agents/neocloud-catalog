@@ -36,6 +36,7 @@ type Config struct {
 	Auth        AuthConfig        `koanf:"auth"`
 	Jobs        JobsConfig        `koanf:"jobs"`
 	Release     ReleaseConfig     `koanf:"release"`
+	Upstream    UpstreamConfig    `koanf:"upstream"`
 }
 
 type ServerConfig struct {
@@ -93,12 +94,31 @@ type JobsConfig struct {
 
 // ReleaseConfig is where the API publishes releases: Ref names the
 // repository and tag, Key the cosign.key signing them (its password in
-// COSIGN_PASSWORD). Both empty: the API does not publish. PublishTimeout
-// bounds one publish request, which outlasts server.write_timeout.
+// COSIGN_PASSWORD). Both empty: the API does not publish. OverlayRef, when
+// set, is where each release's overlay is published, signed with Key.
+// PublishTimeout bounds one publish request, which outlasts
+// server.write_timeout.
 type ReleaseConfig struct {
 	Ref            string        `koanf:"ref"`
 	Key            string        `koanf:"key"`
+	OverlayRef     string        `koanf:"overlay_ref"`
 	PublishTimeout time.Duration `koanf:"publish_timeout"`
+}
+
+// UpstreamConfig is the upstream release an operator deployment imports
+// (the upstream importer), trusted as neocloud-api's catalog.* keys trust
+// it: Ref with PublicKey, or with IdentityIssuer and Identity (keyless).
+// OverlayRef, with its own trust, is the overlay pinned to that release.
+// Empty Ref: no upstream importer.
+type UpstreamConfig struct {
+	Ref                   string `koanf:"ref"`
+	IdentityIssuer        string `koanf:"identity_issuer"`
+	Identity              string `koanf:"identity"`
+	PublicKey             string `koanf:"public_key"`
+	OverlayRef            string `koanf:"overlay_ref"`
+	OverlayIdentityIssuer string `koanf:"overlay_identity_issuer"`
+	OverlayIdentity       string `koanf:"overlay_identity"`
+	OverlayPublicKey      string `koanf:"overlay_public_key"`
 }
 
 // applyEnv sets NEOCLOUD_CATALOG_<NAME> on the known key whose path, with "."
@@ -206,6 +226,12 @@ func (c *Config) Validate() error {
 	}
 	if (c.Release.Ref == "") != (c.Release.Key == "") {
 		return errors.New("release.ref and release.key are set together: release.ref names where the API publishes, release.key signs")
+	}
+	if c.Release.OverlayRef != "" && c.Release.Ref == "" {
+		return errors.New("release.overlay_ref needs release.ref: an overlay is published with its release")
+	}
+	if c.Upstream.OverlayRef != "" && c.Upstream.Ref == "" {
+		return errors.New("upstream.overlay_ref needs upstream.ref: an overlay is imported with the release it is pinned to")
 	}
 	if len(c.AzurePrices.Regions) == 0 {
 		return errors.New("azure_prices.regions is required")

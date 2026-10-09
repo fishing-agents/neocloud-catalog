@@ -102,20 +102,23 @@ func (r Release) Snapshot(ctx context.Context) (catalog.CatalogSnapshot, error) 
 }
 
 // Target is where Publish pushes a release: Ref names the repository and the
-// tag clients poll (e.g. ghcr.io/org/neocloud-catalog:v4); Signer signs the
+// tag clients poll (e.g. ghcr.io/org/neocloud-catalog:v4); OverlayRef, when
+// set, the repository and tag of the release's overlay; Signer signs every
 // pushed manifest.
 type Target struct {
-	Ref    string
-	Signer Signer
+	Ref, OverlayRef string
+	Signer          Signer
 }
 
 // Publish pushes the release's snapshot to t.Ref's repository as the catalog
-// artifact, one catalog.ArtifactType layer under the version annotation, signs
-// its manifest, then points t.Ref's tag at it and records the release as
-// published there. A published release is not pushed again: publishing it
-// again changes nothing when its content still makes the published manifest,
-// and is refused otherwise. A release older than a published one is refused,
-// as clients refuse a catalog that is not newer than theirs.
+// artifact, one catalog.ArtifactType layer under the version annotation, and,
+// with t.OverlayRef, the release's overlay (pinned to the release digest) to
+// that repository as the overlay artifact; it signs each manifest, then points
+// the tags at them and records the release as published at t.Ref. A
+// published release is not pushed again: publishing it again changes nothing
+// when its content still makes the published manifest, and is refused
+// otherwise. A release older than a published one is refused, as clients
+// refuse a catalog that is not newer than theirs, so neither tag moves back.
 func Publish(ctx context.Context, rel Release, t Target) error {
 	if t.Signer == nil {
 		return errors.New("publish: no signer")
@@ -123,6 +126,12 @@ func Publish(ctx context.Context, rel Release, t Target) error {
 	ref, err := name.ParseReference(t.Ref)
 	if err != nil {
 		return fmt.Errorf("publish: %w", err)
+	}
+	var overlayRef name.Reference
+	if t.OverlayRef != "" {
+		if overlayRef, err = name.ParseReference(t.OverlayRef); err != nil {
+			return fmt.Errorf("publish overlay: %w", err)
+		}
 	}
 	cur, err := Get(ctx, rel.s, rel.Version)
 	if err != nil {
@@ -136,7 +145,8 @@ func Publish(ctx context.Context, rel Release, t Target) error {
 	if err != nil {
 		return err
 	}
-	a, err := newArtifact(catalog.ArtifactType, "catalog.json", body, map[string]string{catalog.VersionAnnotation: cur.Version}, nil)
+	annotations := map[string]string{catalog.VersionAnnotation: cur.Version}
+	a, err := newArtifact(catalog.ArtifactType, "catalog.json", body, annotations, nil)
 	if err != nil {
 		return err
 	}
@@ -155,16 +165,38 @@ func Publish(ctx context.Context, rel Release, t Target) error {
 	if newer != "" {
 		return fmt.Errorf("%w: release %s is older than the published release %s", store.ErrConflict, cur.Version, newer)
 	}
+	type push struct {
+		ref name.Reference
+		a   artifact
+	}
+	pushes := []push{{ref, a}}
+	if overlayRef != nil {
+		body, err := json.Marshal(cur.Overlay)
+		if err != nil {
+			return err
+		}
+		o, err := newArtifact(catalog.OverlayArtifactType, "overlay.json", body, annotations, nil)
+		if err != nil {
+			return err
+		}
+		pushes = append(pushes, push{overlayRef, o})
+	}
 	opts := remoteOptions(ctx)
-	if err := a.push(repo, opts); err != nil {
-		return fmt.Errorf("push %s: %w", at, err)
+	for _, p := range pushes {
+		repo := p.ref.Context()
+		d := repo.Digest(p.a.desc.Digest.String())
+		if err := p.a.push(repo, opts); err != nil {
+			return fmt.Errorf("push %s: %w", d, err)
+		}
+		if err := t.Signer.SignManifest(ctx, repo, p.a.desc); err != nil {
+			return fmt.Errorf("sign %s: %w", d, err)
+		}
 	}
-	if err := t.Signer.SignManifest(ctx, repo, a.desc); err != nil {
-		return fmt.Errorf("sign %s: %w", at, err)
-	}
-	if tag, ok := ref.(name.Tag); ok {
-		if err := remote.Put(tag, a, opts...); err != nil {
-			return fmt.Errorf("tag %s: %w", tag, err)
+	for _, p := range pushes {
+		if tag, ok := p.ref.(name.Tag); ok {
+			if err := remote.Put(tag, p.a, opts...); err != nil {
+				return fmt.Errorf("tag %s: %w", tag, err)
+			}
 		}
 	}
 	_, err = cur.s.PublishRelease(ctx, cur.ID, at)

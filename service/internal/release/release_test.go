@@ -337,7 +337,8 @@ func TestReleaseImmutable(t *testing.T) {
 }
 
 // Clients refuse a catalog that is not newer than theirs, so a release older
-// than a published one is never published: the tag stays on the newer one.
+// than a published one is never published: the tags stay on the newer one
+// and its overlay.
 func TestPublishRefusesOlderRelease(t *testing.T) {
 	s, db, older := generated(t, "release_older")
 	if err := db.Exec(`UPDATE generator_runs SET snapshot = jsonb_set(snapshot, '{generated_at}', '"2026-01-01T00:00:00Z"') WHERE id = ?`, older.ID).Error; err != nil {
@@ -352,17 +353,18 @@ func TestPublishRefusesOlderRelease(t *testing.T) {
 		t.Fatalf("release versions %s and %s are not in generation order", oldRel.Version, newRel.Version)
 	}
 	signer, _ := keySigner(t)
-	target := release.Target{Ref: registryHost(t) + "/neocloud/catalog:v4", Signer: signer}
+	host := registryHost(t)
+	target := release.Target{Ref: host + "/neocloud/catalog:v4", OverlayRef: host + "/neocloud/overlay:v4", Signer: signer}
 	if err := release.Publish(ctx, newRel, target); err != nil {
 		t.Fatal(err)
 	}
-	tagged := manifestDigest(t, target.Ref)
+	tagged, overlay := manifestDigest(t, target.Ref), manifestDigest(t, target.OverlayRef)
 
 	if err := release.Publish(ctx, oldRel, target); err == nil {
 		t.Error("a release older than the published one was published")
 	}
-	if got := manifestDigest(t, target.Ref); got != tagged {
-		t.Errorf("the tag moved back to %s", got)
+	if got, ov := manifestDigest(t, target.Ref), manifestDigest(t, target.OverlayRef); got != tagged || ov != overlay {
+		t.Errorf("the tags moved back to %s and %s", got, ov)
 	}
 	if got, err := release.Get(ctx, s, oldRel.Version); err != nil || got.PublishedAt != nil {
 		t.Errorf("the older release is recorded as published at %v (err %v)", got.PublishedAt, err)

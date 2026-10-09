@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -316,6 +317,121 @@ func TestEffectiveCatalogLayering(t *testing.T) {
 	}
 	if err := s.Delete(ctx, store.KindModel, slug); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("deleting a missing override: %v, want ErrNotFound", err)
+	}
+}
+
+// R24: a local override takes its upstream row's place and local-only keys
+// follow every upstream row by their own (position, key), also after the
+// upstream layer is reordered and grows past the local positions. Node types
+// stay ordered by id.
+func TestEffectiveCrossLayerOrder(t *testing.T) {
+	s, db := newStore(t, "cross_layer_order")
+	in := committed(t)
+	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, "test"), in); err != nil {
+		t.Fatal(err)
+	}
+	up := effective(t, s)
+	override := clone(t, up.Models[1])
+	override.Description = "operator build"
+	b, a := clone(t, up.Models[0]), clone(t, up.Models[0])
+	b.Slug, a.Slug = "operator-b", "operator-a"
+	nt := catalog.NodeType{ID: "aaa/first", Family: up.NodeTypes[0].Family, GPUs: 8, Source: "https://example.com/nt"}
+	for _, o := range []any{override, b, a, nt} {
+		if err := s.Upsert(ctx, o); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	slices.Reverse(in.Models)
+	for i := range 3 {
+		extra := clone(t, in.Models[0])
+		extra.Slug = fmt.Sprintf("upstream-new-%d", i)
+		in.Models = append(in.Models, extra)
+	}
+	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, "test"), in); err != nil {
+		t.Fatal(err)
+	}
+	var want []string
+	for _, m := range in.Models {
+		want = append(want, m.Slug)
+	}
+	want = append(want, b.Slug, a.Slug)
+	got := effective(t, s)
+	var slugs []string
+	for _, m := range got.Models {
+		slugs = append(slugs, m.Slug)
+		if m.Slug == override.Slug && m.Description != override.Description {
+			t.Errorf("model %s is not the local override", m.Slug)
+		}
+	}
+	if !slices.Equal(slugs, want) {
+		t.Errorf("effective model order\n got %v\nwant %v", slugs, want)
+	}
+	if !slices.IsSortedFunc(got.NodeTypes, func(x, y catalog.NodeType) int { return strings.Compare(x.ID, y.ID) }) || got.NodeTypes[0].ID != nt.ID {
+		t.Errorf("node types are not ordered by id with the local %s first", nt.ID)
+	}
+}
+
+// ReplaceUpstream writes the upstream layer and the overlay layer as one:
+// an overlay that does not apply leaves both layers as they were, and a
+// release without an overlay empties the overlay layer.
+func TestReplaceUpstreamIsAtomic(t *testing.T) {
+	s, db := newStore(t, "replace_upstream")
+	in := committed(t)
+	m := in.Models[0]
+	payload := catalog.Extensions{"example.com/tier": json.RawMessage(`{"tier":"gold"}`)}
+	in.Extensions = catalog.Overlay{Models: map[string]catalog.Extensions{m.Slug: payload},
+		Presets: map[string]catalog.Extensions{m.Slug + "/" + m.Presets[1].Name: payload}}
+	first := startRun(t, db, model.LayerUpstream, "upstream")
+	if _, err := s.ReplaceUpstream(ctx, first, in, "https://example.com/overlay"); err != nil {
+		t.Fatal(err)
+	}
+	before := effective(t, s)
+	if len(before.Extensions.Models) != 1 || len(before.Extensions.Presets) != 1 {
+		t.Fatalf("overlay layer = %+v, want the imported payloads", before.Extensions)
+	}
+	var p model.ExtensionPayload
+	if err := db.Take(&p, "object_kind = 'models'").Error; err != nil {
+		t.Fatal(err)
+	}
+	if p.Layer != model.LayerOverlay || p.ImportRunID == nil || *p.ImportRunID != first || p.SourceURL != "https://example.com/overlay" {
+		t.Errorf("overlay payload provenance = %+v, want layer overlay, run %s, the overlay's URL", p.Provenance, first)
+	}
+
+	// The operator's override drops the preset the next overlay holds a
+	// payload for; the upstream layer would change too.
+	override := clone(t, m)
+	override.Presets = override.Presets[:1]
+	if err := s.Upsert(ctx, override); err != nil {
+		t.Fatal(err)
+	}
+	before = effective(t, s)
+	next := committed(t)
+	next.Models = next.Models[1:]
+	next.Families[0].MemoryGB++
+	next.Extensions = in.Extensions
+	run := startRun(t, db, model.LayerUpstream, "upstream")
+	if _, err := s.ReplaceUpstream(ctx, run, next, "https://example.com/overlay"); err == nil {
+		t.Fatal("an overlay with a payload of a preset the effective catalog lacks was applied")
+	}
+	after := effective(t, s)
+	sameCore(t, after, before)
+	if !reflect.DeepEqual(after.Extensions, before.Extensions) {
+		t.Errorf("a refused import changed the overlay layer: %+v", after.Extensions)
+	}
+	if n := rowsOf(t, db, run); n != 0 {
+		t.Errorf("refused import left %d rows", n)
+	}
+
+	if _, err := s.ReplaceUpstream(ctx, startRun(t, db, model.LayerOverlay, "upstream"), committed(t), ""); err == nil {
+		t.Error("an overlay-layer run replaced the upstream layer")
+	}
+	changes, err := s.ReplaceUpstream(ctx, startRun(t, db, model.LayerUpstream, "upstream"), committed(t), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := effective(t, s).Extensions; len(got.Models)+len(got.Presets) != 0 || changes["extension_payloads"].Deleted != 2 {
+		t.Errorf("a release without an overlay left %+v (changes %+v), want an empty overlay layer", got, changes)
 	}
 }
 

@@ -485,7 +485,7 @@ paths:
     post:
       operationId: publishRelease
       summary: Publish a release to release.ref, signed with release.key
-      description: Pushes the release's snapshot as the signed catalog artifact and points release.ref's tag at it, once; again with identical content changes nothing. A release older than a published one is refused.
+      description: Pushes the release's snapshot as the signed catalog artifact and points release.ref's tag at it, and with release.overlay_ref its overlay, pinned to the release digest, as the signed overlay artifact under that tag; once, again with identical content changes nothing. A release older than a published one is refused, so neither tag moves back.
       parameters:
         - name: version
           in: path
@@ -867,7 +867,7 @@ components:
       properties:
         importer:
           type: string
-          description: the importer's name (bootstrap-from-json, epoch, huggingface, azure-prices, kaito)
+          description: the importer's name (bootstrap-from-json, epoch, huggingface, azure-prices, kaito; upstream in an operator deployment with upstream.ref set)
     ReleaseCreate:
       type: object
       required: [generator_run]

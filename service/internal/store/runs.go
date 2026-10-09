@@ -51,6 +51,18 @@ func (s *Store) ImportRuns(ctx context.Context, importer string, limit int) ([]m
 	return runs, q.Find(&runs).Error
 }
 
+// LastImport returns the import run of importer that succeeded last, or
+// ErrNotFound.
+func (s *Store) LastImport(ctx context.Context, importer string) (model.ImportRun, error) {
+	var run model.ImportRun
+	err := s.db.WithContext(ctx).Where("importer = ? AND status = ?", importer, model.RunSucceeded).
+		Order("finished_at DESC, id").Take(&run).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return run, fmt.Errorf("succeeded %s import run: %w", importer, ErrNotFound)
+	}
+	return run, err
+}
+
 // AbandonedError is the error of a run its worker left running.
 const AbandonedError = "abandoned: worker exited"
 

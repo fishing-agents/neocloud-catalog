@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"slices"
 	"strings"
 
@@ -18,10 +17,9 @@ import (
 )
 
 // Effective is the effective catalog: per natural key the local object, else
-// the upstream one, ordered by (position, key) so curated order holds (R11);
-// node types by id. Extensions holds the overlay layer's payloads keyed as
-// catalog.Merge expects; its SnapshotDigest stays empty until a generated
-// snapshot pins it.
+// the upstream one, in cross-layer order (R24, see pick); node types by id.
+// Extensions holds the overlay layer's payloads keyed as catalog.Merge
+// expects; its SnapshotDigest stays empty until a generated snapshot pins it.
 func (s *Store) Effective(ctx context.Context) (Inputs, error) {
 	var in Inputs
 	err := s.read(ctx, func(tx *gorm.DB) error {
@@ -68,9 +66,11 @@ func merge(up, local rowSet, payloads []model.ExtensionPayload) (Inputs, error) 
 	if err != nil {
 		return Inputs{}, fmt.Errorf("%s layer: %w", model.LayerLocal, err)
 	}
+	nodeTypes := pick(u.nodeTypes, l.nodeTypes)
+	slices.SortFunc(nodeTypes, func(a, b catalog.NodeType) int { return strings.Compare(a.ID, b.ID) })
 	return Inputs{
 		Families:   pick(u.families, l.families),
-		NodeTypes:  pick(u.nodeTypes, l.nodeTypes),
+		NodeTypes:  nodeTypes,
 		Models:     pick(u.models, l.models),
 		Drafts:     pick(u.drafts, l.drafts),
 		Backends:   pick(u.backends, l.backends),
@@ -109,22 +109,34 @@ type entry[T any] struct {
 	obj T
 }
 
-// pick takes per key the local entry over the upstream one, ordered by
-// (position, key).
+// pick takes per key the local entry over the upstream one (R24): the
+// upstream keys in their (position, key) order, a local override in its
+// upstream row's place, then the local-only keys by their own (position,
+// key). Local positions are frozen at write time, so they order only among
+// local-only keys, and upstream reorders carry the overrides along.
 func pick[T any](upstream, local []entry[T]) []T {
-	byKey := make(map[string]entry[T], len(upstream)+len(local))
-	for _, e := range slices.Concat(upstream, local) {
-		byKey[e.key] = e
-	}
-	if len(byKey) == 0 {
+	if len(upstream)+len(local) == 0 {
 		return nil
 	}
-	es := slices.SortedFunc(maps.Values(byKey), func(a, b entry[T]) int {
-		return cmp.Or(cmp.Compare(a.pos, b.pos), strings.Compare(a.key, b.key))
-	})
-	out := make([]T, len(es))
-	for i, e := range es {
-		out[i] = e.obj
+	order := func(a, b entry[T]) int { return cmp.Or(cmp.Compare(a.pos, b.pos), strings.Compare(a.key, b.key)) }
+	slices.SortFunc(upstream, order)
+	slices.SortFunc(local, order)
+	overrides := make(map[string]T, len(local))
+	for _, e := range local {
+		overrides[e.key] = e.obj
+	}
+	out := make([]T, 0, len(upstream)+len(local))
+	for _, e := range upstream {
+		if o, ok := overrides[e.key]; ok {
+			e.obj = o
+			delete(overrides, e.key)
+		}
+		out = append(out, e.obj)
+	}
+	for _, e := range local {
+		if _, ok := overrides[e.key]; ok {
+			out = append(out, e.obj)
+		}
 	}
 	return out
 }

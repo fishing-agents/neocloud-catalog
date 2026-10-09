@@ -47,6 +47,8 @@ func TestLoadRefusesInvalidConfig(t *testing.T) {
 		"issuer, no audience":   {"NEOCLOUD_CATALOG_AUTH_ISSUER_URL", "https://icp.example.com", "auth.audience"},
 		"release ref, no key":   {"NEOCLOUD_CATALOG_RELEASE_REF", "ghcr.io/example/catalog:v4", "release.key"},
 		"release key, no ref":   {"NEOCLOUD_CATALOG_RELEASE_KEY", "/etc/catalog/cosign.key", "release.ref"},
+		"overlay, no release":   {"NEOCLOUD_CATALOG_RELEASE_OVERLAY_REF", "ghcr.io/example/overlay:v4", "release.overlay_ref"},
+		"overlay, no upstream":  {"NEOCLOUD_CATALOG_UPSTREAM_OVERLAY_REF", "ghcr.io/example/overlay:v4", "upstream.overlay_ref"},
 		"region list in env":    {"NEOCLOUD_CATALOG_AZURE_PRICES_REGIONS", "eastus,eastus2", "azure_prices.regions"},
 		"quoted region":         {"NEOCLOUD_CATALOG_AZURE_PRICES_REGIONS", "eastus' or 1 eq 1", "azure_prices.regions"},
 	}
