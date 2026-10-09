@@ -1,0 +1,35 @@
+# An operator deployment: our release and overlay from a private mirror,
+# its own signing key for its re-export, key-based overlay trust.
+image:
+  repository: registry.example.com/catalog-service
+  tag: "20261009"
+  digest: sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945
+database:
+  dsnSecretName: operator-catalog-db
+  dsnSecretKey: url
+config:
+  auth:
+    issuer_url: https://icp.example.com
+    audience: neocloud-catalog
+  release:
+    ref: registry.example.com/operator/neocloud-catalog:v4
+    overlay_ref: registry.example.com/operator/neocloud-catalog-overlay:v4
+  upstream:
+    ref: mirror.example.com/fishing-agents/neocloud-catalog:v4
+    identity_issuer: https://token.actions.githubusercontent.com
+    identity: '^https://github\.com/fishing-agents/neocloud-catalog/\.github/workflows/release\.yml@refs/tags/v.*$'
+    overlay_ref: mirror.example.com/fishing-agents/neocloud-catalog-overlay:v4
+    plain_http: true
+signing:
+  secretName: operator-cosign
+registryAuth:
+  secretName: operator-registry
+upstreamTrust:
+  overlayPublicKey: |
+    -----BEGIN PUBLIC KEY-----
+    MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEexampleexampleexampleexampleexam
+    -----END PUBLIC KEY-----
+  trustedRoot: |
+    {"mediaType": "application/vnd.dev.sigstore.trustedroot+json;version=0.1"}
+serviceMonitor:
+  enabled: true

@@ -1,0 +1,108 @@
+{{- $release := .Values.config.release | default dict -}}
+{{- if and $release.ref (not .Values.signing.secretName) -}}
+{{- fail "signing.secretName is required with config.release.ref: release.key signs what the API publishes" -}}
+{{- end -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "catalog-service.fullname" . }}
+  labels:
+    {{- include "catalog-service.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "catalog-service.name" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "catalog-service.name" . }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      securityContext:
+        {{- include "catalog-service.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: catalog-service
+          image: {{ include "catalog-service.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["serve"]
+          ports:
+            - containerPort: {{ .Values.service.port }}
+              name: http
+            - containerPort: {{ .Values.service.metricsPort }}
+              name: metrics
+          env:
+            - name: NEOCLOUD_CATALOG_CONFIG_DIR
+              value: /etc/catalog-service
+            {{- include "catalog-service.dsnEnv" . | nindent 12 }}
+            {{- if .Values.signing.secretName }}
+            - name: COSIGN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.signing.secretName }}
+                  key: cosign.password
+            {{- end }}
+            {{- if .Values.registryAuth.secretName }}
+            - name: DOCKER_CONFIG
+              value: /var/run/secrets/catalog-service/registry
+            {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/catalog-service
+              readOnly: true
+            {{- if .Values.signing.secretName }}
+            - name: signing
+              mountPath: /var/run/secrets/catalog-service/signing
+              readOnly: true
+            {{- end }}
+            {{- if .Values.huggingface.tokenSecretName }}
+            - name: huggingface
+              mountPath: /var/run/secrets/catalog-service/huggingface
+              readOnly: true
+            {{- end }}
+            {{- if .Values.registryAuth.secretName }}
+            - name: registry
+              mountPath: /var/run/secrets/catalog-service/registry
+              readOnly: true
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          securityContext:
+            {{- include "catalog-service.securityContext" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "catalog-service.fullname" . }}
+        {{- if .Values.signing.secretName }}
+        - name: signing
+          secret:
+            secretName: {{ .Values.signing.secretName }}
+            items:
+              - key: cosign.key
+                path: cosign.key
+        {{- end }}
+        {{- if .Values.huggingface.tokenSecretName }}
+        - name: huggingface
+          secret:
+            secretName: {{ .Values.huggingface.tokenSecretName }}
+            items:
+              - key: {{ .Values.huggingface.tokenSecretKey }}
+                path: token
+        {{- end }}
+        {{- if .Values.registryAuth.secretName }}
+        - name: registry
+          secret:
+            secretName: {{ .Values.registryAuth.secretName }}
+            items:
+              - key: .dockerconfigjson
+                path: config.json
+        {{- end }}

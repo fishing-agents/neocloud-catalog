@@ -1,0 +1,7 @@
+apiVersion: v2
+name: catalog-service
+description: neocloud catalog service (model templates, importers, generator, signed releases)
+type: application
+version: 0.1.0
+# The migrate Job mounts the service image as an image volume, stable from 1.36.
+kubeVersion: ">= 1.36.0-0"

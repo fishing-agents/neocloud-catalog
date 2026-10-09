@@ -1,0 +1,15 @@
+{{- if .Values.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "catalog-service.fullname" . }}
+  labels:
+    {{- include "catalog-service.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "catalog-service.name" . }}
+  endpoints:
+    - port: metrics
+      path: /metrics
+{{- end }}

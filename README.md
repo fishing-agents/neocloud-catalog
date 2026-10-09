@@ -5,10 +5,11 @@ the backends that serve them, structured deployable presets, the hardware facts
 of GPU device families, a closed vocabulary of node types, and a fit matrix of
 which families run each model, at which quantization and KV cache dtype, on how
 many GPUs and nodes, with what context, VRAM and estimated throughput, plus
-per-model deployment guidance. The catalog is a headless data artifact, not a
-service - it ships as a pure Go module whose whole value is the versioned,
-digest-pinned snapshot it embeds (schema 4). neocloud ingests that snapshot; it
-does not curate models itself.
+per-model deployment guidance. Consumers see a headless data artifact: a pure
+Go module and a signed OCI artifact whose whole value is the versioned,
+digest-pinned snapshot (schema 4). The catalog service in `service/` curates
+and imports the catalog in Postgres and can publish that snapshot (see Catalog
+service). neocloud ingests the snapshot; it does not curate models itself.
 
 ## What is here
 
@@ -108,6 +109,40 @@ does not curate models itself.
   (`gpustack/`, `airunway/`), and `cmd/catalog-export`.
 - `.github/workflows/release.yml` - publishes and signs the snapshot and the
   platform exports on a tag.
+- `service/` - the catalog service, a nested module with its own Postgres:
+  importers, generator, releases, the operator API and its Helm chart; see
+  Catalog service and `service/README.md`.
+
+## Catalog service
+
+The service (`service/`, details in `service/README.md`) keeps the catalog in
+Postgres and runs everything that needs dependencies. The core stays the
+shared, stdlib-only contract: the service generates and validates with the
+same `Generate`, `Render`, `Merge` and `Validate`.
+
+- Layers: `upstream` (what the importers write), `local` (operator curation
+  through the API, replacing the upstream object of the same key as a whole)
+  and `overlay` (extension payloads only). Every row records its source,
+  source URL, `as_of` and import run; mixed-source tables record it per
+  field. Importers never overwrite curated values.
+- Importers: `bootstrap-from-json` (`data/*.json`), `epoch` (hardware facts),
+  `huggingface` (manifests, sizes, parameters, architecture and context at
+  pinned revisions; gated repositories need a token), `azure-prices`
+  (internal) and `kaito` (cross-check, writes nothing). An operator
+  deployment imports our signed release and overlay with `upstream` instead
+  of the first three.
+- Generator runs derive fits, estimates, guidance and cost estimates from the
+  effective catalog.
+- Releases freeze a generator run at its generation time, so an operator's
+  release is always newer than ours. They are immutable once published, and
+  a release older than a published one is refused. The public export is the
+  schema 4 snapshot below; an operator re-publishes our overlay re-pinned to
+  its own release, signed with its own key.
+- Prices and cost estimates are internal: the service stores and serves them,
+  no release or export carries them.
+
+Until the cutover `data/*.json` stays the bootstrap input and CI keeps
+releasing from these files (see Release).
 
 ## Snapshot contract
 

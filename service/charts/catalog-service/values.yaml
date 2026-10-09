@@ -1,0 +1,106 @@
+replicaCount: 1
+
+# Built from service/Dockerfile (context: the repository root). It carries the
+# binary, the curated data/ that bootstrap-from-json and epoch read, and the
+# versioned migrations the migrate Job applies.
+image:
+  repository: catalog-service
+  tag: latest
+  # Optional sha256 digest; pins the image the Deployment runs and the migrate
+  # Job mounts.
+  digest: ""
+  pullPolicy: IfNotPresent
+
+service:
+  port: 8080
+  metricsPort: 8081
+
+serviceMonitor:
+  enabled: false
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+# The Postgres DSN comes from a Secret, never a value. The service and the
+# migrate Job read it as NEOCLOUD_CATALOG_DATABASE_DSN.
+database:
+  dsnSecretName: catalog-service-db
+  dsnSecretKey: dsn
+
+# Service configuration: a TOML file over the service's embedded defaults
+# (service/internal/config/defaults.toml), with the same keys and sections.
+# The chart sets server.addr and telemetry.metrics_addr (from service.*),
+# bootstrap.data_dir (the image's /data), and the paths of the files it
+# mounts: huggingface.token_file, release.key and upstream.public_key,
+# overlay_public_key and trusted_root. Never put a secret here.
+#
+# Our deployment leaves upstream.ref empty: bootstrap-from-json, epoch,
+# huggingface, azure-prices and kaito run. An operator deployment sets
+# upstream.ref (see the README): upstream, azure-prices and kaito run.
+config: {}
+#  auth:
+#    issuer_url: https://icp.example.com
+#    audience: neocloud-catalog
+#  jobs:
+#    job_timeout: 30m
+#    rescue_after: 1h
+#  release:
+#    ref: registry.example.com/org/neocloud-catalog:v4
+#    overlay_ref: registry.example.com/org/neocloud-catalog-overlay:v4
+#    publish_timeout: 2m
+#  upstream:
+#    ref: ghcr.io/fishing-agents/neocloud-catalog:v4
+#    identity_issuer: https://token.actions.githubusercontent.com
+#    identity: '^https://github\.com/fishing-agents/neocloud-catalog/\.github/workflows/release\.yml@refs/tags/v.*$'
+
+# The deployment's cosign key pair, which signs what the API publishes:
+# ours, or in an operator deployment the operator's, which signs its releases
+# and the overlays re-pinned to them. Required with config.release.ref. The
+# Secret has the layout `cosign generate-key-pair k8s://<namespace>/<name>`
+# writes: cosign.key (encrypted private key) and cosign.password.
+signing:
+  secretName: ""
+
+# A Secret holding the Hugging Face token gated repositories need (licences
+# accepted on its account). Read once at startup: a rotated token takes effect
+# after a restart. Empty: gated sources are reported "gated: token missing".
+huggingface:
+  tokenSecretName: ""
+  tokenSecretKey: token
+
+# A kubernetes.io/dockerconfigjson Secret with the registry credentials
+# releases are pushed with and a private upstream release or overlay is
+# pulled with. Empty: anonymous pulls, no push credentials.
+registryAuth:
+  secretName: ""
+
+# Public trust material for config.upstream (operator deployments), mounted
+# as files: publicKey and overlayPublicKey are cosign public keys (PEM) that
+# replace the keyless identities of the release and the overlay; trustedRoot
+# is a Sigstore trusted_root.json for keyless verification without network
+# access to the public-good TUF repository (air-gapped).
+upstreamTrust:
+  publicKey: ""
+  overlayPublicKey: ""
+  trustedRoot: ""
+
+# The pre-install and pre-upgrade hook Job: Atlas applies the image's
+# versioned migrations (never GORM AutoMigrate) before the Deployment rolls.
+migrate:
+  image:
+    repository: arigaio/atlas
+    tag: 1.3.3-community-distroless
+    digest: sha256:9c9958f5b8d26d404ab2e28098c8629526eb4bec647f790278611e58a0b19839
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
