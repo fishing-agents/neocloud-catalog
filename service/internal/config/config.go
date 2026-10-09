@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -31,6 +32,7 @@ type Config struct {
 	Telemetry   TelemetryConfig   `koanf:"telemetry"`
 	Bootstrap   BootstrapConfig   `koanf:"bootstrap"`
 	HuggingFace HuggingFaceConfig `koanf:"huggingface"`
+	AzurePrices AzurePricesConfig `koanf:"azure_prices"`
 	Auth        AuthConfig        `koanf:"auth"`
 	Jobs        JobsConfig        `koanf:"jobs"`
 	Release     ReleaseConfig     `koanf:"release"`
@@ -63,6 +65,16 @@ type BootstrapConfig struct {
 type HuggingFaceConfig struct {
 	TokenFile string `koanf:"token_file"`
 }
+
+// AzurePricesConfig: Regions are the Azure regions (ARM names) the
+// azure-prices importer reads prices in.
+type AzurePricesConfig struct {
+	Regions []string `koanf:"regions"`
+}
+
+// armRegion is the form of an ARM region name; it keeps the importer's OData
+// filter well formed.
+var armRegion = regexp.MustCompile(`^[a-z][a-z0-9]*$`)
 
 // AuthConfig: API keys always work; an issuer_url (ICP) also enables OIDC
 // JWTs whose aud must contain audience.
@@ -194,6 +206,14 @@ func (c *Config) Validate() error {
 	}
 	if (c.Release.Ref == "") != (c.Release.Key == "") {
 		return errors.New("release.ref and release.key are set together: release.ref names where the API publishes, release.key signs")
+	}
+	if len(c.AzurePrices.Regions) == 0 {
+		return errors.New("azure_prices.regions is required")
+	}
+	for _, r := range c.AzurePrices.Regions {
+		if !armRegion.MatchString(r) {
+			return fmt.Errorf("azure_prices.regions: %q is not an ARM region name such as eastus (a list takes a TOML file)", r)
+		}
 	}
 	return nil
 }

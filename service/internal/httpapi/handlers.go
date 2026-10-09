@@ -492,7 +492,7 @@ func (h *handlers) ListCostEstimates(w http.ResponseWriter, r *http.Request, par
 	for i, c := range rows {
 		out[i] = CostEstimate{Model: c.ModelSlug, Setup: CostEstimateSetup(c.Setup), FitKey: c.FitKey, NodeTypeId: c.NodeTypeID, Region: c.Region,
 			Billing: Billing(c.Billing), Instances: c.Instances, UsdPerHour: c.USDPerHour, UsdPerMonth: c.USDPerMonth, PriceSource: c.PriceSource,
-			PriceSourceUrl: c.PriceSourceURL, PriceAsOf: c.PriceAsOf, GeneratorRun: c.GeneratorRunID}
+			PriceSourceUrl: c.PriceSourceURL, PriceAsOf: c.PriceAsOf, GeneratorRun: c.GeneratorRunID, Cheapest: c.Cheapest}
 	}
 	writeJSON(w, http.StatusOK, out)
 }

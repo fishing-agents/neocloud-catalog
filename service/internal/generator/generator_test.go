@@ -3,9 +3,11 @@ package generator_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -261,5 +263,99 @@ func TestGeneratorRunsAreReproducible(t *testing.T) {
 	}
 	if third.InputDigest == first.InputDigest {
 		t.Error("changed inputs kept the input digest")
+	}
+}
+
+// costLines are the estimates of the newest succeeded run for llama-3.1-70b
+// on node type in region, with their price's source.
+func costLines(t *testing.T, s *store.Store, nodeType, region string) []string {
+	t.Helper()
+	rows, err := s.CostEstimates(ctx, store.CostFilter{Model: "llama-3.1-70b", Region: region})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lines []string
+	for _, c := range rows {
+		if c.NodeTypeID == nodeType {
+			lines = append(lines, fmt.Sprintf("%s %s %s %d x %v/h %v/month %s cheapest=%t", c.Setup, c.FitKey, c.Billing, c.Instances,
+				c.USDPerHour, c.USDPerMonth, c.PriceSource, c.Cheapest))
+		}
+	}
+	return lines
+}
+
+// A generator run estimates costs from the effective prices: a local price
+// overrides the upstream price of its node type, region and billing, and
+// removing it restores the upstream one. Prices feed only the internal
+// estimates, so they leave the input digest alone, and the same prices give
+// the same estimates.
+func TestCostEstimatesUseEffectivePrices(t *testing.T) {
+	s, db, _ := bootstrapped(t, "gen_costs")
+	const mi300x, h100 = "azure/Standard_ND96isr_MI300X_v5", "azure/Standard_ND96isr_H100_v5"
+	imp, err := s.StartImport(ctx, uuid.New(), "azure-prices", model.LayerUpstream, "azure-prices", "https://prices.azure.com/api/retail/prices")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.Patch(ctx, imp.ID, store.Patch{Prices: &store.Prices{Prefix: "azure/", Rows: []model.NodeTypePrice{
+		{NodeTypeID: mi300x, Region: "eastus2", Billing: model.BillingOnDemand, USDPerHour: 48},
+		{NodeTypeID: h100, Region: "eastus", Billing: model.BillingOnDemand, USDPerHour: 98.32},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.FinishImport(ctx, imp.ID, "v1", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	upstream := []string{
+		"fit llama-3.1-70b/MI300X/-/bf16/auto on_demand 1 x 48/h 35040/month azure-prices cheapest=false",
+		"fit llama-3.1-70b/MI300X/-/bf16/auto/2-node on_demand 2 x 96/h 70080/month azure-prices cheapest=false",
+		"fit llama-3.1-70b/MI300X/-/fp8/auto on_demand 1 x 48/h 35040/month azure-prices cheapest=false",
+		"optimal  on_demand 1 x 48/h 35040/month azure-prices cheapest=true",
+	}
+	first, err := generator.Run(ctx, s, uuid.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := costLines(t, s, mi300x, "eastus2"); !slices.Equal(got, upstream) {
+		t.Errorf("upstream estimates =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(upstream, "\n"))
+	}
+	var c model.CostEstimate
+	if err := db.Take(&c, "generator_run_id = ? AND node_type_id = ? AND setup = 'fit'", first.ID, h100).Error; err != nil {
+		t.Fatal(err)
+	}
+	if c.PriceSource != "azure-prices" || c.PriceSourceURL != imp.SourceURL || !c.PriceAsOf.Equal(imp.StartedAt) {
+		t.Errorf("H100 estimate price provenance %s %s %s, want the import run's", c.PriceSource, c.PriceSourceURL, c.PriceAsOf)
+	}
+
+	if err := s.ReplaceLocalPrices(ctx, []model.NodeTypePrice{{NodeTypeID: mi300x, Region: "eastus2", Billing: model.BillingOnDemand, USDPerHour: 40}}); err != nil {
+		t.Fatal(err)
+	}
+	local, err := generator.Run(ctx, s, uuid.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"fit llama-3.1-70b/MI300X/-/bf16/auto on_demand 1 x 40/h 29200/month curation cheapest=false",
+		"fit llama-3.1-70b/MI300X/-/bf16/auto/2-node on_demand 2 x 80/h 58400/month curation cheapest=false",
+		"fit llama-3.1-70b/MI300X/-/fp8/auto on_demand 1 x 40/h 29200/month curation cheapest=false",
+		"optimal  on_demand 1 x 40/h 29200/month curation cheapest=true",
+	}
+	if got := costLines(t, s, mi300x, "eastus2"); !slices.Equal(got, want) {
+		t.Errorf("estimates with the local price =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	if local.InputDigest != first.InputDigest {
+		t.Error("a price changed the input digest")
+	}
+
+	if err := s.ReplaceLocalPrices(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := generator.Run(ctx, s, uuid.New()); err != nil {
+		t.Fatal(err)
+	}
+	if got := costLines(t, s, mi300x, "eastus2"); !slices.Equal(got, upstream) {
+		t.Errorf("estimates after removing the local price =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(upstream, "\n"))
+	}
+	if a, b := count(t, db, &model.CostEstimate{}, first.ID), count(t, db, &model.CostEstimate{}, local.ID); a != b || a == 0 {
+		t.Errorf("runs stored %d and %d cost estimates, want the same nonzero count", a, b)
 	}
 }

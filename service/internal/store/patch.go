@@ -19,12 +19,22 @@ import (
 )
 
 // Patch is what an importer read about objects of its run's layer: values of
-// their value columns and the file manifests of their sources. CurationURL is
-// where the importer read the values it marks curated.
+// their value columns, the file manifests of their sources and node type
+// prices. CurationURL is where the importer read the values it marks curated.
 type Patch struct {
 	Values      []Values
 	Manifests   []Manifest
+	Prices      *Prices
 	CurationURL string
+}
+
+// Prices are the node type prices an importer read from one provider: they
+// replace the layer's prices of node types with Prefix, except those of the
+// node types in Kept, whose prices it could not read.
+type Prices struct {
+	Prefix string
+	Kept   []string
+	Rows   []model.NodeTypePrice
 }
 
 // Values are imported values by column name of the object Kind (KindFamily,
@@ -60,11 +70,12 @@ type Conflict struct {
 // an existing row, whose row provenance stays its origin; values of a family
 // the layer lacks give all its columns and add it, last, as the run's row; a
 // manifest replaces the files of its source, which must still be pinned at
-// the manifest's revision. As in ReplaceLayer an unchanged value keeps its
-// provenance and an importer run keeps a curated value, unless the value is
-// curated too or the kept one was curated from p.CurationURL (the curation
-// withdrew it); a source with curated files keeps them all. It returns the
-// changes and the kept curated values that differ from the imported ones.
+// the manifest's revision; prices replace those of their scope. As in
+// ReplaceLayer an unchanged value or price keeps its provenance and an
+// importer run keeps a curated value, unless the value is curated too or the
+// kept one was curated from p.CurationURL (the curation withdrew it); a
+// source with curated files keeps them all. It returns the changes and the
+// kept curated values that differ from the imported ones.
 func (s *Store) Patch(ctx context.Context, run uuid.UUID, p Patch) (Changes, []Conflict, error) {
 	changes := Changes{}
 	count := func(table string, c Change) {
@@ -115,6 +126,13 @@ func (s *Store) Patch(ctx context.Context, run uuid.UUID, p Patch) (Changes, []C
 			}
 			count("model_files", c)
 			conflicts = append(conflicts, kept...)
+		}
+		if p.Prices != nil {
+			c, err := patchPrices(tx, st, *p.Prices)
+			if err != nil {
+				return err
+			}
+			count("node_type_prices", c)
 		}
 		return nil
 	})
@@ -264,4 +282,29 @@ func patchFiles(tx *gorm.DB, st stamp, m Manifest) (Change, []Conflict, error) {
 		}
 	}
 	return Change{}, kept, nil
+}
+
+// patchPrices replaces the prices of p's scope in st's layer with p.Rows.
+func patchPrices(tx *gorm.DB, st stamp, p Prices) (Change, error) {
+	want, errs := checkPrices(p.Rows)
+	if p.Prefix == "" {
+		errs = append(errs, errors.New("prices without a provider prefix"))
+	}
+	for i, r := range p.Rows {
+		if !strings.HasPrefix(r.NodeTypeID, p.Prefix) || slices.Contains(p.Kept, r.NodeTypeID) {
+			errs = append(errs, fmt.Errorf("price %d: node type %s outside the prices of %s* but %v", i, r.NodeTypeID, p.Prefix, p.Kept))
+		}
+	}
+	if len(errs) > 0 {
+		return Change{}, fmt.Errorf("%w: %w", ErrInvalid, errors.Join(errs...))
+	}
+	q := tx.Where("layer = ? AND starts_with(node_type_id, ?)", st.layer, p.Prefix)
+	if len(p.Kept) > 0 {
+		q = q.Where("node_type_id NOT IN ?", p.Kept)
+	}
+	var have []model.NodeTypePrice
+	if err := q.Find(&have).Error; err != nil {
+		return Change{}, err
+	}
+	return syncTable(tx, st, have, want, priceKey)
 }

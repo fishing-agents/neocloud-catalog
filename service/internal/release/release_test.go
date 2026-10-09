@@ -12,10 +12,13 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"maps"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -514,7 +517,8 @@ func TestPublishedReleaseVerifiesWithCatalogsrcRules(t *testing.T) {
 }
 
 // Prices and cost estimates stay in the service: neither the published
-// snapshot nor an adapter export carries one.
+// snapshot nor an adapter export carries one, though the run released has
+// cost estimates from an upstream and a local price.
 func TestReleaseExportHasNoPricesOrCosts(t *testing.T) {
 	sqlDB, db := dbtest.Fresh(t, "release_no_prices")
 	dbtest.Migrate(t, sqlDB)
@@ -526,31 +530,40 @@ func TestReleaseExportHasNoPricesOrCosts(t *testing.T) {
 	if _, err := importers.Execute(ctx, s, imp, uuid.New()); err != nil {
 		t.Fatal(err)
 	}
-	const usd = 98.7654
 	asOf := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
-	nodeType := "azure/Standard_ND96isr_H100_v5"
-	price := model.NodeTypePrice{Provenance: model.Provenance{Layer: model.LayerUpstream, Source: "azure-retail-prices",
+	price := model.NodeTypePrice{Provenance: model.Provenance{Layer: model.LayerUpstream, Source: "azure-prices",
 		SourceURL: "https://prices.azure.com/api/retail/prices", AsOf: asOf},
-		NodeTypeID: nodeType, Region: "eastus", Billing: model.BillingOnDemand, USDPerHour: usd}
+		NodeTypeID: "azure/Standard_ND96isr_H100_v5", Region: "eastus", Billing: model.BillingOnDemand, USDPerHour: 98.7654}
 	if err := db.Create(&price).Error; err != nil {
+		t.Fatal(err)
+	}
+	local := model.NodeTypePrice{NodeTypeID: "azure/Standard_ND96isr_MI300X_v5", Region: "eastus2", Billing: model.BillingSpot, USDPerHour: 12.3457}
+	if err := s.ReplaceLocalPrices(ctx, []model.NodeTypePrice{local}); err != nil {
 		t.Fatal(err)
 	}
 	run, err := generator.Run(ctx, s, uuid.New())
 	if err != nil {
 		t.Fatal(err)
 	}
-	fit := run.Snapshot.Fits[0]
-	for _, setup := range []string{"fit", "minimum", "optimal"} {
-		cost := model.CostEstimate{Derivation: model.Derivation{GeneratorRunID: run.ID}, ModelSlug: fit.ModelSlug, Setup: setup,
-			NodeTypeID: nodeType, Region: "eastus", Billing: model.BillingOnDemand, Instances: 1, USDPerHour: usd, USDPerMonth: usd * 730,
-			PriceSource: price.Source, PriceSourceURL: price.SourceURL, PriceAsOf: asOf}
-		if setup == "fit" {
-			cost.FitKey = catalog.FitKey(fit)
-		}
-		if err := db.Create(&cost).Error; err != nil {
-			t.Fatal(err)
+	var estimates []model.CostEstimate
+	if err := db.Find(&estimates, "generator_run_id = ?", run.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	figures := map[string]bool{}
+	for _, v := range []float64{price.USDPerHour, local.USDPerHour} {
+		figures[regexp.QuoteMeta(strconv.FormatFloat(v, 'f', -1, 64))] = true
+	}
+	sources := map[string]bool{}
+	for _, c := range estimates {
+		sources[c.PriceSource] = true
+		for _, v := range []float64{c.USDPerHour, c.USDPerMonth} {
+			figures[regexp.QuoteMeta(strconv.FormatFloat(v, 'f', -1, 64))] = true
 		}
 	}
+	if !sources["azure-prices"] || !sources[model.SourceCuration] {
+		t.Fatalf("run estimated costs from %v, want the upstream and the local price", sources)
+	}
+	figure := regexp.MustCompile(strings.Join(slices.Sorted(maps.Keys(figures)), "|"))
 
 	rel := create(t, s, run)
 	signer, pub := keySigner(t)
@@ -584,9 +597,8 @@ func TestReleaseExportHasNoPricesOrCosts(t *testing.T) {
 		t.Fatal(err)
 	}
 	walk("$", doc)
-	figures := regexp.MustCompile(`98\.765|72099\.7`)
-	if figures.Match(raw) {
-		t.Error("published snapshot carries a price or cost figure")
+	if f := figure.Find(raw); f != nil {
+		t.Errorf("published snapshot carries the price or cost figure %s", f)
 	}
 
 	dir := t.TempDir()
@@ -601,7 +613,7 @@ func TestReleaseExportHasNoPricesOrCosts(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if internal.Match(body) || figures.Match(body) {
+		if internal.Match(body) || figure.Match(body) {
 			t.Errorf("export %s carries a price or cost", p)
 		}
 		return nil

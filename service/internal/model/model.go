@@ -342,7 +342,8 @@ func (Guidance) TableName() string { return "guidance" }
 
 // CostEstimate is internal: what a fit (Setup "fit", FitKey set) or a
 // guidance setup ("minimum" or "optimal", FitKey empty) costs on a cloud node
-// type in a region at a billing type, with the price's provenance.
+// type in a region at a billing type, with the price's provenance. Cheapest
+// marks a guidance setup's cheapest estimate per billing type.
 type CostEstimate struct {
 	Base
 	Timestamps
@@ -359,6 +360,7 @@ type CostEstimate struct {
 	PriceSource    string    `gorm:"not null"`
 	PriceSourceURL string    `gorm:"column:price_source_url;not null"`
 	PriceAsOf      time.Time `gorm:"not null"`
+	Cheapest       bool      `gorm:"not null;default:false"`
 }
 
 // ExtensionPayload lives in the overlay layer only. ObjectKind names the

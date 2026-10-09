@@ -28,6 +28,7 @@ import (
 	"github.com/fishman/neocloud-catalog/service/internal/db"
 	"github.com/fishman/neocloud-catalog/service/internal/httpapi"
 	"github.com/fishman/neocloud-catalog/service/internal/importers"
+	"github.com/fishman/neocloud-catalog/service/internal/importers/azureprices"
 	"github.com/fishman/neocloud-catalog/service/internal/importers/bootstrap"
 	"github.com/fishman/neocloud-catalog/service/internal/importers/epoch"
 	"github.com/fishman/neocloud-catalog/service/internal/importers/huggingface"
@@ -79,10 +80,12 @@ commands:
                     run: bootstrap-from-json (bootstrap.data_dir into the
                     upstream layer), epoch (family hardware facts from Epoch
                     AI's ML hardware data and the curated
-                    families.overlay.json in bootstrap.data_dir) or
+                    families.overlay.json in bootstrap.data_dir),
                     huggingface (manifests, weights and model facts of the
                     upstream sources at their pinned revisions; gated
-                    repositories need huggingface.token_file)
+                    repositories need huggingface.token_file) or
+                    azure-prices (Azure Retail Prices of the azure/ node
+                    types in azure_prices.regions, internal)
   generate          run the generator over the effective catalog as a job on
                     the catalog queue, and print its run
   release create <generator-run-id>
@@ -202,7 +205,8 @@ func registry(cfg *config.Config) importers.Registry {
 	if err != nil {
 		log.Fatalf("bootstrap.data_dir: %v", err)
 	}
-	return importers.NewRegistry(boot, hardware, huggingface.New(huggingface.Endpoint, token))
+	return importers.NewRegistry(boot, hardware, huggingface.New(huggingface.Endpoint, token),
+		azureprices.New(azureprices.Endpoint, cfg.AzurePrices.Regions))
 }
 
 // runJob enqueues args and works the catalog queue until the job finished,

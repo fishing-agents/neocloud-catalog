@@ -5,12 +5,14 @@ import (
 	"context"
 	"crypto/elliptic"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -730,6 +732,39 @@ func TestCostEstimates(t *testing.T) {
 		t.Errorf("estimate %+v", c)
 	}
 	e.must(http.StatusBadRequest, http.MethodGet, "/v1/cost-estimates?billing=monthly", e.reader, nil, nil)
+}
+
+// A generator run estimates what the guidance setups and fits cost at the
+// prices curated through the API, and GET /v1/cost-estimates serves them
+// with the price's provenance and the cheapest setup marked.
+func TestGeneratedCostEstimates(t *testing.T) {
+	e := newEnv(t, "api_generated_costs", false)
+	e.importBootstrap()
+	const mi300x = "azure/Standard_ND96isr_MI300X_v5"
+	var prices []httpapi.Price
+	e.must(http.StatusOK, http.MethodPut, "/v1/local/prices", e.admin, []httpapi.Price{
+		{NodeTypeId: mi300x, Region: "eastus2", Billing: httpapi.OnDemand, UsdPerHour: 48},
+		{NodeTypeId: mi300x, Region: "westus3", Billing: httpapi.OnDemand, UsdPerHour: 49},
+	}, &prices)
+	run := e.generate()
+	var got []httpapi.CostEstimate
+	e.must(http.StatusOK, http.MethodGet, "/v1/cost-estimates?model=llama-3.1-70b&region=eastus2", e.reader, nil, &got)
+	var lines []string
+	for _, c := range got {
+		if c.GeneratorRun != run.Id || c.PriceSource != "curation" || !c.PriceAsOf.Equal(*prices[0].AsOf) || c.NodeTypeId != mi300x {
+			t.Errorf("estimate %+v, want run %s at the local price as of %s", c, run.Id, prices[0].AsOf)
+		}
+		lines = append(lines, fmt.Sprintf("%s %s %d %v %v %t", c.Setup, c.FitKey, c.Instances, c.UsdPerHour, c.UsdPerMonth, c.Cheapest))
+	}
+	want := []string{
+		"fit llama-3.1-70b/MI300X/-/bf16/auto 1 48 35040 false",
+		"fit llama-3.1-70b/MI300X/-/bf16/auto/2-node 2 96 70080 false",
+		"fit llama-3.1-70b/MI300X/-/fp8/auto 1 48 35040 false",
+		"optimal  1 48 35040 true",
+	}
+	if !slices.Equal(lines, want) {
+		t.Errorf("GET /v1/cost-estimates =\n%s\nwant\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))
+	}
 }
 
 func modelOf(t *testing.T, c httpapi.EffectiveCatalog, slug string) httpapi.ModelTemplate {

@@ -901,7 +901,7 @@ components:
           format: date-time
     CostEstimate:
       type: object
-      required: [model, setup, fit_key, node_type_id, region, billing, instances, usd_per_hour, usd_per_month, price_source, price_source_url, price_as_of, generator_run]
+      required: [model, setup, fit_key, node_type_id, region, billing, instances, usd_per_hour, usd_per_month, price_source, price_source_url, price_as_of, generator_run, cheapest]
       description: What a fit or a guidance setup of a model costs on a cloud node type in a region at a billing type.
       properties:
         model:
@@ -936,6 +936,9 @@ components:
         generator_run:
           type: string
           format: uuid
+        cheapest:
+          type: boolean
+          description: the cheapest estimate of its guidance setup (minimum or optimal) at its billing type, across node types and regions; false for fits
     Extensions:
       x-go-type: catalog.Extensions
       x-go-type-import:

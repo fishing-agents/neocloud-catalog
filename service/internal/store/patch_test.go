@@ -249,3 +249,25 @@ func TestPatchStampsOnlyItsColumns(t *testing.T) {
 		t.Errorf("context_max provenance %+v, want the patch's", fields["context_max"])
 	}
 }
+
+// A price patch writes only its provider's prices: rows outside its prefix or
+// of a node type it keeps are refused, and a refused patch writes nothing.
+func TestPatchPricesStaysInScope(t *testing.T) {
+	s, db := newStore(t, "patch_prices")
+	run := startRun(t, db, model.LayerUpstream, "azure-prices")
+	ok := model.NodeTypePrice{NodeTypeID: "azure/a", Region: "eastus", Billing: model.BillingSpot, USDPerHour: 1}
+	for name, p := range map[string]store.Prices{
+		"no prefix":      {Rows: []model.NodeTypePrice{ok}},
+		"other provider": {Prefix: "azure/", Rows: []model.NodeTypePrice{ok, {NodeTypeID: "aws/a", Region: "us-east-1", Billing: model.BillingSpot}}},
+		"kept":           {Prefix: "azure/", Kept: []string{"azure/a"}, Rows: []model.NodeTypePrice{ok}},
+		"billing":        {Prefix: "azure/", Rows: []model.NodeTypePrice{{NodeTypeID: "azure/b", Region: "eastus", Billing: "monthly"}}},
+	} {
+		if _, _, err := s.Patch(ctx, run, store.Patch{Prices: &p}); !errors.Is(err, store.ErrInvalid) {
+			t.Errorf("%s: err %v, want ErrInvalid", name, err)
+		}
+	}
+	var n int64
+	if err := db.Model(&model.NodeTypePrice{}).Count(&n).Error; err != nil || n != 0 {
+		t.Errorf("%d prices written by refused patches (%v)", n, err)
+	}
+}

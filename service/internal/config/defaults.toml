@@ -20,6 +20,13 @@ data_dir = "../data"
 # gated sources as "gated: token missing".
 token_file = ""
 
+[azure_prices]
+# regions are the Azure regions (ARM names) the azure-prices importer reads
+# Linux on-demand, spot and 1-year reserved prices in, for every azure/ node
+# type. ND MI300X v5 is not offered in eastus, hence eastus2; a node type
+# priced in none of them is listed as an error of the run.
+regions = ["eastus", "eastus2"]
+
 [auth]
 # API keys (catalog-service auth issue) always work. An issuer_url (ICP) also
 # accepts its OIDC JWTs whose aud contains audience; their roles claim must

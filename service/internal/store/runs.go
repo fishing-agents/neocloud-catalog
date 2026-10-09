@@ -214,8 +214,8 @@ func (s *Store) CostEstimates(ctx context.Context, f CostFilter) ([]model.CostEs
 
 // FinishGeneratorRun stores the running generator run run as it ended, now,
 // in one transaction with the fits, fit estimates and guidance of its
-// snapshot, if it has one.
-func (s *Store) FinishGeneratorRun(ctx context.Context, run *model.GeneratorRun) error {
+// snapshot and costs, if it has a snapshot.
+func (s *Store) FinishGeneratorRun(ctx context.Context, run *model.GeneratorRun, costs []model.CostEstimate) error {
 	t := now()
 	run.FinishedAt = &t
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -238,7 +238,10 @@ func (s *Store) FinishGeneratorRun(ctx context.Context, run *model.GeneratorRun)
 		if err := insert(tx, estimates); err != nil {
 			return err
 		}
-		return insert(tx, guidance)
+		if err := insert(tx, guidance); err != nil {
+			return err
+		}
+		return insert(tx, costs)
 	})
 }
 

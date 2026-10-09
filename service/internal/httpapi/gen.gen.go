@@ -135,6 +135,9 @@ type Change = store.Change
 type CostEstimate struct {
 	Billing Billing `json:"billing"`
 
+	// Cheapest the cheapest estimate of its guidance setup (minimum or optimal) at its billing type, across node types and regions; false for fits
+	Cheapest bool `json:"cheapest"`
+
 	// FitKey the fit's key for setup fit, else empty
 	FitKey         string             `json:"fit_key"`
 	GeneratorRun   openapi_types.UUID `json:"generator_run"`

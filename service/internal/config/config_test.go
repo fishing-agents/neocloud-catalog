@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -17,6 +18,7 @@ func TestLoadLayersOverlayThenEnv(t *testing.T) {
 	write("10-db.toml", "[database]\nmax_conns = 5\ndsn = \"postgres://overlay\"\n")
 	write("20-db.toml", "[database]\nmax_conns = 7\n")
 	t.Setenv("NEOCLOUD_CATALOG_DATABASE_MAX_CONNS", "9")
+	t.Setenv("NEOCLOUD_CATALOG_AZURE_PRICES_REGIONS", "westus3")
 	t.Setenv("NEOCLOUD_TELEMETRY_METRICS_ADDR", "127.0.0.1:1") // neocloud-api's prefix, not ours
 
 	cfg, err := Load(dir)
@@ -28,6 +30,9 @@ func TestLoadLayersOverlayThenEnv(t *testing.T) {
 	}
 	if cfg.Telemetry.MetricsAddr != "0.0.0.0:8081" {
 		t.Errorf("metrics_addr = %q, want the default", cfg.Telemetry.MetricsAddr)
+	}
+	if !slices.Equal(cfg.AzurePrices.Regions, []string{"westus3"}) {
+		t.Errorf("azure_prices.regions = %q, want env's westus3", cfg.AzurePrices.Regions)
 	}
 }
 
@@ -42,6 +47,8 @@ func TestLoadRefusesInvalidConfig(t *testing.T) {
 		"issuer, no audience":   {"NEOCLOUD_CATALOG_AUTH_ISSUER_URL", "https://icp.example.com", "auth.audience"},
 		"release ref, no key":   {"NEOCLOUD_CATALOG_RELEASE_REF", "ghcr.io/example/catalog:v4", "release.key"},
 		"release key, no ref":   {"NEOCLOUD_CATALOG_RELEASE_KEY", "/etc/catalog/cosign.key", "release.ref"},
+		"region list in env":    {"NEOCLOUD_CATALOG_AZURE_PRICES_REGIONS", "eastus,eastus2", "azure_prices.regions"},
+		"quoted region":         {"NEOCLOUD_CATALOG_AZURE_PRICES_REGIONS", "eastus' or 1 eq 1", "azure_prices.regions"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
