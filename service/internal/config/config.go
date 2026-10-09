@@ -90,6 +90,7 @@ type ReleaseConfig struct {
 	Key            string        `koanf:"key"`
 	OverlayRef     string        `koanf:"overlay_ref"`
 	PublishTimeout time.Duration `koanf:"publish_timeout"`
+	PlainHTTP      bool          `koanf:"plain_http"`
 }
 
 // UpstreamConfig is the signed upstream release (and overlay) an operator

@@ -146,7 +146,7 @@ func cmdServe() {
 		if err != nil {
 			log.Fatalf("release.key: %v", err)
 		}
-		publish = &release.Target{Ref: cfg.Release.Ref, OverlayRef: cfg.Release.OverlayRef, Signer: signer}
+		publish = &release.Target{Ref: cfg.Release.Ref, OverlayRef: cfg.Release.OverlayRef, Signer: signer, PlainHTTP: cfg.Release.PlainHTTP}
 	}
 	s := store.New(gormDB)
 	reg := mustRegistry(cfg)
@@ -339,13 +339,14 @@ func cmdReleasePublish(args []string) {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	_, _, gormDB := open()
+	cfg, _, gormDB := open()
 	s := store.New(gormDB)
 	rel, err := release.Get(ctx, s, fs.Arg(0))
 	if err != nil {
 		log.Fatalf("release publish: %v", err)
 	}
-	if err := release.Publish(ctx, rel, release.Target{Ref: *ref, OverlayRef: *overlayRef, Signer: signer}); err != nil {
+	target := release.Target{Ref: *ref, OverlayRef: *overlayRef, Signer: signer, PlainHTTP: cfg.Release.PlainHTTP}
+	if err := release.Publish(ctx, rel, target); err != nil {
 		log.Fatalf("release publish: %v", err)
 	}
 	if *exports != "" {

@@ -13,6 +13,8 @@ import (
 	"io/fs"
 	"log"
 	"maps"
+	"net"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -735,5 +737,31 @@ func TestBootstrapReleaseMatchesGoldens(t *testing.T) {
 	}
 	if len(listed) != len(golden) {
 		t.Errorf("SHA256SUMS lists %d files, the goldens hold %d", len(listed), len(golden))
+	}
+}
+
+// PlainHTTP publishes over HTTP to a registry whose name would get HTTPS.
+func TestPublishPlainHTTP(t *testing.T) {
+	s, _, run := generated(t, "release_plain_http")
+	rel := create(t, s, run)
+	signer, pub := keySigner(t)
+	host := registryHost(t)
+	tr := remote.DefaultTransport.(*http.Transport).Clone()
+	tr.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, host)
+	}
+	orig := remote.DefaultTransport
+	t.Cleanup(func() { remote.DefaultTransport = orig })
+	remote.DefaultTransport = tr
+	target := release.Target{Ref: "registry.example/neocloud/catalog:v4", Signer: signer}
+	if err := release.Publish(ctx, rel, target); err == nil {
+		t.Fatal("published over HTTPS to a plain-HTTP registry")
+	}
+	target.PlainHTTP = true
+	if err := release.Publish(ctx, rel, target); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := check(t, host+"/neocloud/catalog:v4", pub); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -98,10 +98,12 @@ func (r Release) Snapshot(ctx context.Context) (catalog.CatalogSnapshot, error) 
 }
 
 // Target is where Publish pushes: Ref is the polled repository:tag, OverlayRef
-// the optional overlay's, Signer signs every manifest.
+// the optional overlay's, Signer signs every manifest. PlainHTTP talks HTTP to
+// a registry without TLS.
 type Target struct {
 	Ref, OverlayRef string
 	Signer          Signer
+	PlainHTTP       bool
 }
 
 // Publish pushes and signs the snapshot artifact (and with t.OverlayRef the
@@ -113,13 +115,17 @@ func Publish(ctx context.Context, rel Release, t Target) error {
 	if t.Signer == nil {
 		return errors.New("publish: no signer")
 	}
-	ref, err := name.ParseReference(t.Ref)
+	var nameOpts []name.Option
+	if t.PlainHTTP {
+		nameOpts = append(nameOpts, name.Insecure)
+	}
+	ref, err := name.ParseReference(t.Ref, nameOpts...)
 	if err != nil {
 		return fmt.Errorf("publish: %w", err)
 	}
 	var overlayRef name.Reference
 	if t.OverlayRef != "" {
-		if overlayRef, err = name.ParseReference(t.OverlayRef); err != nil {
+		if overlayRef, err = name.ParseReference(t.OverlayRef, nameOpts...); err != nil {
 			return fmt.Errorf("publish overlay: %w", err)
 		}
 	}

@@ -43,6 +43,8 @@ ref = ""
 key = ""
 overlay_ref = ""
 publish_timeout = "2m"
+# plain_http pushes to a registry without TLS.
+plain_http = false
 
 [upstream]
 # Operator deployments: import our signed release from ref, verified by
