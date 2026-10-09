@@ -60,7 +60,7 @@ func TestImportAndGenerateJobs(t *testing.T) {
 	}
 
 	var imported jobs.ImportOutput
-	if err := run(jobs.ImportArgs{Importer: "bootstrap"}, &imported); err != nil {
+	if err := run(jobs.ImportArgs{Importer: "bootstrap-from-json"}, &imported); err != nil {
 		t.Fatal(err)
 	}
 	var importRun model.ImportRun

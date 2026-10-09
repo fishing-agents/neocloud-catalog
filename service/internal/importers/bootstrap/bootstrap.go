@@ -33,7 +33,7 @@ func New(dir string) (*Importer, error) {
 	return &Importer{dir: dir, sourceURL: (&url.URL{Scheme: "file", Path: abs}).String()}, nil
 }
 
-func (*Importer) Name() string { return "bootstrap" }
+func (*Importer) Name() string { return "bootstrap-from-json" }
 
 func (i *Importer) Origin() importers.Origin {
 	return importers.Origin{Layer: model.LayerUpstream, Source: model.SourceCuration, SourceURL: i.sourceURL}

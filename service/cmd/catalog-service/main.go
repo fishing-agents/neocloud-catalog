@@ -57,9 +57,9 @@ commands:
   migrate           apply the schema with GORM AutoMigrate (dev and tests);
                     production applies the versioned Atlas migrations (make
                     migrate-apply)
-  import <importer> run an importer (bootstrap: bootstrap.data_dir into the
-                    upstream layer) as a job on the catalog queue, and print
-                    its run
+  import <importer> run an importer (bootstrap-from-json: bootstrap.data_dir
+                    into the upstream layer) as a job on the catalog queue,
+                    and print its run
   generate          run the generator over the effective catalog as a job on
                     the catalog queue, and print its run
 

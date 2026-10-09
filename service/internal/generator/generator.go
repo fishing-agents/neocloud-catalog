@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	catalog "github.com/fishman/neocloud-catalog"
 	"github.com/fishman/neocloud-catalog/service/internal/model"
@@ -18,11 +19,11 @@ import (
 // and stores the run: its inputs' digest and import runs, the report, the
 // snapshot generated at the run's start (its version is a release's to set)
 // and the fits, estimates and guidance it derives. A failed generation is
-// stored as a failed run and returned with its error.
+// stored as a failed run and returned with its error, which names the run.
 func Run(ctx context.Context, s *store.Store) (model.GeneratorRun, error) {
 	run, err := s.StartGeneratorRun(ctx)
 	if err != nil {
-		return run, err
+		return run, fmt.Errorf("start generator run: %w", err)
 	}
 	genErr := generate(ctx, s, &run)
 	run.Status = model.RunSucceeded
@@ -37,7 +38,10 @@ func Run(ctx context.Context, s *store.Store) (model.GeneratorRun, error) {
 		run.Status, run.Error, run.Snapshot = model.RunFailed, err.Error(), nil
 		err = s.FinishGeneratorRun(ctx, &run)
 	}
-	return run, errors.Join(genErr, err)
+	if err := errors.Join(genErr, err); err != nil {
+		return run, fmt.Errorf("generator run %s: %w", run.ID, err)
+	}
+	return run, nil
 }
 
 func generate(ctx context.Context, s *store.Store, run *model.GeneratorRun) error {

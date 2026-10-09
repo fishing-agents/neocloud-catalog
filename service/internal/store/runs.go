@@ -48,7 +48,7 @@ func (s *Store) FinishImport(ctx context.Context, run uuid.UUID, inputVersion st
 	return r, res.Error
 }
 
-// EffectiveWithRuns is Effective plus the import runs its values come from,
+// EffectiveWithRuns is Effective plus the import runs of its core values,
 // read on one snapshot (see importRuns).
 func (s *Store) EffectiveWithRuns(ctx context.Context) (Inputs, []uuid.UUID, error) {
 	var in Inputs
@@ -61,16 +61,16 @@ func (s *Store) EffectiveWithRuns(ctx context.Context) (Inputs, []uuid.UUID, err
 		if in, err = merge(up, local, payloads); err != nil {
 			return err
 		}
-		runs = importRuns(up, local, payloads)
+		runs = importRuns(up, local)
 		return nil
 	})
 	return in, runs, err
 }
 
-// importRuns lists, sorted, the import runs of the effective rows and of
+// importRuns lists, sorted, the import runs of the effective core rows and of
 // their values (field provenance): per object the rows of the layer it is
-// taken from, and every overlay payload.
-func importRuns(up, local rowSet, payloads []model.ExtensionPayload) []uuid.UUID {
+// taken from. Overlay payloads are not core inputs.
+func importRuns(up, local rowSet) []uuid.UUID {
 	seen := map[uuid.UUID]bool{}
 	add := func(row any) {
 		m := meta(row)
@@ -95,9 +95,6 @@ func importRuns(up, local rowSet, payloads []model.ExtensionPayload) []uuid.UUID
 			add(row)
 		}
 	})
-	for i := range payloads {
-		add(&payloads[i])
-	}
 	runs := slices.Collect(maps.Keys(seen))
 	slices.SortFunc(runs, func(a, b uuid.UUID) int { return bytes.Compare(a[:], b[:]) })
 	return runs

@@ -83,7 +83,7 @@ func (w *importWorker) Work(ctx context.Context, job *river.Job[ImportArgs]) err
 	}
 	run, err := importers.Execute(ctx, w.s, imp)
 	if err != nil {
-		return fmt.Errorf("import run %s: %w", run.ID, err)
+		return err
 	}
 	return river.RecordOutput(ctx, ImportOutput{Run: run.ID, InputVersion: run.InputVersion, Summary: json.RawMessage(run.Summary)})
 }
@@ -96,7 +96,7 @@ type generateWorker struct {
 func (w *generateWorker) Work(ctx context.Context, job *river.Job[GenerateArgs]) error {
 	run, err := generator.Run(ctx, w.s)
 	if err != nil {
-		return fmt.Errorf("generator run %s: %w", run.ID, err)
+		return err
 	}
 	return river.RecordOutput(ctx, GenerateOutput{Run: run.ID, InputDigest: run.InputDigest, InputImportRuns: run.InputImportRuns,
 		Digest: run.Snapshot.Digest(), Report: run.Report})

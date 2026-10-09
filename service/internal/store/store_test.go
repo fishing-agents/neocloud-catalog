@@ -509,9 +509,10 @@ func TestReplaceLayerRefusesBadRunsAndKeys(t *testing.T) {
 	}
 }
 
-// The effective catalog's import runs are the runs of its rows and of their
-// values, in the layer each object is taken from, plus the overlay's: not
-// just the latest run, and not the runs of overridden rows.
+// The effective catalog's import runs are the runs of its core rows and of
+// their values, in the layer each object is taken from: not just the latest
+// run, not the runs of overridden rows, and not the overlay's, which Generate
+// does not read.
 func TestEffectiveWithRunsListsRunsOfEffectiveValues(t *testing.T) {
 	s, db := newStore(t, "runs")
 	replace := func(layer string, run uuid.UUID, in store.Inputs) {
@@ -553,10 +554,10 @@ func TestEffectiveWithRunsListsRunsOfEffectiveValues(t *testing.T) {
 	overlay := startRun(t, db, model.LayerOverlay, "overlay-import")
 	replace(model.LayerOverlay, overlay, store.Inputs{Extensions: catalog.Overlay{
 		Families: map[string]catalog.Extensions{"X100": {"example.com/tier": json.RawMessage(`{}`)}}}})
-	runsOf(all, memory, added, updated, overlay)
+	runsOf(all, memory, added, updated)
 
 	if err := s.Upsert(ctx, *h100); err != nil {
 		t.Fatal(err)
 	}
-	runsOf(all, added, updated, overlay)
+	runsOf(all, added, updated)
 }

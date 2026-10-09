@@ -82,7 +82,7 @@ func TestImporterIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantURL := (&url.URL{Scheme: "file", Path: abs}).String()
-	if first.Importer != "bootstrap" || first.Layer != model.LayerUpstream || first.Source != model.SourceCuration ||
+	if first.Importer != "bootstrap-from-json" || first.Layer != model.LayerUpstream || first.Source != model.SourceCuration ||
 		first.SourceURL != wantURL || first.Status != model.RunSucceeded || first.FinishedAt == nil || first.Error != "" {
 		t.Errorf("first run = %+v, want a succeeded bootstrap run of upstream curation from %s", first, wantURL)
 	}
@@ -119,7 +119,7 @@ func TestImporterIdempotent(t *testing.T) {
 		t.Errorf("second run changed rows: %d rows before, %d after", len(before), len(after))
 	}
 	var runs int64
-	if err := db.Model(&model.ImportRun{}).Where("importer = ?", "bootstrap").Count(&runs).Error; err != nil {
+	if err := db.Model(&model.ImportRun{}).Where("importer = ?", "bootstrap-from-json").Count(&runs).Error; err != nil {
 		t.Fatal(err)
 	}
 	if runs != 2 {

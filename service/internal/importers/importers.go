@@ -5,6 +5,7 @@ package importers
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/google/uuid"
 
@@ -52,18 +53,21 @@ func NewRegistry(imps ...Importer) Registry {
 }
 
 // Execute runs imp as a new import run and records how it ended, failed runs
-// included.
+// included; errors after the run started name it.
 func Execute(ctx context.Context, s *store.Store, imp Importer) (model.ImportRun, error) {
 	o := imp.Origin()
 	run, err := s.StartImport(ctx, imp.Name(), o.Layer, o.Source, o.SourceURL)
 	if err != nil {
-		return run, err
+		return run, fmt.Errorf("start %s import run: %w", imp.Name(), err)
 	}
-	sum, runErr := imp.Run(ctx, s, run.ID)
+	sum, err := imp.Run(ctx, s, run.ID)
 	// A cancelled run is still recorded as failed.
-	finished, err := s.FinishImport(context.WithoutCancel(ctx), run.ID, sum.InputVersion, sum, runErr)
-	if err != nil {
-		return run, errors.Join(runErr, err)
+	finished, finishErr := s.FinishImport(context.WithoutCancel(ctx), run.ID, sum.InputVersion, sum, err)
+	if finishErr != nil {
+		finished, err = run, errors.Join(err, finishErr)
 	}
-	return finished, runErr
+	if err != nil {
+		return finished, fmt.Errorf("import run %s: %w", run.ID, err)
+	}
+	return finished, nil
 }
