@@ -114,11 +114,13 @@ type Target struct {
 // artifact, one catalog.ArtifactType layer under the version annotation, and,
 // with t.OverlayRef, the release's overlay (pinned to the release digest) to
 // that repository as the overlay artifact; it signs each manifest, then points
-// the tags at them and records the release as published at t.Ref. A
-// published release is not pushed again: publishing it again changes nothing
-// when its content still makes the published manifest, and is refused
-// otherwise. A release older than a published one is refused, as clients
-// refuse a catalog that is not newer than theirs, so neither tag moves back.
+// the tags at them and records where the release, and its overlay, were
+// published. A published release is not pushed again: publishing it again
+// changes nothing when its content still makes the published manifest, and is
+// refused otherwise; its overlay, if not published yet, is published then,
+// and refused if published elsewhere. A release older than a published one is
+// refused, its late overlay too, as clients refuse a catalog that is not
+// newer than theirs, so neither tag moves back.
 func Publish(ctx context.Context, rel Release, t Target) error {
 	if t.Signer == nil {
 		return errors.New("publish: no signer")
@@ -150,26 +152,8 @@ func Publish(ctx context.Context, rel Release, t Target) error {
 	if err != nil {
 		return err
 	}
-	repo := ref.Context()
-	at := repo.Digest(a.desc.Digest.String()).String()
-	if cur.PublishedAt != nil {
-		if cur.ArtifactRef != at {
-			return fmt.Errorf("%w: release %s is published as %s, not %s", store.ErrConflict, cur.Version, cur.ArtifactRef, at)
-		}
-		return nil
-	}
-	newer, err := cur.s.NewerPublished(ctx, cur.Version)
-	if err != nil {
-		return err
-	}
-	if newer != "" {
-		return fmt.Errorf("%w: release %s is older than the published release %s", store.ErrConflict, cur.Version, newer)
-	}
-	type push struct {
-		ref name.Reference
-		a   artifact
-	}
-	pushes := []push{{ref, a}}
+	at := ref.Context().Digest(a.desc.Digest.String()).String()
+	pushes, overlayAt := []push{{ref, a}}, ""
 	if overlayRef != nil {
 		body, err := json.Marshal(cur.Overlay)
 		if err != nil {
@@ -180,7 +164,44 @@ func Publish(ctx context.Context, rel Release, t Target) error {
 			return err
 		}
 		pushes = append(pushes, push{overlayRef, o})
+		overlayAt = overlayRef.Context().Digest(o.desc.Digest.String()).String()
 	}
+	if cur.PublishedAt != nil {
+		switch {
+		case cur.ArtifactRef != at:
+			return fmt.Errorf("%w: release %s is published as %s, not %s", store.ErrConflict, cur.Version, cur.ArtifactRef, at)
+		case overlayAt == "" || cur.OverlayRef == overlayAt:
+			return nil
+		case cur.OverlayRef != "":
+			return fmt.Errorf("%w: release %s's overlay is published as %s, not %s", store.ErrConflict, cur.Version, cur.OverlayRef, overlayAt)
+		}
+		pushes = pushes[1:]
+	}
+	newer, err := cur.s.NewerPublished(ctx, cur.Version)
+	if err != nil {
+		return err
+	}
+	if newer != "" {
+		return fmt.Errorf("%w: release %s is older than the published release %s", store.ErrConflict, cur.Version, newer)
+	}
+	if err := publish(ctx, t.Signer, pushes); err != nil {
+		return err
+	}
+	if cur.PublishedAt != nil {
+		return cur.s.PublishOverlay(ctx, cur.ID, overlayAt)
+	}
+	_, err = cur.s.PublishRelease(ctx, cur.ID, at, overlayAt)
+	return err
+}
+
+// push is an artifact and the reference it is published under.
+type push struct {
+	ref name.Reference
+	a   artifact
+}
+
+// publish pushes and signs every artifact, then points the tags at them.
+func publish(ctx context.Context, signer Signer, pushes []push) error {
 	opts := remoteOptions(ctx)
 	for _, p := range pushes {
 		repo := p.ref.Context()
@@ -188,7 +209,7 @@ func Publish(ctx context.Context, rel Release, t Target) error {
 		if err := p.a.push(repo, opts); err != nil {
 			return fmt.Errorf("push %s: %w", d, err)
 		}
-		if err := t.Signer.SignManifest(ctx, repo, p.a.desc); err != nil {
+		if err := signer.SignManifest(ctx, repo, p.a.desc); err != nil {
 			return fmt.Errorf("sign %s: %w", d, err)
 		}
 	}
@@ -199,8 +220,7 @@ func Publish(ctx context.Context, rel Release, t Target) error {
 			}
 		}
 	}
-	_, err = cur.s.PublishRelease(ctx, cur.ID, at)
-	return err
+	return nil
 }
 
 // WriteExports writes the release's adapter exports to dir, the assets the

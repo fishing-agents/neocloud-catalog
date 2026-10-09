@@ -633,6 +633,7 @@ func TestQueuedRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 	reg := importers.NewRegistry(imp)
+	reg.Refuse("epoch", "an operator deployment imports its upstream layer from upstream.ref only")
 	c, err := jobs.New(sqlDB, s, reg, jobs.Config{JobTimeout: time.Minute, RescueAfter: time.Hour})
 	if err != nil {
 		t.Fatal(err)
@@ -650,6 +651,11 @@ func TestQueuedRuns(t *testing.T) {
 	if queued.Status != httpapi.Queued || queued.Importer != "bootstrap-from-json" || queued.Layer != httpapi.Upstream {
 		t.Errorf("queued import %+v", queued)
 	}
+	if code, body := e.call(http.MethodPost, "/v1/imports", key, httpapi.ImportCreate{Importer: "epoch"}); code != http.StatusConflict ||
+		!bytes.Contains(body, []byte("upstream.ref")) {
+		t.Errorf("POST a refused importer = %d %s, want 409 saying why", code, body)
+	}
+	e.must(http.StatusNotFound, http.MethodPost, "/v1/imports", key, httpapi.ImportCreate{Importer: "no-such-importer"}, nil)
 	var got httpapi.ImportRun
 	e.must(http.StatusOK, http.MethodGet, "/v1/imports/"+queued.Id.String(), key, nil, &got)
 	if got.Status != httpapi.Queued || got.Id != queued.Id {

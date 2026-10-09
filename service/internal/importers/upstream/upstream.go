@@ -9,20 +9,19 @@
 // Verification is neocloud-api's catalog sync's (Source mirrors its
 // catalogsrc): a signature by the configured identity or key on the manifest
 // digest, the layer checked against the signed manifest, a version not older
-// than the release imported last (the version is signed, so a replayed older
-// release cannot roll the layer back), the schema major, the overlay merged
-// with catalog.Merge (its pin to the snapshot digest, its ids, its
-// namespaces) and the merged snapshot validated. Any failure fails the run
-// and changes neither layer.
+// than any release an upstream run wrote (the version is signed, so a
+// replayed older release cannot roll the layers back; checked again under the
+// store's write lock, where the run records its version), the schema major,
+// the overlay merged with catalog.Merge (its pin to the snapshot digest, its
+// ids, its namespaces) and the merged snapshot validated. Any failure fails
+// the run and changes neither layer.
 //
 // The input version is "<release version> <snapshot digest>", plus
-// " overlay <overlay manifest digest>" with an overlay; the release version
-// leads, as the next run's not-older check reads it.
+// " overlay <overlay manifest digest>" with an overlay.
 package upstream
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -53,8 +52,12 @@ func (i *Importer) Run(ctx context.Context, s *store.Store, run uuid.UUID) (impo
 	if err != nil {
 		return importers.Summary{}, err
 	}
-	if err := i.notOlder(ctx, s, rel); err != nil {
+	// An early exit; ReplaceUpstream decides under the write lock.
+	if newest, by, err := s.ImportedVersion(ctx, i.Name()); err != nil {
 		return importers.Summary{}, err
+	} else if rel.Time.Before(newest) {
+		return importers.Summary{}, fmt.Errorf("upstream version %s is older than %s, imported by run %s",
+			rel.Version, newest.UTC().Format(catalog.VersionLayout), by)
 	}
 	snap, err := i.release.Pull(ctx, rel)
 	if err != nil {
@@ -85,29 +88,8 @@ func (i *Importer) Run(ctx context.Context, s *store.Store, run uuid.UUID) (impo
 	if err := seeded.Validate(); err != nil {
 		return importers.Summary{}, fmt.Errorf("snapshot: %w", err)
 	}
-	sum.Changes, err = s.ReplaceUpstream(ctx, run, in, overlayURL)
+	sum.Changes, err = s.ReplaceUpstream(ctx, run, rel.Time, in, overlayURL)
 	return sum, err
-}
-
-// notOlder refuses a release older than the one the last succeeded run
-// imported. Versions compare as times, as neocloud-api compares them.
-func (i *Importer) notOlder(ctx context.Context, s *store.Store, rel Release) error {
-	last, err := s.LastImport(ctx, i.Name())
-	if errors.Is(err, store.ErrNotFound) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	version, _, _ := strings.Cut(last.InputVersion, " ")
-	t, err := catalog.ParseVersion(version)
-	if err != nil {
-		return fmt.Errorf("import run %s: %w", last.ID, err)
-	}
-	if rel.Time.Before(t) {
-		return fmt.Errorf("upstream version %s is older than %s, imported by run %s", rel.Version, version, last.ID)
-	}
-	return nil
 }
 
 // inputs are the curated objects of snap, which Generate reproduces it from:

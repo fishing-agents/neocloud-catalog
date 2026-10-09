@@ -231,9 +231,9 @@ func (h *handlers) StartImport(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "importer required")
 		return
 	}
-	imp := h.Importers[in.Importer]
-	if imp == nil {
-		fail(w, r, fmt.Errorf("importer %q: %w", in.Importer, store.ErrNotFound))
+	imp, err := h.Importers.Lookup(in.Importer)
+	if err != nil {
+		fail(w, r, err)
 		return
 	}
 	run := uuid.New()
@@ -287,7 +287,7 @@ func (h *handlers) ListImports(w http.ResponseWriter, r *http.Request, params Li
 			fail(w, r, err)
 			return
 		}
-		if imp := h.Importers[args.Importer]; imp != nil && !recorded[args.Run] && (importer == "" || args.Importer == importer) {
+		if imp, err := h.Importers.Lookup(args.Importer); err == nil && !recorded[args.Run] && (importer == "" || args.Importer == importer) {
 			out = append(out, queuedImport(args.Run, imp))
 		}
 	}
@@ -315,8 +315,8 @@ func (h *handlers) GetImport(w http.ResponseWriter, r *http.Request, id uuid.UUI
 			fail(w, r, err)
 			return
 		}
-		imp := h.Importers[args.Importer]
-		if imp == nil {
+		imp, err := h.Importers.Lookup(args.Importer)
+		if err != nil {
 			fail(w, r, fmt.Errorf("import run %s of importer %q: %w", id, args.Importer, store.ErrNotFound))
 			return
 		}
@@ -413,7 +413,7 @@ func (h *handlers) GetGeneratorRun(w http.ResponseWriter, r *http.Request, id uu
 
 func toRelease(rel model.Release) Release {
 	return Release{Id: rel.ID, Version: rel.Version, Digest: rel.Digest, SchemaVersion: rel.SchemaVersion, GeneratorRun: rel.GeneratorRunID,
-		ArtifactRef: rel.ArtifactRef, PublishedAt: rel.PublishedAt, CreatedAt: rel.CreatedAt}
+		ArtifactRef: rel.ArtifactRef, OverlayRef: rel.OverlayRef, PublishedAt: rel.PublishedAt, CreatedAt: rel.CreatedAt}
 }
 
 func (h *handlers) ListReleases(w http.ResponseWriter, r *http.Request) {

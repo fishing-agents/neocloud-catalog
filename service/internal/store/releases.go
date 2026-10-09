@@ -62,13 +62,13 @@ func (s *Store) NewerPublished(ctx context.Context, version string) (string, err
 	return newer[0], nil
 }
 
-// PublishRelease records that the release id was published as ref, now. A
-// release published as ref already stays as it is; one published as another
-// ref is an error.
-func (s *Store) PublishRelease(ctx context.Context, id uuid.UUID, ref string) (model.Release, error) {
+// PublishRelease records that the release id was published as ref, with its
+// overlay as overlayRef ("" for none), now. A release published as ref
+// already stays as it is; one published as another ref is an error.
+func (s *Store) PublishRelease(ctx context.Context, id uuid.UUID, ref, overlayRef string) (model.Release, error) {
 	var rel model.Release
 	res := s.db.WithContext(ctx).Model(&rel).Clauses(clause.Returning{}).Where("id = ? AND published_at IS NULL", id).
-		Updates(map[string]any{"artifact_ref": ref, "published_at": now()})
+		Updates(map[string]any{"artifact_ref": ref, "overlay_ref": overlayRef, "published_at": now()})
 	if res.Error != nil || res.RowsAffected == 1 {
 		return rel, res.Error
 	}
@@ -79,4 +79,16 @@ func (s *Store) PublishRelease(ctx context.Context, id uuid.UUID, ref string) (m
 		return rel, fmt.Errorf("release %s is published as %s", rel.Version, rel.ArtifactRef)
 	}
 	return rel, nil
+}
+
+// PublishOverlay records that the overlay of the published release id was
+// published as overlayRef, once: an overlay recorded as another ref is
+// ErrConflict.
+func (s *Store) PublishOverlay(ctx context.Context, id uuid.UUID, overlayRef string) error {
+	res := s.db.WithContext(ctx).Model(&model.Release{}).Where("id = ? AND published_at IS NOT NULL AND overlay_ref IN ('', ?)", id, overlayRef).
+		Update("overlay_ref", overlayRef)
+	if res.Error != nil || res.RowsAffected == 1 {
+		return res.Error
+	}
+	return fmt.Errorf("%w: release %s is unpublished or its overlay is published elsewhere", ErrConflict, id)
 }

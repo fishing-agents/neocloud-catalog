@@ -371,6 +371,69 @@ func TestPublishRefusesOlderRelease(t *testing.T) {
 	}
 }
 
+// A release published without its overlay publishes it on a later publish
+// with an overlay ref, recorded once: again changes nothing, elsewhere is
+// refused, and the database refuses to change it. A late overlay of a release
+// older than a published one is refused, so the overlay tag never moves back.
+func TestPublishOverlayLater(t *testing.T) {
+	s, db, older := generated(t, "release_overlay_later")
+	if err := db.Exec(`UPDATE generator_runs SET snapshot = jsonb_set(snapshot, '{generated_at}', '"2026-01-01T00:00:00Z"') WHERE id = ?`, older.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	replaceOverlay(t, s, catalog.Overlay{Models: map[string]catalog.Extensions{older.Snapshot.Models[0].Slug: {"example.com/tier": json.RawMessage(`{"tier":"gold"}`)}}})
+	newer, err := generator.Run(ctx, s, uuid.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldRel, newRel := create(t, s, older), create(t, s, newer)
+	signer, _ := keySigner(t)
+	host := registryHost(t)
+	bare := release.Target{Ref: host + "/neocloud/catalog:v4", Signer: signer}
+	full := bare
+	full.OverlayRef = host + "/neocloud/overlay:v4"
+	for _, rel := range []release.Release{oldRel, newRel} {
+		if err := release.Publish(ctx, rel, bare); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := release.Publish(ctx, oldRel, full); err == nil {
+		t.Error("the overlay of a release older than the published one was published")
+	}
+	if err := release.Publish(ctx, newRel, full); err != nil {
+		t.Fatal(err)
+	}
+	got, err := release.Get(ctx, s, newRel.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tagged := manifestDigest(t, full.OverlayRef)
+	if got.OverlayRef != host+"/neocloud/overlay@"+tagged.String() {
+		t.Fatalf("overlay recorded as %q, want the manifest the overlay tag names, %s", got.OverlayRef, tagged)
+	}
+	subject, err := name.NewDigest(got.OverlayRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(bundles(t, subject)); n != 1 {
+		t.Fatalf("the late overlay carries %d signatures, want 1", n)
+	}
+	if err := release.Publish(ctx, newRel, full); err != nil || len(bundles(t, subject)) != 1 {
+		t.Errorf("publishing the overlay again: %v, or it was signed again", err)
+	}
+	elsewhere := full
+	elsewhere.OverlayRef = host + "/elsewhere/overlay:v4"
+	if err := release.Publish(ctx, newRel, elsewhere); err == nil {
+		t.Error("a published overlay was published again elsewhere")
+	}
+	if err := db.Exec(`UPDATE releases SET overlay_ref = 'elsewhere' WHERE id = ?`, newRel.ID).Error; err == nil {
+		t.Error("the database accepted a changed overlay_ref")
+	}
+	if again, err := release.Get(ctx, s, newRel.Version); err != nil || again.OverlayRef != got.OverlayRef {
+		t.Errorf("overlay recorded as %q after the refusals (err %v)", again.OverlayRef, err)
+	}
+}
+
 // Keyless runs cosign as the release workflow does, and a failing cosign
 // fails the signature with cosign's output.
 func TestKeylessRunsCosign(t *testing.T) {

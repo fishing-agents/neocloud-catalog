@@ -88,9 +88,9 @@ type importWorker struct {
 }
 
 func (w *importWorker) Work(ctx context.Context, job *river.Job[ImportArgs]) error {
-	imp := w.reg[job.Args.Importer]
-	if imp == nil {
-		return fmt.Errorf("no importer %q", job.Args.Importer)
+	imp, err := w.reg.Lookup(job.Args.Importer)
+	if err != nil {
+		return err
 	}
 	run, err := importers.Execute(ctx, w.s, imp, job.Args.Run)
 	if err != nil {

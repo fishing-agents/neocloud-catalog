@@ -449,4 +449,8 @@ func TestNewRefusesUnsafeTrust(t *testing.T) {
 		!strings.Contains(err.Error(), "upstream.overlay_ref needs upstream.overlay_public_key") {
 		t.Errorf("overlay without trust: err = %v, want one naming the upstream.overlay_* keys", err)
 	}
+	if _, err := upstream.NewSource(upstream.Config{Ref: "ghcr.io/x/c:v4", IdentityIssuer: issuer, Identity: identity, TrustedRoot: key}); err == nil ||
+		!strings.Contains(err.Error(), "upstream.trusted_root") {
+		t.Errorf("unreadable trusted root: err = %v, want one naming upstream.trusted_root", err)
+	}
 }

@@ -331,7 +331,7 @@ paths:
     post:
       operationId: startImport
       summary: Queue a run of an importer
-      description: Enqueues the importer on the catalog queue; the response is the queued run, which GET /v1/imports/{id} follows.
+      description: Enqueues the importer on the catalog queue; the response is the queued run, which GET /v1/imports/{id} follows. An operator deployment (upstream.ref set) refuses the importers that write its upstream layer (bootstrap-from-json, epoch, huggingface) with 409.
       requestBody:
         required: true
         content:
@@ -360,6 +360,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
   /v1/imports/{id}:
     get:
       operationId: getImport
@@ -867,7 +869,7 @@ components:
       properties:
         importer:
           type: string
-          description: the importer's name (bootstrap-from-json, epoch, huggingface, azure-prices, kaito; upstream in an operator deployment with upstream.ref set)
+          description: the importer's name (bootstrap-from-json, epoch, huggingface, azure-prices, kaito; an operator deployment, with upstream.ref set, runs upstream, azure-prices and kaito)
     ReleaseCreate:
       type: object
       required: [generator_run]
@@ -897,6 +899,10 @@ components:
           x-go-type-skip-optional-pointer: true
           type: string
           description: repository@digest it was published as
+        overlay_ref:
+          x-go-type-skip-optional-pointer: true
+          type: string
+          description: repository@digest its overlay was published as (release.overlay_ref), at publish or on a later publish
         published_at:
           type: string
           format: date-time

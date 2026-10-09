@@ -151,7 +151,7 @@ func (s *Store) ReplaceLayer(ctx context.Context, layer string, run uuid.UUID, i
 	}
 	var changes Changes
 	err = s.write(ctx, func(tx *gorm.DB) error {
-		st, err := runningRun(tx, run, layer)
+		r, err := runningRun(tx, run, layer)
 		if err != nil {
 			return err
 		}
@@ -160,7 +160,7 @@ func (s *Store) ReplaceLayer(ctx context.Context, layer string, run uuid.UUID, i
 				return err
 			}
 		}
-		changes, err = replace(tx, st, want)
+		changes, err = replace(tx, runStamp(r), want)
 		return err
 	})
 	if err != nil {
@@ -177,7 +177,13 @@ func (s *Store) ReplaceLayer(ctx context.Context, layer string, run uuid.UUID, i
 // does not apply changes neither layer. The payload rows take the run's
 // provenance with overlayURL as their source URL, although the run writes the
 // upstream layer: R13's layer match is relaxed here only.
-func (s *Store) ReplaceUpstream(ctx context.Context, run uuid.UUID, in Inputs, overlayURL string) (Changes, error) {
+//
+// version is the release's; under the write lock, a version older than one
+// another run of the importer wrote is ErrConflict, so concurrent imports
+// cannot roll the layers back. The run records its version in the same
+// transaction, so a recorded version was written whatever the run's final
+// status.
+func (s *Store) ReplaceUpstream(ctx context.Context, run uuid.UUID, version time.Time, in Inputs, overlayURL string) (Changes, error) {
 	ov := Inputs{Extensions: in.Extensions}
 	in.Extensions = catalog.Overlay{}
 	core, err := toRows(model.LayerUpstream, in)
@@ -190,10 +196,22 @@ func (s *Store) ReplaceUpstream(ctx context.Context, run uuid.UUID, in Inputs, o
 	}
 	var changes Changes
 	err = s.write(ctx, func(tx *gorm.DB) error {
-		st, err := runningRun(tx, run, model.LayerUpstream)
+		r, err := runningRun(tx, run, model.LayerUpstream)
 		if err != nil {
 			return err
 		}
+		newest, by, err := importedVersion(tx, r.Importer, run)
+		if err != nil {
+			return err
+		}
+		if version.Before(newest) {
+			return fmt.Errorf("%w: upstream version %s is older than %s, imported by run %s", ErrConflict,
+				version.UTC().Format(catalog.VersionLayout), newest.UTC().Format(catalog.VersionLayout), by)
+		}
+		if err := tx.Model(&r).Update("release_version", version).Error; err != nil {
+			return err
+		}
+		st := runStamp(r)
 		if changes, err = replace(tx, st, core); err != nil {
 			return err
 		}
@@ -211,16 +229,40 @@ func (s *Store) ReplaceUpstream(ctx context.Context, run uuid.UUID, in Inputs, o
 	return changes, nil
 }
 
-// runningRun is the stamp of the running import run run of layer.
-func runningRun(tx *gorm.DB, run uuid.UUID, layer string) (stamp, error) {
+// ImportedVersion is the newest upstream release version a run of importer
+// wrote, and that run; the zero time when none did.
+func (s *Store) ImportedVersion(ctx context.Context, importer string) (time.Time, uuid.UUID, error) {
+	return importedVersion(s.db.WithContext(ctx), importer, uuid.Nil)
+}
+
+// importedVersion is ImportedVersion over the runs other than except.
+func importedVersion(tx *gorm.DB, importer string, except uuid.UUID) (time.Time, uuid.UUID, error) {
+	var r model.ImportRun
+	err := tx.Where("importer = ? AND id <> ? AND release_version IS NOT NULL", importer, except).Order("release_version DESC").Take(&r).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return time.Time{}, uuid.Nil, nil
+	}
+	if err != nil {
+		return time.Time{}, uuid.Nil, err
+	}
+	return *r.ReleaseVersion, r.ID, nil
+}
+
+// runningRun is the running import run run of layer.
+func runningRun(tx *gorm.DB, run uuid.UUID, layer string) (model.ImportRun, error) {
 	var r model.ImportRun
 	if err := tx.Take(&r, "id = ?", run).Error; err != nil {
-		return stamp{}, fmt.Errorf("import run %s: %w", run, err)
+		return r, fmt.Errorf("import run %s: %w", run, err)
 	}
 	if r.Layer != layer || r.Status != model.RunRunning {
-		return stamp{}, fmt.Errorf("import run %s is %s in layer %s, not running in layer %s", run, r.Status, r.Layer, layer)
+		return r, fmt.Errorf("import run %s is %s in layer %s, not running in layer %s", run, r.Status, r.Layer, layer)
 	}
-	return stamp{layer: layer, source: r.Source, sourceURL: r.SourceURL, asOf: r.StartedAt, run: &r.ID}, nil
+	return r, nil
+}
+
+// runStamp is the provenance import run r gives the rows it writes.
+func runStamp(r model.ImportRun) stamp {
+	return stamp{layer: r.Layer, source: r.Source, sourceURL: r.SourceURL, asOf: r.StartedAt, run: &r.ID}
 }
 
 // replace makes st's layer hold want.
@@ -536,7 +578,8 @@ func toRows(layer string, in Inputs) (rowSet, error) {
 	return rs, nil
 }
 
-// checkPayloadIDs refuses payloads of objects the effective catalog lacks. Fits
+// checkPayloadIDs refuses payloads of objects the effective catalog lacks,
+// naming the local model or backend whose override drops the object. Fits
 // are derived, so a fit id is checked as far as curation decides it: its
 // family and its model's quantization; catalog.Merge checks the rest.
 func checkPayloadIDs(tx *gorm.DB, o catalog.Overlay) error {
@@ -571,9 +614,22 @@ func checkPayloadIDs(tx *gorm.DB, o catalog.Overlay) error {
 				ok = (len(p) == 5 || len(p) == 6 && strings.HasSuffix(p[5], "-node")) &&
 					known["families "+p[1]] && known["quantization "+p[0]+"/"+p[3]]
 			}
-			if !ok {
-				errs = append(errs, fmt.Errorf("extension payloads of unknown %s %q", k.kind, id))
+			if ok {
+				continue
 			}
+			err := fmt.Errorf("extension payloads of unknown %s %q", k.kind, id)
+			if kind, ok := map[string]string{"presets": KindModel, "fits": KindModel, "backends": KindBackend}[k.kind]; ok {
+				owner, _, _ := strings.Cut(id, "/")
+				t := objectTables[kind][0]
+				var n int64
+				if err := tx.Table(t.table).Where("layer = ? AND "+t.key+" = ?", model.LayerLocal, owner).Count(&n).Error; err != nil {
+					return err
+				}
+				if n > 0 {
+					err = fmt.Errorf("%w: the local %s %s overrides the upstream one without it", err, kind, owner)
+				}
+			}
+			errs = append(errs, err)
 		}
 	}
 	return errors.Join(errs...)

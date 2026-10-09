@@ -1,9 +1,16 @@
 // Package migrations holds the versioned Atlas migrations. ReleasesImmutable
-// is the hand-written trigger migration, which the dev schema (GORM
+// is the hand-written trigger migrations, which the dev schema (GORM
 // AutoMigrate) applies too, as GORM cannot express triggers.
 package migrations
 
 import _ "embed"
 
-//go:embed 20261009052754_release_immutable.sql
-var ReleasesImmutable string
+var (
+	//go:embed 20261009052754_release_immutable.sql
+	releasesImmutable string
+	//go:embed 20261009091351_release_overlay_ref_immutable.sql
+	releasesOverlayRef string
+)
+
+// ReleasesImmutable creates the releases trigger as the migrations leave it.
+var ReleasesImmutable = releasesImmutable + releasesOverlayRef

@@ -220,7 +220,7 @@ type ImportConflict = store.Conflict
 
 // ImportCreate defines model for ImportCreate.
 type ImportCreate struct {
-	// Importer the importer's name (bootstrap-from-json, epoch, huggingface, azure-prices, kaito; upstream in an operator deployment with upstream.ref set)
+	// Importer the importer's name (bootstrap-from-json, epoch, huggingface, azure-prices, kaito; an operator deployment, with upstream.ref set, runs upstream, azure-prices and kaito)
 	Importer string `json:"importer"`
 }
 
@@ -318,11 +318,14 @@ type Release struct {
 	CreatedAt   time.Time `json:"created_at"`
 
 	// Digest the digest of its public snapshot
-	Digest        string             `json:"digest"`
-	GeneratorRun  openapi_types.UUID `json:"generator_run"`
-	Id            openapi_types.UUID `json:"id"`
-	PublishedAt   *time.Time         `json:"published_at,omitempty"`
-	SchemaVersion string             `json:"schema_version"`
+	Digest       string             `json:"digest"`
+	GeneratorRun openapi_types.UUID `json:"generator_run"`
+	Id           openapi_types.UUID `json:"id"`
+
+	// OverlayRef repository@digest its overlay was published as (release.overlay_ref), at publish or on a later publish
+	OverlayRef    string     `json:"overlay_ref,omitempty"`
+	PublishedAt   *time.Time `json:"published_at,omitempty"`
+	SchemaVersion string     `json:"schema_version"`
 
 	// Version the generation time of its generator run
 	Version string `json:"version"`

@@ -10,11 +10,9 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"maps"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -90,12 +88,14 @@ commands:
                     types in azure_prices.regions, internal), kaito
                     (cross-check of model architectures and context limits
                     against KAITO's model catalog at its pinned release;
-                    lists disagreements, writes nothing) or, in an operator
-                    deployment with upstream.ref set, upstream (our signed
+                    lists disagreements, writes nothing) or upstream (in an
+                    operator deployment, with upstream.ref set: our signed
                     release into the upstream layer and, with
                     upstream.overlay_ref, our signed overlay pinned to it
-                    into the overlay layer; refuses a release older than the
-                    one imported last)
+                    into the overlay layer; refuses a release older than one
+                    imported). An operator deployment refuses
+                    bootstrap-from-json, epoch and huggingface: its upstream
+                    layer is the upstream release's
   generate          run the generator over the effective catalog as a job on
                     the catalog queue, and print its run
   release create <generator-run-id>
@@ -109,7 +109,8 @@ commands:
                     with a cosign key pair (password in COSIGN_PASSWORD),
                     -keyless runs cosign's keyless flow (CI); -overlay-ref
                     also pushes the release's overlay, pinned to its digest,
-                    as the signed overlay artifact; -exports also writes the
+                    as the signed overlay artifact (also later, once, for a
+                    release published without it); -exports also writes the
                     adapter exports and a signed SHA256SUMS to dir
   auth issue [-name <name>] [-prefix <prefix>] [-expires <duration>]
                     mint an API key for the /v1 API (neocatalog_<prefix>_...);
@@ -146,7 +147,7 @@ func cmdServe() {
 		publish = &release.Target{Ref: cfg.Release.Ref, OverlayRef: cfg.Release.OverlayRef, Signer: signer}
 	}
 	s := store.New(gormDB)
-	reg := registry(cfg)
+	reg := mustRegistry(cfg)
 	if err := jobs.Migrate(ctx, sqlDB); err != nil {
 		log.Fatalf("river migrate: %v", err)
 	}
@@ -188,51 +189,67 @@ func cmdMigrate() {
 
 func cmdImport(name string) {
 	cfg, sqlDB, gormDB := open()
-	reg := registry(cfg)
-	if reg[name] == nil {
-		log.Fatalf("no importer %q; importers: %s", name, strings.Join(slices.Sorted(maps.Keys(reg)), ", "))
+	reg := mustRegistry(cfg)
+	if _, err := reg.Lookup(name); err != nil {
+		log.Fatalf("%v; importers: %s", err, strings.Join(reg.Names(), ", "))
 	}
 	runJob(cfg, sqlDB, store.New(gormDB), reg, jobs.ImportArgs{Importer: name, Run: uuid.New()})
 }
 
 func cmdGenerate() {
 	cfg, sqlDB, gormDB := open()
-	runJob(cfg, sqlDB, store.New(gormDB), registry(cfg), jobs.GenerateArgs{Run: uuid.New()})
+	runJob(cfg, sqlDB, store.New(gormDB), mustRegistry(cfg), jobs.GenerateArgs{Run: uuid.New()})
 }
 
-func registry(cfg *config.Config) importers.Registry {
+func mustRegistry(cfg *config.Config) importers.Registry {
+	reg, err := registry(cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return reg
+}
+
+// registry is the deployment's importers. An operator deployment
+// (upstream.ref set) takes its upstream layer from the upstream release
+// only, which the import replaces whole, so it refuses the importers that
+// write that layer (R26); prices are internal and kaito writes nothing.
+func registry(cfg *config.Config) (importers.Registry, error) {
+	prices, cross := azureprices.New(azureprices.Endpoint, cfg.AzurePrices.Regions), kaito.New(kaito.Catalog)
+	u := cfg.Upstream
+	rel, err := upstream.NewSource(upstream.Config{Ref: u.Ref, IdentityIssuer: u.IdentityIssuer, Identity: u.Identity,
+		PublicKey: u.PublicKey, TrustedRoot: u.TrustedRoot, PlainHTTP: u.PlainHTTP})
+	if err != nil {
+		return importers.Registry{}, err
+	}
+	if rel != nil {
+		overlay, err := upstream.NewSource(upstream.Config{Ref: u.OverlayRef, IdentityIssuer: u.OverlayIdentityIssuer,
+			Identity: u.OverlayIdentity, PublicKey: u.OverlayPublicKey, TrustedRoot: u.TrustedRoot, PlainHTTP: u.PlainHTTP, Overlay: true})
+		if err != nil {
+			return importers.Registry{}, err
+		}
+		reg := importers.NewRegistry(prices, cross, upstream.New(rel, overlay))
+		for _, name := range []string{(*bootstrap.Importer)(nil).Name(), (*epoch.Importer)(nil).Name(), (*huggingface.Importer)(nil).Name()} {
+			reg.Refuse(name, "an operator deployment (upstream.ref set) takes its upstream layer from the upstream release only")
+		}
+		return reg, nil
+	}
 	boot, err := bootstrap.New(cfg.Bootstrap.DataDir)
 	if err != nil {
-		log.Fatalf("bootstrap.data_dir: %v", err)
+		return importers.Registry{}, fmt.Errorf("bootstrap.data_dir: %w", err)
 	}
 	var token string
 	if f := cfg.HuggingFace.TokenFile; f != "" {
 		b, err := os.ReadFile(f)
 		if err != nil {
-			log.Fatalf("huggingface.token_file: %v", err)
+			return importers.Registry{}, fmt.Errorf("huggingface.token_file: %w", err)
 		}
 		token = strings.TrimSpace(string(b))
 	}
 	hardware, err := epoch.New(epoch.CSV, filepath.Join(cfg.Bootstrap.DataDir, "families.overlay.json"))
 	if err != nil {
-		log.Fatalf("bootstrap.data_dir: %v", err)
+		return importers.Registry{}, fmt.Errorf("bootstrap.data_dir: %w", err)
 	}
-	imps := []importers.Importer{boot, hardware, huggingface.New(huggingface.Endpoint, token),
-		azureprices.New(azureprices.Endpoint, cfg.AzurePrices.Regions), kaito.New(kaito.Catalog)}
-	u := cfg.Upstream
-	rel, err := upstream.NewSource(upstream.Config{Ref: u.Ref, IdentityIssuer: u.IdentityIssuer, Identity: u.Identity, PublicKey: u.PublicKey})
-	if err != nil {
-		log.Fatal(err)
-	}
-	overlay, err := upstream.NewSource(upstream.Config{Ref: u.OverlayRef, IdentityIssuer: u.OverlayIdentityIssuer,
-		Identity: u.OverlayIdentity, PublicKey: u.OverlayPublicKey, Overlay: true})
-	if err != nil {
-		log.Fatal(err)
-	}
-	if rel != nil {
-		imps = append(imps, upstream.New(rel, overlay))
-	}
-	return importers.NewRegistry(imps...)
+	return importers.NewRegistry(boot, hardware, huggingface.New(huggingface.Endpoint, token), prices, cross), nil
 }
 
 // runJob enqueues args and works the catalog queue until the job finished,
@@ -374,8 +391,9 @@ func printRelease(rel release.Release) {
 		SchemaVersion string     `json:"schema_version"`
 		GeneratorRun  uuid.UUID  `json:"generator_run"`
 		ArtifactRef   string     `json:"artifact_ref,omitempty"`
+		OverlayRef    string     `json:"overlay_ref,omitempty"`
 		PublishedAt   *time.Time `json:"published_at,omitempty"`
-	}{rel.ID, rel.Version, rel.Digest, rel.SchemaVersion, rel.GeneratorRunID, rel.ArtifactRef, rel.PublishedAt}, "", "  ")
+	}{rel.ID, rel.Version, rel.Digest, rel.SchemaVersion, rel.GeneratorRunID, rel.ArtifactRef, rel.OverlayRef, rel.PublishedAt}, "", "  ")
 	if err != nil {
 		log.Fatalf("release output: %v", err)
 	}

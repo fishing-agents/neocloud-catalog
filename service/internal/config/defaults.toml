@@ -59,8 +59,13 @@ publish_timeout = "2m"
 # key file) or identity_issuer and identity (keyless, an anchored regexp over
 # the release workflow). overlay_ref imports our overlay pinned to that
 # release, trusted by its own overlay_public_key or overlay_identity_issuer
-# and overlay_identity. Registry auth comes from the default keychain
-# (docker config). Empty ref: no upstream importer.
+# and overlay_identity. trusted_root is a Sigstore trusted_root.json for
+# offline (air-gapped) keyless verification (empty: the public-good root via
+# TUF); plain_http talks HTTP to a registry mirror without TLS; both apply to
+# the release and the overlay. Registry auth comes from the default keychain
+# (docker config). Empty ref: no upstream importer. With ref set the
+# deployment's upstream layer is the release's only: bootstrap-from-json,
+# epoch and huggingface are refused.
 ref = ""
 identity_issuer = ""
 identity = ""
@@ -69,3 +74,5 @@ overlay_ref = ""
 overlay_identity_issuer = ""
 overlay_identity = ""
 overlay_public_key = ""
+trusted_root = ""
+plain_http = false

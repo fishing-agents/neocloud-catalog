@@ -109,7 +109,8 @@ type ReleaseConfig struct {
 // (the upstream importer), trusted as neocloud-api's catalog.* keys trust
 // it: Ref with PublicKey, or with IdentityIssuer and Identity (keyless).
 // OverlayRef, with its own trust, is the overlay pinned to that release.
-// Empty Ref: no upstream importer.
+// TrustedRoot (offline keyless verification) and PlainHTTP apply to both.
+// Empty Ref: no upstream importer, and no other key may be set.
 type UpstreamConfig struct {
 	Ref                   string `koanf:"ref"`
 	IdentityIssuer        string `koanf:"identity_issuer"`
@@ -119,6 +120,8 @@ type UpstreamConfig struct {
 	OverlayIdentityIssuer string `koanf:"overlay_identity_issuer"`
 	OverlayIdentity       string `koanf:"overlay_identity"`
 	OverlayPublicKey      string `koanf:"overlay_public_key"`
+	TrustedRoot           string `koanf:"trusted_root"`
+	PlainHTTP             bool   `koanf:"plain_http"`
 }
 
 // applyEnv sets NEOCLOUD_CATALOG_<NAME> on the known key whose path, with "."
@@ -230,8 +233,8 @@ func (c *Config) Validate() error {
 	if c.Release.OverlayRef != "" && c.Release.Ref == "" {
 		return errors.New("release.overlay_ref needs release.ref: an overlay is published with its release")
 	}
-	if c.Upstream.OverlayRef != "" && c.Upstream.Ref == "" {
-		return errors.New("upstream.overlay_ref needs upstream.ref: an overlay is imported with the release it is pinned to")
+	if u := c.Upstream; u.Ref == "" && u != (UpstreamConfig{}) {
+		return errors.New("upstream.* is set without upstream.ref: an overlay and the trust settings apply to the upstream release only")
 	}
 	if len(c.AzurePrices.Regions) == 0 {
 		return errors.New("azure_prices.regions is required")

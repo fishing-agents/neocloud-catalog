@@ -383,7 +383,8 @@ func TestReplaceUpstreamIsAtomic(t *testing.T) {
 	in.Extensions = catalog.Overlay{Models: map[string]catalog.Extensions{m.Slug: payload},
 		Presets: map[string]catalog.Extensions{m.Slug + "/" + m.Presets[1].Name: payload}}
 	first := startRun(t, db, model.LayerUpstream, "upstream")
-	if _, err := s.ReplaceUpstream(ctx, first, in, "https://example.com/overlay"); err != nil {
+	v := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	if _, err := s.ReplaceUpstream(ctx, first, v, in, "https://example.com/overlay"); err != nil {
 		t.Fatal(err)
 	}
 	before := effective(t, s)
@@ -411,8 +412,12 @@ func TestReplaceUpstreamIsAtomic(t *testing.T) {
 	next.Families[0].MemoryGB++
 	next.Extensions = in.Extensions
 	run := startRun(t, db, model.LayerUpstream, "upstream")
-	if _, err := s.ReplaceUpstream(ctx, run, next, "https://example.com/overlay"); err == nil {
+	_, err := s.ReplaceUpstream(ctx, run, v, next, "https://example.com/overlay")
+	if err == nil {
 		t.Fatal("an overlay with a payload of a preset the effective catalog lacks was applied")
+	}
+	if want := "the local model " + m.Slug + " overrides the upstream one without it"; !strings.Contains(err.Error(), want) {
+		t.Errorf("refusal %q does not say %q", err, want)
 	}
 	after := effective(t, s)
 	sameCore(t, after, before)
@@ -423,15 +428,66 @@ func TestReplaceUpstreamIsAtomic(t *testing.T) {
 		t.Errorf("refused import left %d rows", n)
 	}
 
-	if _, err := s.ReplaceUpstream(ctx, startRun(t, db, model.LayerOverlay, "upstream"), committed(t), ""); err == nil {
+	if _, err := s.ReplaceUpstream(ctx, startRun(t, db, model.LayerOverlay, "upstream"), v, committed(t), ""); err == nil {
 		t.Error("an overlay-layer run replaced the upstream layer")
 	}
-	changes, err := s.ReplaceUpstream(ctx, startRun(t, db, model.LayerUpstream, "upstream"), committed(t), "")
+	changes, err := s.ReplaceUpstream(ctx, startRun(t, db, model.LayerUpstream, "upstream"), v, committed(t), "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := effective(t, s).Extensions; len(got.Models)+len(got.Presets) != 0 || changes["extension_payloads"].Deleted != 2 {
 		t.Errorf("a release without an overlay left %+v (changes %+v), want an empty overlay layer", got, changes)
+	}
+}
+
+// Under the write lock a run cannot write a release older than one another
+// run of its importer wrote, finished or not, so two imports that both passed
+// the early check cannot roll the layers back. The version is recorded with
+// the write only.
+func TestReplaceUpstreamRefusesOlderVersion(t *testing.T) {
+	s, db := newStore(t, "upstream_versions")
+	start := func() uuid.UUID {
+		t.Helper()
+		run, err := s.StartImport(ctx, uuid.New(), "upstream", model.LayerUpstream, "upstream", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return run.ID
+	}
+	version := func(run uuid.UUID) *time.Time {
+		t.Helper()
+		var r model.ImportRun
+		if err := db.Take(&r, "id = ?", run).Error; err != nil {
+			t.Fatal(err)
+		}
+		return r.ReleaseVersion
+	}
+	jan, feb := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	older, newer := start(), start()
+	if _, err := s.ReplaceUpstream(ctx, newer, feb, committed(t), ""); err != nil {
+		t.Fatal(err)
+	}
+	in := committed(t)
+	in.Models = in.Models[1:]
+	_, err := s.ReplaceUpstream(ctx, older, jan, in, "")
+	if !errors.Is(err, store.ErrConflict) || !strings.Contains(err.Error(), newer.String()) {
+		t.Errorf("an older release after a newer one: %v, want a conflict naming run %s", err, newer)
+	}
+	if got := effective(t, s); len(got.Models) != len(committed(t).Models) {
+		t.Errorf("the older release replaced the newer one (%d models)", len(got.Models))
+	}
+	if v := version(newer); v == nil || !v.Equal(feb) || version(older) != nil {
+		t.Errorf("recorded versions %v and %v, want %s on the run that wrote only", v, version(older), feb)
+	}
+
+	if _, err := s.FinishImport(ctx, newer, "", nil, errors.New("worker failed after the write")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ReplaceUpstream(ctx, start(), jan, in, ""); !errors.Is(err, store.ErrConflict) {
+		t.Errorf("an older release after a failed run that wrote a newer one: %v, want a conflict", err)
+	}
+	if _, err := s.ReplaceUpstream(ctx, start(), feb, committed(t), ""); err != nil {
+		t.Errorf("the release imported last again: %v", err)
 	}
 }
 

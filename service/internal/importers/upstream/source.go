@@ -44,6 +44,11 @@ type Config struct {
 	Identity string
 	// PublicKey is a PEM file holding a cosign public key.
 	PublicKey string
+	// TrustedRoot is a Sigstore trusted_root.json file for offline (air-gapped)
+	// keyless verification; empty fetches the public-good root through TUF.
+	TrustedRoot string
+	// PlainHTTP talks HTTP to the registry, for a mirror without TLS.
+	PlainHTTP bool
 	// Overlay reads the overlay artifact (catalog.OverlayArtifactType),
 	// configured under upstream.overlay_*, instead of the snapshot.
 	Overlay bool
@@ -88,7 +93,11 @@ func NewSource(cfg Config) (*Source, error) {
 	if cfg.Ref == "" {
 		return nil, nil
 	}
-	ref, err := name.ParseReference(cfg.Ref)
+	var nameOpts []name.Option
+	if cfg.PlainHTTP {
+		nameOpts = append(nameOpts, name.Insecure)
+	}
+	ref, err := name.ParseReference(cfg.Ref, nameOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", cfg.key("ref"), err)
 	}
@@ -124,10 +133,18 @@ func NewSource(cfg Config) (*Source, error) {
 		}
 		s.identity = verify.WithCertificateIdentity(id)
 		s.keyless, s.scts = true, 1
-		// Fetched per check, so a Sigstore key rotation reaches running
-		// services; in memory, as the pod's filesystem may be read-only.
-		s.material = func() (root.TrustedMaterial, error) {
-			return root.FetchTrustedRootWithOptions(tuf.DefaultOptions().WithDisableLocalCache())
+		if cfg.TrustedRoot != "" {
+			tr, err := root.NewTrustedRootFromPath(cfg.TrustedRoot)
+			if err != nil {
+				return nil, fmt.Errorf("upstream.trusted_root: %w", err)
+			}
+			s.material = func() (root.TrustedMaterial, error) { return tr, nil }
+		} else {
+			// Fetched per check, so a Sigstore key rotation reaches running
+			// services; in memory, as the pod's filesystem may be read-only.
+			s.material = func() (root.TrustedMaterial, error) {
+				return root.FetchTrustedRootWithOptions(tuf.DefaultOptions().WithDisableLocalCache())
+			}
 		}
 	default:
 		return nil, fmt.Errorf("%s needs %s, or %s and %s", cfg.key("ref"), cfg.key("public_key"), cfg.key("identity_issuer"), cfg.key("identity"))

@@ -378,9 +378,10 @@ type ExtensionPayload struct {
 // Release freezes a generator run; Version is its generation time in
 // catalog.VersionLayout and Digest the digest of the run's snapshot at that
 // version. Overlay holds the overlay layer's payloads as of the release,
-// pinned to Digest. ArtifactRef and PublishedAt are set on publish; a
-// database trigger refuses any other change, and any change or delete once
-// published.
+// pinned to Digest. ArtifactRef and PublishedAt are set on publish, with
+// OverlayRef when its overlay is published too; a published release's
+// overlay may be published once later. A database trigger refuses any other
+// change, and any delete once published.
 type Release struct {
 	Base
 	Timestamps
@@ -388,6 +389,7 @@ type Release struct {
 	Digest         string          `gorm:"not null"`
 	SchemaVersion  string          `gorm:"not null"`
 	ArtifactRef    string          `gorm:"not null"`
+	OverlayRef     string          `gorm:"not null;default:''"`
 	GeneratorRunID uuid.UUID       `gorm:"type:uuid;not null;index"`
 	GeneratorRun   *GeneratorRun   `gorm:"foreignKey:GeneratorRunID"`
 	Overlay        catalog.Overlay `gorm:"type:jsonb;serializer:json;not null"`
@@ -397,20 +399,22 @@ type Release struct {
 // ImportRun is one importer run; importers are idempotent per (Importer,
 // InputVersion). Source and SourceURL are the provenance of the rows the run
 // writes (an importer's name, or "curation" for curated input), as of StartedAt. Summary holds
-// the result and diff summary.
+// the result and diff summary. ReleaseVersion is the upstream release an
+// upstream import wrote, recorded in the transaction that wrote it.
 type ImportRun struct {
 	Base
 	Timestamps
-	Importer     string    `gorm:"not null;index:idx_import_runs_input,priority:1"`
-	InputVersion string    `gorm:"not null;index:idx_import_runs_input,priority:2"`
-	Source       string    `gorm:"not null"`
-	SourceURL    string    `gorm:"column:source_url;not null"`
-	Layer        string    `gorm:"not null;check:layer IN ('upstream', 'local', 'overlay')"`
-	Status       string    `gorm:"not null;check:status IN ('running', 'succeeded', 'failed')"`
-	StartedAt    time.Time `gorm:"not null"`
-	FinishedAt   *time.Time
-	Summary      datatypes.JSON `gorm:"type:jsonb"`
-	Error        string         `gorm:"not null"`
+	Importer       string    `gorm:"not null;index:idx_import_runs_input,priority:1"`
+	InputVersion   string    `gorm:"not null;index:idx_import_runs_input,priority:2"`
+	Source         string    `gorm:"not null"`
+	SourceURL      string    `gorm:"column:source_url;not null"`
+	Layer          string    `gorm:"not null;check:layer IN ('upstream', 'local', 'overlay')"`
+	Status         string    `gorm:"not null;check:status IN ('running', 'succeeded', 'failed')"`
+	StartedAt      time.Time `gorm:"not null"`
+	FinishedAt     *time.Time
+	ReleaseVersion *time.Time
+	Summary        datatypes.JSON `gorm:"type:jsonb"`
+	Error          string         `gorm:"not null"`
 }
 
 // GeneratorRun is one generation over the effective catalog; InputDigest

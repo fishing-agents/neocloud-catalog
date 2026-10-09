@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/google/uuid"
 
@@ -49,20 +51,45 @@ type SourceCounts struct {
 	Failed int `json:"failed"`
 }
 
-// Registry holds importers by name.
-type Registry map[string]Importer
+// Registry holds the importers a deployment runs, by name, and the names it
+// refuses with why.
+type Registry struct {
+	imps    map[string]Importer
+	refused map[string]string
+}
 
 // NewRegistry registers imps; it panics on two importers of one name.
 func NewRegistry(imps ...Importer) Registry {
-	r := Registry{}
+	r := Registry{imps: map[string]Importer{}, refused: map[string]string{}}
 	for _, imp := range imps {
-		if r[imp.Name()] != nil {
+		if r.imps[imp.Name()] != nil {
 			panic("importers: two importers named " + imp.Name())
 		}
-		r[imp.Name()] = imp
+		r.imps[imp.Name()] = imp
 	}
 	return r
 }
+
+// Refuse makes Lookup refuse the importer name, saying why.
+func (r Registry) Refuse(name, why string) {
+	delete(r.imps, name)
+	r.refused[name] = why
+}
+
+// Lookup returns the importer name. An importer the deployment refuses is
+// store.ErrConflict naming why; one it does not know, store.ErrNotFound.
+func (r Registry) Lookup(name string) (Importer, error) {
+	if why, ok := r.refused[name]; ok {
+		return nil, fmt.Errorf("%w: importer %q is not run here: %s", store.ErrConflict, name, why)
+	}
+	if imp := r.imps[name]; imp != nil {
+		return imp, nil
+	}
+	return nil, fmt.Errorf("importer %q: %w", name, store.ErrNotFound)
+}
+
+// Names are the names of the importers it runs, sorted.
+func (r Registry) Names() []string { return slices.Sorted(maps.Keys(r.imps)) }
 
 // Execute runs imp as the new import run id and records how it ended, failed
 // runs included; errors after the run started name it.
