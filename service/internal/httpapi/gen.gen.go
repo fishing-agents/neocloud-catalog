@@ -200,10 +200,10 @@ type GeneratorRun struct {
 	FinishedAt *time.Time         `json:"finished_at,omitempty"`
 	Id         openapi_types.UUID `json:"id"`
 
-	// InputDigest sha256 of the curated inputs it read
+	// InputDigest sha256 of the curated inputs of its snapshot; prices feed only its cost estimates, whose rows carry their own price_source, price_source_url and price_as_of
 	InputDigest string `json:"input_digest"`
 
-	// InputImportRuns the import runs that wrote its inputs
+	// InputImportRuns the import runs that wrote the inputs of its snapshot; prices feed only its cost estimates, whose rows carry their own price_source, price_source_url and price_as_of
 	InputImportRuns []openapi_types.UUID `json:"input_import_runs"`
 
 	// Report what the generator reported

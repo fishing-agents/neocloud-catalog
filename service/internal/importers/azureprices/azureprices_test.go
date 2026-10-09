@@ -234,8 +234,8 @@ func TestImportRecordedPrices(t *testing.T) {
 }
 
 // A node type priced in none of the regions is listed as a failed source and
-// keeps its prices; a node type read replaces its prices of every region, so
-// regions no longer configured lose theirs.
+// loses its prices (R23); a node type read replaces its prices of every
+// region, so regions no longer configured lose theirs.
 func TestUnpricedNodeTypeFailsItsSource(t *testing.T) {
 	s, db := newStore(t, "azure_unpriced")
 	api := newPricesAPI(t)
@@ -249,12 +249,12 @@ func TestUnpricedNodeTypeFailsItsSource(t *testing.T) {
 	sum := summaryOf(t, run)
 	wantErrors := []string{mi300x + ": no Linux on-demand, spot or 1-year reserved price in eastus"}
 	if run.Status != model.RunSucceeded || !reflect.DeepEqual(sum.Errors, wantErrors) || *sum.Sources != (importers.SourceCounts{Read: 1, Failed: 1}) ||
-		!reflect.DeepEqual(sum.Changes, store.Changes{"node_type_prices": {Deleted: 3}}) {
-		t.Errorf("run %s summary %+v, want errors %q and the H100 eastus2 prices deleted", run.Status, sum, wantErrors)
+		!reflect.DeepEqual(sum.Changes, store.Changes{"node_type_prices": {Deleted: 6}}) {
+		t.Errorf("run %s summary %+v, want errors %q and the eastus2 prices deleted", run.Status, sum, wantErrors)
 	}
 	want := map[string]float64{}
 	for k, v := range recorded {
-		if !strings.HasPrefix(k, h100+" eastus2 ") {
+		if strings.HasPrefix(k, h100+" eastus ") {
 			want[k] = v
 		}
 	}
@@ -288,7 +288,8 @@ func TestUnreadablePrices(t *testing.T) {
 	}
 }
 
-// Rows the importer does not price are skipped; prices it cannot take as USD
+// Rows the importer does not price are skipped, zero prices among them; a
+// node type left without a row has no prices. Prices it cannot take as USD
 // per hour, or two prices of one region and billing, fail the node type.
 func TestPricesOfItems(t *testing.T) {
 	imp := New(Endpoint, defaultRegions)
@@ -305,6 +306,7 @@ func TestPricesOfItems(t *testing.T) {
 		row("eastus", "S Low Priority", "Consumption", "", 0.4), row("eastus", "S", "Reservation", "1 Year", 8760),
 		row("eastus", "S", "Reservation", "3 Years", 1), row("eastus", "S", "DevTestConsumption", "", 1),
 		row("westus", "S", "Consumption", "", 1), windows, secondary, row("eastus2", "S", "Consumption", "", 2.5),
+		row("eastus2", "S Spot", "Consumption", "", 0), row("eastus2", "S", "Consumption", "", 0),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -329,11 +331,13 @@ func TestPricesOfItems(t *testing.T) {
 		"two prices": {[]item{row("eastus", "S", "Consumption", "", 2), row("eastus", "S", "Consumption", "", 3)}, "eastus on_demand: prices 2 and 3"},
 		"currency":   {[]item{euro}, "eastus on_demand: 2 EUR per 1 Hour"},
 		"unit":       {[]item{monthly}, "eastus on_demand: 2 USD per 1/Month"},
-		"none":       {[]item{windows}, "no Linux on-demand, spot or 1-year reserved price in eastus, eastus2"},
 	} {
 		if _, err := imp.prices("azure/S", c.items); err == nil || err.Error() != c.want {
 			t.Errorf("%s: err %v, want %q", name, err, c.want)
 		}
+	}
+	if got, err := imp.prices("azure/S", []item{windows, row("eastus", "S", "Consumption", "", 0)}); len(got) != 0 || err != nil {
+		t.Errorf("no priced row: %+v, %v; want no prices and no error", got, err)
 	}
 }
 

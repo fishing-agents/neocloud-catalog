@@ -841,10 +841,10 @@ components:
           format: date-time
         input_digest:
           type: string
-          description: sha256 of the curated inputs it read
+          description: sha256 of the curated inputs of its snapshot; prices feed only its cost estimates, whose rows carry their own price_source, price_source_url and price_as_of
         input_import_runs:
           type: array
-          description: the import runs that wrote its inputs
+          description: the import runs that wrote the inputs of its snapshot; prices feed only its cost estimates, whose rows carry their own price_source, price_source_url and price_as_of
           items:
             type: string
             format: uuid

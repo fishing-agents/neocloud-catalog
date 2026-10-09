@@ -5,11 +5,11 @@
 //
 // A run replaces the upstream prices of Azure node types, in every region,
 // with what it read; other providers' prices and the local layer stay. A node
-// type whose prices cannot be read, or that has no price in any configured
-// region, is listed in the run's errors and keeps its prices; the run fails
-// when it reads no node type, when its write fails or when it is cancelled,
-// which writes nothing. Its input version hashes the prices it read and its
-// errors.
+// type whose prices cannot be read is listed in the run's errors and keeps
+// its prices; one read without a price in any configured region is listed
+// too and loses its prices (R23). The run fails when it reads no priced node
+// type, when its write fails or when it is cancelled, which writes nothing.
+// Its input version hashes the prices it read and its errors.
 package azureprices
 
 import (
@@ -103,8 +103,13 @@ func (i *Importer) Run(ctx context.Context, s *store.Store, run uuid.UUID) (impo
 			p.Kept = append(p.Kept, id)
 			continue
 		}
-		sum.Sources.Read++
 		p.Rows = append(p.Rows, rows...)
+		if len(rows) == 0 {
+			sum.Errors = append(sum.Errors, id+": no Linux on-demand, spot or 1-year reserved price in "+strings.Join(i.regions, ", "))
+			sum.Sources.Failed++
+			continue
+		}
+		sum.Sources.Read++
 	}
 	input, err := json.Marshal(struct {
 		Prices []model.NodeTypePrice
@@ -150,15 +155,16 @@ type item struct {
 	IsPrimaryMeterRegion                               bool
 }
 
-// prices takes the prices of node type id from its rows: a Linux primary
-// meter's consumption price is on demand, or spot when its SKU is a Spot one
-// (Low Priority is not priced); a 1-year reservation's is reserved_1y. Two
-// prices of one region and billing, or a price not in USD per hour, fail it.
+// prices takes the prices of node type id from its nonzero rows: a Linux
+// primary meter's consumption price is on demand, or spot when its SKU is a
+// Spot one (Low Priority is not priced); a 1-year reservation's is
+// reserved_1y. Two prices of one region and billing, or a price not in USD
+// per hour, fail it.
 func (i *Importer) prices(id string, items []item) ([]model.NodeTypePrice, error) {
 	usd := map[[2]string]float64{}
 	for _, it := range items {
 		if it.ArmSkuName != strings.TrimPrefix(id, Prefix) || !slices.Contains(i.regions, it.ArmRegionName) || !it.IsPrimaryMeterRegion ||
-			strings.Contains(it.ProductName, "Windows") {
+			strings.Contains(it.ProductName, "Windows") || it.RetailPrice == 0 {
 			continue
 		}
 		var billing string
@@ -184,9 +190,6 @@ func (i *Importer) prices(id string, items []item) ([]model.NodeTypePrice, error
 			return nil, fmt.Errorf("%s %s: prices %v and %v", k[0], k[1], p, price)
 		}
 		usd[k] = price
-	}
-	if len(usd) == 0 {
-		return nil, fmt.Errorf("no Linux on-demand, spot or 1-year reserved price in %s", strings.Join(i.regions, ", "))
 	}
 	rows := make([]model.NodeTypePrice, 0, len(usd))
 	for k, p := range usd {
