@@ -174,11 +174,7 @@ func families(t *testing.T, s *store.Store) map[string]catalog.Family {
 
 func fields(t *testing.T, s *store.Store, family string) model.FieldProvenance {
 	t.Helper()
-	p, err := s.Provenance(ctx, store.KindFamily, family)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return p[0].Fields
+	return dbtest.Provenance(t, s, store.KindFamily, family)[0].Fields
 }
 
 // Epoch's figures and the overlay's curated values merge into new families,

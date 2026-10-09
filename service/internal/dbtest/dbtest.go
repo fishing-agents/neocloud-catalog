@@ -4,6 +4,7 @@
 package dbtest
 
 import (
+	"context"
 	"database/sql"
 	"net/url"
 	"os"
@@ -17,7 +18,23 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/fishman/neocloud-catalog/service/internal/db"
+	"github.com/fishman/neocloud-catalog/service/internal/store"
 )
+
+// Provenance is the provenance of the object kind keyed key as the effective
+// catalog reports it, local row first; the test fails without any.
+func Provenance(t testing.TB, s *store.Store, kind, key string) []store.ProvenanceEntry {
+	t.Helper()
+	_, all, err := s.EffectiveProvenance(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := all[kind][key]
+	if len(p) == 0 {
+		t.Fatalf("no provenance of %s %q", kind, key)
+	}
+	return p
+}
 
 // Fresh creates the empty database <NEOCLOUD_CATALOG_TEST_DSN's database>_<suffix>
 // and drops it when the test ends. The GORM handle logs nothing: tests provoke

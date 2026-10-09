@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	catalog "github.com/fishman/neocloud-catalog"
+	"github.com/fishman/neocloud-catalog/service/internal/dbtest"
 	"github.com/fishman/neocloud-catalog/service/internal/model"
 	"github.com/fishman/neocloud-catalog/service/internal/store"
 )
@@ -101,7 +102,7 @@ func TestPatchKeepsCuratedValues(t *testing.T) {
 	want := clone(t, in)
 	want.Models[4].Quantizations[0].Sources[0].Files = twoFiles
 	sameCore(t, effective(t, s), want)
-	if f := provenance(t, s, store.KindModel, qwen.Slug)[0].Fields["context_max"]; f.Source != model.SourceCuration {
+	if f := dbtest.Provenance(t, s, store.KindModel, qwen.Slug)[0].Fields["context_max"]; f.Source != model.SourceCuration {
 		t.Errorf("context_max provenance = %+v, want curation", f)
 	}
 	after := rowTimes(t, db)
@@ -143,7 +144,7 @@ func TestPatchFillsImportedValues(t *testing.T) {
 	want.Models[0].Architecture = arch
 	want.Models[0].Quantizations[0].Sources[0].Files = twoFiles
 	sameCore(t, effective(t, s), want)
-	p := provenance(t, s, store.KindModel, llama.Slug)[0]
+	p := dbtest.Provenance(t, s, store.KindModel, llama.Slug)[0]
 	if p.Source != "other" || *p.ImportRunID != other {
 		t.Errorf("row provenance = %+v, want its origin, run %s", p, other)
 	}
@@ -241,7 +242,7 @@ func TestPatchStampsOnlyItsColumns(t *testing.T) {
 	if changes := patch(1); !reflect.DeepEqual(changes, store.Changes{"models": {Updated: 1}}) {
 		t.Errorf("new value: changes %+v, want the model updated", changes)
 	}
-	fields := provenance(t, s, store.KindModel, llama.Slug)[0].Fields
+	fields := dbtest.Provenance(t, s, store.KindModel, llama.Slug)[0].Fields
 	if f, ok := fields["license"]; ok {
 		t.Errorf("license provenance %+v, want none: the patch did not set it", f)
 	}

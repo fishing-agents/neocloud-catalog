@@ -109,15 +109,6 @@ func sameCore(t *testing.T, got, want store.Inputs) {
 	}
 }
 
-func provenance(t *testing.T, s *store.Store, kind, key string) []store.ProvenanceEntry {
-	t.Helper()
-	p, err := s.Provenance(ctx, kind, key)
-	if err != nil {
-		t.Fatalf("provenance %s %s: %v", kind, key, err)
-	}
-	return p
-}
-
 // rowsOf counts the curated rows a run wrote.
 func rowsOf(t *testing.T, db *gorm.DB, run uuid.UUID) int64 {
 	t.Helper()
@@ -293,7 +284,7 @@ func TestEffectiveCatalogLayering(t *testing.T) {
 	want.Models = append(want.Models, added)
 	sameCore(t, effective(t, s), want)
 
-	p := provenance(t, s, store.KindModel, slug)
+	p := dbtest.Provenance(t, s, store.KindModel, slug)
 	if len(p) != 2 {
 		t.Fatalf("provenance of %s = %+v, want the local and the upstream row", slug, p)
 	}
@@ -312,7 +303,7 @@ func TestEffectiveCatalogLayering(t *testing.T) {
 		}
 	}
 	sameCore(t, effective(t, s), upstream)
-	if p := provenance(t, s, store.KindModel, slug); len(p) != 1 || p[0].Layer != model.LayerUpstream || !p[0].Effective {
+	if p := dbtest.Provenance(t, s, store.KindModel, slug); len(p) != 1 || p[0].Layer != model.LayerUpstream || !p[0].Effective {
 		t.Errorf("provenance after delete = %+v, want the effective upstream row", p)
 	}
 	if err := s.Delete(ctx, store.KindModel, slug); !errors.Is(err, store.ErrNotFound) {
@@ -637,10 +628,10 @@ func TestImporterKeepsCuratedFields(t *testing.T) {
 	}
 
 	sameCore(t, effective(t, s), store.Inputs{Families: []catalog.Family{h100, x}})
-	if f := provenance(t, s, store.KindFamily, h100.Name)[0].Fields["memory_gb"]; f.Source != model.SourceCuration {
+	if f := dbtest.Provenance(t, s, store.KindFamily, h100.Name)[0].Fields["memory_gb"]; f.Source != model.SourceCuration {
 		t.Errorf("H100 memory_gb provenance = %+v, want curation", f)
 	}
-	fields := provenance(t, s, store.KindFamily, x.Name)[0].Fields
+	fields := dbtest.Provenance(t, s, store.KindFamily, x.Name)[0].Fields
 	if f := fields["memory_gb"]; f.Source != "epoch" || f.ImportRunID == nil || *f.ImportRunID != again {
 		t.Errorf("X100 memory_gb provenance = %+v, want run %s", f, again)
 	}

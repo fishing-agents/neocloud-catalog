@@ -37,9 +37,9 @@ var (
 	ErrConflict = errors.New("conflict")
 )
 
-// Object kinds of Delete and Provenance, keyed by name, id or slug. A
-// quantization is keyed "<model slug>/<name>"; only Provenance takes it, as it
-// is curated with its model.
+// Object kinds of Delete and of EffectiveProvenance, keyed by name, id or
+// slug. A quantization is keyed "<model slug>/<name>"; only provenance has
+// it, as it is curated with its model.
 const (
 	KindFamily       = "family"
 	KindNodeType     = "node_type"
@@ -354,8 +354,8 @@ func (s *Store) Delete(ctx context.Context, kind, key string) error {
 	})
 }
 
-// provenanceKinds are the tables Provenance reads per kind, with the key
-// columns a "/"-separated key splits into and whether field provenance is kept.
+// provenanceKinds are the tables provenance reads per kind, with the key
+// columns a "/"-separated key joins and whether field provenance is kept.
 var provenanceKinds = map[string]struct {
 	table  string
 	keys   []string
@@ -376,27 +376,6 @@ type provenanceRow struct {
 	FieldProvenance datatypes.JSONType[model.FieldProvenance]
 }
 
-// Provenance lists the local and upstream rows of an object, local first. A
-// quantization's effective row is the one in its effective model's layer.
-func (s *Store) Provenance(ctx context.Context, kind, key string) ([]ProvenanceEntry, error) {
-	if _, ok := provenanceKinds[kind]; !ok {
-		return nil, fmt.Errorf("store: no provenance of a %s", kind)
-	}
-	var byKey map[string][]ProvenanceEntry
-	err := s.read(ctx, func(tx *gorm.DB) error {
-		var err error
-		byKey, err = provenance(tx, kind, key)
-		return err
-	})
-	if err != nil {
-		return nil, err
-	}
-	if len(byKey[key]) == 0 {
-		return nil, fmt.Errorf("%s %q: %w", kind, key, ErrNotFound)
-	}
-	return byKey[key], nil
-}
-
 // Provenances are the provenance entries of objects by kind and key.
 type Provenances map[string]map[string][]ProvenanceEntry
 
@@ -411,7 +390,7 @@ func (s *Store) EffectiveProvenance(ctx context.Context) (Inputs, Provenances, e
 			return err
 		}
 		for kind := range provenanceKinds {
-			if all[kind], err = provenance(tx, kind, ""); err != nil {
+			if all[kind], err = provenance(tx, kind); err != nil {
 				return err
 			}
 		}
@@ -420,9 +399,9 @@ func (s *Store) EffectiveProvenance(ctx context.Context) (Inputs, Provenances, e
 	return in, all, err
 }
 
-// provenance reads the local and upstream rows of kind, of the object key or
-// of every object when key is "", by key, local first.
-func provenance(tx *gorm.DB, kind, key string) (map[string][]ProvenanceEntry, error) {
+// provenance reads the local and upstream rows of kind by key, local first. A
+// quantization's effective row is the one in its effective model's layer.
+func provenance(tx *gorm.DB, kind string) (map[string][]ProvenanceEntry, error) {
 	k := provenanceKinds[kind]
 	top := objectTables[kind]
 	if kind == KindQuantization {
@@ -434,15 +413,6 @@ func provenance(tx *gorm.DB, kind, key string) (map[string][]ProvenanceEntry, er
 		cols += ", t.field_provenance"
 	}
 	q := tx.Table(k.table+" t").Select(cols).Where("t.layer IN ?", []string{model.LayerLocal, model.LayerUpstream})
-	if key != "" {
-		parts := strings.SplitN(key, "/", len(k.keys))
-		if len(parts) != len(k.keys) {
-			return nil, nil
-		}
-		for i, c := range k.keys {
-			q = q.Where("t."+c+" = ?", parts[i])
-		}
-	}
 	var rows []provenanceRow
 	if err := q.Order("object_key, t.layer").Find(&rows).Error; err != nil {
 		return nil, err

@@ -289,10 +289,7 @@ func TestImportCuratedCatalog(t *testing.T) {
 		t.Error("the import changed curated values")
 	}
 	for _, slug := range []string{"qwen-2.5-14b", "llama-3.1-8b"} {
-		p, err := s.Provenance(ctx, store.KindModel, slug)
-		if err != nil {
-			t.Fatal(err)
-		}
+		p := dbtest.Provenance(t, s, store.KindModel, slug)
 		for _, f := range []string{"context_max", "params_b", "architecture"} {
 			if src := p[0].Fields[f].Source; src != model.SourceCuration {
 				t.Errorf("%s %s provenance %s, want curation kept", slug, f, src)
@@ -363,10 +360,7 @@ func TestImportKeepsCuratedValues(t *testing.T) {
 	if q := eff.Models[4]; q.ContextMax != 131072 || q.ParamsB != 14 || eff.Models[2].ParamsB != 47 {
 		t.Errorf("qwen context %d params %v, mixtral params %v; want the curated values", q.ContextMax, q.ParamsB, eff.Models[2].ParamsB)
 	}
-	p, err := s.Provenance(ctx, store.KindModel, "qwen-2.5-14b")
-	if err != nil {
-		t.Fatal(err)
-	}
+	p := dbtest.Provenance(t, s, store.KindModel, "qwen-2.5-14b")
 	for _, f := range []string{"context_max", "params_b", "params_active_b"} {
 		if src := p[0].Fields[f].Source; src != model.SourceCuration {
 			t.Errorf("qwen %s provenance %s, want curation kept", f, src)
@@ -404,18 +398,15 @@ func TestImportFillsUncuratedValues(t *testing.T) {
 	if m := got["mixtral-8x7b"]; m.ParamsB != 46.7 || m.ParamsActiveB != 12.9 {
 		t.Errorf("mixtral params %v active %v, want 46.7 and 12.9", m.ParamsB, m.ParamsActiveB)
 	}
-	p, err := s.Provenance(ctx, store.KindModel, "qwen-2.5-14b")
-	if err != nil {
-		t.Fatal(err)
-	}
+	p := dbtest.Provenance(t, s, store.KindModel, "qwen-2.5-14b")
 	if f := p[0].Fields["context_max"]; f.Source != "huggingface" || f.ImportRunID == nil || *f.ImportRunID != run.ID {
 		t.Errorf("qwen context_max provenance %+v, want run %s", f, run.ID)
 	}
 	if f := p[0].Fields["license"]; f.Source != "bootstrap-from-json" {
 		t.Errorf("qwen license provenance %+v, want the unchanged value's", f)
 	}
-	if p, err = s.Provenance(ctx, store.KindModel, "llama-3.1-8b"); err != nil || p[0].Fields["architecture"].Source != "bootstrap-from-json" {
-		t.Errorf("llama-3.1-8b architecture provenance %+v (%v), want untouched: its config is gated", p, err)
+	if f := dbtest.Provenance(t, s, store.KindModel, "llama-3.1-8b")[0].Fields["architecture"]; f.Source != "bootstrap-from-json" {
+		t.Errorf("llama-3.1-8b architecture provenance %+v, want untouched: its config is gated", f)
 	}
 }
 

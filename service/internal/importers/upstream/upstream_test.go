@@ -246,16 +246,13 @@ func TestUpstreamImportReplacesUpstreamLayer(t *testing.T) {
 	if snap.Version = rel.Version; snap.Digest() != rel.Digest {
 		t.Errorf("the imported catalog generates digest %s, want our release's %s", snap.Digest(), rel.Digest)
 	}
-	p, err := s.Provenance(ctx, store.KindModel, want.Models[0].Slug)
-	if err != nil {
-		t.Fatal(err)
-	}
+	p := dbtest.Provenance(t, s, store.KindModel, want.Models[0].Slug)
 	if len(p) != 1 || p[0].Layer != model.LayerUpstream || p[0].Source != "upstream" || p[0].SourceURL != ref ||
 		p[0].ImportRunID == nil || *p[0].ImportRunID != run.ID {
 		t.Errorf("provenance of %s = %+v, want the upstream row of run %s from %s", want.Models[0].Slug, p, run.ID, ref)
 	}
-	if p, err := s.Provenance(ctx, store.KindModel, local.Slug); err != nil || len(p) != 1 || p[0].Source != model.SourceCuration {
-		t.Errorf("provenance of %s = %+v (%v), want the curated local row", local.Slug, p, err)
+	if p := dbtest.Provenance(t, s, store.KindModel, local.Slug); len(p) != 1 || p[0].Source != model.SourceCuration {
+		t.Errorf("provenance of %s = %+v, want the curated local row", local.Slug, p)
 	}
 
 	before := effective(t, s)
