@@ -62,7 +62,8 @@ type Conflict struct {
 // manifest replaces the files of its source, which must still be pinned at
 // the manifest's revision. As in ReplaceLayer an unchanged value keeps its
 // provenance and an importer run keeps a curated value, unless the value is
-// curated too; a source with curated files keeps them all. It returns the
+// curated too or the kept one was curated from p.CurationURL (the curation
+// withdrew it); a source with curated files keeps them all. It returns the
 // changes and the kept curated values that differ from the imported ones.
 func (s *Store) Patch(ctx context.Context, run uuid.UUID, p Patch) (Changes, []Conflict, error) {
 	changes := Changes{}

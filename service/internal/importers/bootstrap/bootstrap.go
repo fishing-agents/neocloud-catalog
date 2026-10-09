@@ -1,5 +1,7 @@
-// Package bootstrap imports the core repository's curated data/*.json, the
-// input catalog-generate reads, into the upstream layer as curation.
+// Package bootstrap imports the core repository's data/*.json, the input
+// catalog-generate reads, into the upstream layer. Its runs' source is the
+// importer's name (R21): later importers replace its values; curation enters
+// through curation writes only.
 package bootstrap
 
 import (
@@ -36,7 +38,7 @@ func New(dir string) (*Importer, error) {
 func (*Importer) Name() string { return "bootstrap-from-json" }
 
 func (i *Importer) Origin() importers.Origin {
-	return importers.Origin{Layer: model.LayerUpstream, Source: model.SourceCuration, SourceURL: i.sourceURL}
+	return importers.Origin{Layer: model.LayerUpstream, Source: i.Name(), SourceURL: i.sourceURL}
 }
 
 func (i *Importer) Run(ctx context.Context, s *store.Store, run uuid.UUID) (importers.Summary, error) {

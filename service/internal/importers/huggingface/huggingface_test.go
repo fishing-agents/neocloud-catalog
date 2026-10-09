@@ -374,11 +374,12 @@ func TestImportKeepsCuratedValues(t *testing.T) {
 	}
 }
 
-// Over values no curation holds the importer writes what the Hub says, each
-// column recording its run; values it agrees with keep their provenance.
+// Over bootstrapped values (R21) the importer writes what the Hub says, each
+// column recording its run, no conflict listed; values it agrees with keep
+// their provenance.
 func TestImportFillsUncuratedValues(t *testing.T) {
 	s, _ := newStore(t, "hf_fill")
-	seed(t, s, "other", nominal(committed(t)))
+	seed(t, s, "bootstrap-from-json", nominal(committed(t)))
 	run, err := importers.Execute(ctx, s, testImporter(hub(t).URL, ""), uuid.New())
 	if err != nil {
 		t.Fatal(err)
@@ -410,10 +411,10 @@ func TestImportFillsUncuratedValues(t *testing.T) {
 	if f := p[0].Fields["context_max"]; f.Source != "huggingface" || f.ImportRunID == nil || *f.ImportRunID != run.ID {
 		t.Errorf("qwen context_max provenance %+v, want run %s", f, run.ID)
 	}
-	if f := p[0].Fields["license"]; f.Source != "other" {
+	if f := p[0].Fields["license"]; f.Source != "bootstrap-from-json" {
 		t.Errorf("qwen license provenance %+v, want the unchanged value's", f)
 	}
-	if p, err = s.Provenance(ctx, store.KindModel, "llama-3.1-8b"); err != nil || p[0].Fields["architecture"].Source != "other" {
+	if p, err = s.Provenance(ctx, store.KindModel, "llama-3.1-8b"); err != nil || p[0].Fields["architecture"].Source != "bootstrap-from-json" {
 		t.Errorf("llama-3.1-8b architecture provenance %+v (%v), want untouched: its config is gated", p, err)
 	}
 }

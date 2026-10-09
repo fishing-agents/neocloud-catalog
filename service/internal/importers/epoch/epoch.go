@@ -9,8 +9,9 @@
 // The overlay's values are curation: a column holding one is recorded as
 // curation from the overlay file and replaces a curated value. Epoch's
 // figures keep the curated values they contradict, listed as conflicts
-// (R12). A family the upstream layer lacks is added; one the overlay no
-// longer lists is left alone.
+// (R12), except curation from the overlay file itself, which the overlay
+// withdrew. Families the upstream layer lacks are added in name order, as
+// families-import wrote them; one the overlay no longer lists is left alone.
 //
 // A family whose Epoch row is missing or unreadable, or whose values are
 // incomplete, is listed in the run's errors and keeps its row; the summary
@@ -137,6 +138,7 @@ func (i *Importer) Run(ctx context.Context, s *store.Store, run uuid.UUID) (impo
 		sum.Sources.Read++
 		p.Values = append(p.Values, v)
 	}
+	slices.SortFunc(p.Values, func(a, b store.Values) int { return strings.Compare(a.Key, b.Key) })
 	input, err := json.Marshal(struct {
 		Values []store.Values
 		Errors []string

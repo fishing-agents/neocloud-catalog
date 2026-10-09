@@ -82,9 +82,9 @@ func TestImporterIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantURL := (&url.URL{Scheme: "file", Path: abs}).String()
-	if first.Importer != "bootstrap-from-json" || first.Layer != model.LayerUpstream || first.Source != model.SourceCuration ||
+	if first.Importer != "bootstrap-from-json" || first.Layer != model.LayerUpstream || first.Source != "bootstrap-from-json" ||
 		first.SourceURL != wantURL || first.Status != model.RunSucceeded || first.FinishedAt == nil || first.Error != "" {
-		t.Errorf("first run = %+v, want a succeeded bootstrap run of upstream curation from %s", first, wantURL)
+		t.Errorf("first run = %+v, want a succeeded bootstrap-from-json run of the upstream layer from %s", first, wantURL)
 	}
 	if !strings.HasPrefix(version, "sha256:") || first.InputVersion != version {
 		t.Errorf("input version = %q, want the files' %q", first.InputVersion, version)

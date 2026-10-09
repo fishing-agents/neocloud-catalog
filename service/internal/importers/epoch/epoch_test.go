@@ -305,13 +305,20 @@ func TestImportFailsOnMissingRowOrSource(t *testing.T) {
 	}
 }
 
-// Over the committed catalog the committed overlay imports what
+// Over the bootstrapped committed catalog the committed overlay imports what
 // data/families.json holds: families whose Epoch row the sample has change
-// nothing, the others are listed and keep their rows.
+// nothing, keeping the bootstrap's provenance, the others are listed and keep
+// their rows.
 func TestImportCommittedFamilies(t *testing.T) {
 	s, db := newStore(t, "epoch_committed")
 	in := committed(t)
-	seed(t, s, model.SourceCuration, in)
+	boot, err := bootstrap.New(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := importers.Execute(ctx, s, boot, uuid.New()); err != nil {
+		t.Fatal(err)
+	}
 	before := rowTimes(t, db)
 	overlay, err := os.ReadFile(filepath.Join(dataDir, "families.overlay.json"))
 	if err != nil {
@@ -347,8 +354,37 @@ func TestImportCommittedFamilies(t *testing.T) {
 			t.Errorf("%s = %+v, want the committed %+v", f.Name, got[f.Name], f)
 		}
 	}
-	if p := fields(t, s, "H100")["memory_gb"]; p.Source != model.SourceCuration {
-		t.Errorf("H100 memory_gb provenance %+v, want the equal curated value's kept", p)
+	if p := fields(t, s, "H100")["memory_gb"]; p.Source != "bootstrap-from-json" {
+		t.Errorf("H100 memory_gb provenance %+v, want the equal bootstrapped value's kept", p)
+	}
+}
+
+// A fresh store gets the families in name order, the order of
+// data/families.json, whatever the overlay's order (L4 before H100).
+func TestFreshImportOrdersByName(t *testing.T) {
+	s, _ := newStore(t, "epoch_order")
+	overlay, err := os.ReadFile(filepath.Join(dataDir, "families.overlay.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := importers.Execute(ctx, s, testImporter(t, sample(t), string(overlay)), uuid.New()); err != nil {
+		t.Fatal(err)
+	}
+	eff, err := s.Effective(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got, want []string
+	for _, f := range eff.Families {
+		got = append(got, f.Name)
+	}
+	for _, f := range committed(t).Families {
+		if f.Name == "H100" || f.Name == "L4" {
+			want = append(want, f.Name)
+		}
+	}
+	if !slices.Equal(got, want) || !slices.Equal(got, []string{"H100", "L4"}) {
+		t.Errorf("families %v, want %v as in data/families.json", got, want)
 	}
 }
 
@@ -392,8 +428,9 @@ func TestImportKeepsCuratedValues(t *testing.T) {
 	}
 }
 
-// Over values no curation holds the import writes Epoch's figures whole: a
-// TFLOPS entry Epoch no longer gives is gone, the column records the run.
+// Over bootstrapped values (R21) the import writes Epoch's figures whole and
+// the overlay's values: a TFLOPS entry Epoch no longer gives is gone, each
+// column records its origin, nothing is listed as a conflict.
 func TestImportReplacesImportedValues(t *testing.T) {
 	s, _ := newStore(t, "epoch_replace")
 	in := committed(t)
@@ -401,10 +438,12 @@ func TestImportReplacesImportedValues(t *testing.T) {
 		if f := &in.Families[i]; f.Name == "H100" {
 			f.TFLOPS = map[string]float64{"fp16": 1, "bf16": 1, "fp8": 1, "fp4": 1}
 			f.MemoryGB = 1
+			f.Architecture = "ampere"
 		}
 	}
-	seed(t, s, "other", in)
-	run, err := importers.Execute(ctx, s, testImporter(t, sample(t), twoFamilies), uuid.New())
+	seed(t, s, "bootstrap-from-json", in)
+	imp := testImporter(t, sample(t), twoFamilies)
+	run, err := importers.Execute(ctx, s, imp, uuid.New())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -413,8 +452,8 @@ func TestImportReplacesImportedValues(t *testing.T) {
 		t.Errorf("changes %+v conflicts %v, want %+v and none", sum.Changes, conflicts, want)
 	}
 	h := families(t, s)["H100"]
-	if want := map[string]float64{"fp16": 989.4, "bf16": 989.4, "fp8": 1979}; !maps.Equal(h.TFLOPS, want) || h.MemoryGB != 80 {
-		t.Errorf("H100 tflops %v memory %v, want Epoch's %v and 80", h.TFLOPS, h.MemoryGB, want)
+	if want := map[string]float64{"fp16": 989.4, "bf16": 989.4, "fp8": 1979}; !maps.Equal(h.TFLOPS, want) || h.MemoryGB != 80 || h.Architecture != "hopper" {
+		t.Errorf("H100 tflops %v memory %v architecture %s, want Epoch's %v and 80, the overlay's hopper", h.TFLOPS, h.MemoryGB, h.Architecture, want)
 	}
 	fp := fields(t, s, "H100")
 	for _, f := range []string{"tflops", "memory_gb"} {
@@ -422,8 +461,42 @@ func TestImportReplacesImportedValues(t *testing.T) {
 			t.Errorf("H100 %s provenance %+v, want run %s", f, p, run.ID)
 		}
 	}
-	if p := fp["vendor"]; p.Source != "other" {
+	if p := fp["architecture"]; p.Source != model.SourceCuration || p.SourceURL != imp.overlayURL || *p.ImportRunID != run.ID {
+		t.Errorf("H100 architecture provenance %+v, want curation from the overlay by run %s", p, run.ID)
+	}
+	if p := fp["vendor"]; p.Source != "bootstrap-from-json" {
 		t.Errorf("H100 vendor provenance %+v, want the unchanged value's", p)
+	}
+}
+
+// A correction the overlay withdraws gives way to Epoch's figure: curation
+// from the overlay file is the overlay's to take back, no conflict.
+func TestImportWithdrawnCorrection(t *testing.T) {
+	s, _ := newStore(t, "epoch_withdraw")
+	corrected := strings.Replace(twoFamilies, `"epoch_name": "NVIDIA H100 SXM5 80GB",`,
+		`"epoch_name": "NVIDIA H100 SXM5 80GB", "memory_bandwidth_gbs": {"value": 3000, "source": "`+h100URL+`"},`, 1)
+	imp := testImporter(t, sample(t), corrected)
+	if _, err := importers.Execute(ctx, s, imp, uuid.New()); err != nil {
+		t.Fatal(err)
+	}
+	if h := families(t, s)["H100"]; h.MemoryBandwidthGBs != 3000 {
+		t.Fatalf("H100 bandwidth %v, want the overlay's 3000", h.MemoryBandwidthGBs)
+	}
+	if err := os.WriteFile(imp.overlay, []byte(twoFamilies), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run, err := importers.Execute(ctx, s, imp, uuid.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, conflicts := summaryOf(t, run); len(conflicts) != 0 {
+		t.Errorf("conflicts %v, want none", conflicts)
+	}
+	if h := families(t, s)["H100"]; h.MemoryBandwidthGBs != 3350 {
+		t.Errorf("H100 bandwidth %v, want Epoch's 3350", h.MemoryBandwidthGBs)
+	}
+	if p := fields(t, s, "H100")["memory_bandwidth_gbs"]; p.Source != "epoch" || *p.ImportRunID != run.ID {
+		t.Errorf("H100 bandwidth provenance %+v, want run %s", p, run.ID)
 	}
 }
 

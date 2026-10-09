@@ -714,7 +714,8 @@ func stampRow[T any](tx *gorm.DB, st stamp, w, o *T) (bool, error) {
 
 // fieldProvenance is the provenance per value column of w: a value equal to
 // the one in o keeps its provenance, a curated value of o survives an
-// importer run's value that is not curated (and is copied back into w), any
+// importer run's value that is not curated (and is copied back into w) unless
+// it was curated from st's own curation URL (a withdrawn correction), any
 // other value is st's.
 func fieldProvenance[T any](tx *gorm.DB, st stamp, w, o *T) (model.FieldProvenance, error) {
 	cols, err := valueColumns(tx, w)
@@ -734,7 +735,8 @@ func fieldProvenance[T any](tx *gorm.DB, st stamp, w, o *T) (model.FieldProvenan
 		switch {
 		case had && reflect.DeepEqual(wv.FieldByName(c.name).Interface(), ov.FieldByName(c.name).Interface()):
 			fp[c.db] = p
-		case had && p.Source == model.SourceCuration && cs.source != model.SourceCuration:
+		case had && p.Source == model.SourceCuration && cs.source != model.SourceCuration &&
+			(st.curationURL == "" || p.SourceURL != st.curationURL):
 			wv.FieldByName(c.name).Set(ov.FieldByName(c.name))
 			fp[c.db] = p
 		default:

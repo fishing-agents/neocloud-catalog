@@ -394,7 +394,7 @@ type Release struct {
 
 // ImportRun is one importer run; importers are idempotent per (Importer,
 // InputVersion). Source and SourceURL are the provenance of the rows the run
-// writes (Source "curation" for curated input), as of StartedAt. Summary holds
+// writes (an importer's name, or "curation" for curated input), as of StartedAt. Summary holds
 // the result and diff summary.
 type ImportRun struct {
 	Base
