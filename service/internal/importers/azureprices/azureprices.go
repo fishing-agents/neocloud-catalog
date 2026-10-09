@@ -18,19 +18,18 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
 	"net/http"
 	"net/url"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/fishman/neocloud-catalog/service/internal/importers"
+	"github.com/fishman/neocloud-catalog/service/internal/importers/fetch"
 	"github.com/fishman/neocloud-catalog/service/internal/model"
 	"github.com/fishman/neocloud-catalog/service/internal/store"
 )
@@ -63,15 +62,14 @@ var sku = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
 type Importer struct {
 	endpoint string
 	regions  []string
-	client   *http.Client
-	backoff  time.Duration
-	retries  int
+	getter   fetch.Getter
 }
 
 // New returns the importer of the API at endpoint in regions, ARM region
 // names (the config validates them).
 func New(endpoint string, regions []string) *Importer {
-	return &Importer{endpoint: endpoint, regions: regions, client: &http.Client{Timeout: time.Minute}, backoff: time.Second, retries: 3}
+	return &Importer{endpoint: endpoint, regions: regions,
+		getter: fetch.Getter{Client: &http.Client{Timeout: time.Minute}, Backoff: time.Second, Retries: 3, MaxBody: maxBody, MaxRetryAfter: maxRetryAfter}}
 }
 
 func (*Importer) Name() string { return "azure-prices" }
@@ -209,9 +207,16 @@ func (i *Importer) items(ctx context.Context, rawURL string) ([]item, error) {
 	}
 	var all []item
 	for range maxPages {
-		body, err := i.get(ctx, rawURL)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 		if err != nil {
 			return nil, err
+		}
+		body, _, err := i.getter.Get(ctx, req)
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if err != nil {
+			return nil, fmt.Errorf("GET %s: %w", rawURL, err)
 		}
 		var page struct {
 			Items        []item
@@ -239,70 +244,4 @@ func port(u *url.URL) string {
 		return p
 	}
 	return map[string]string{"http": "80", "https": "443"}[u.Scheme]
-}
-
-// get reads rawURL. It retries transport errors, 429 and 5xx up to retries
-// times, after Retry-After (at most maxRetryAfter) when the response has one,
-// else after a doubling backoff.
-func (i *Importer) get(ctx context.Context, rawURL string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	for attempt := 0; ; attempt++ {
-		wait, retry := i.backoff<<attempt, true
-		resp, err := i.client.Do(req)
-		if err == nil {
-			var body []byte
-			body, err = io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
-			resp.Body.Close()
-			switch code := resp.StatusCode; {
-			case err != nil:
-			case code == http.StatusOK && len(body) > maxBody:
-				err, retry = fmt.Errorf("body exceeds %d bytes", maxBody), false
-			case code == http.StatusOK:
-				return body, nil
-			default:
-				err = fmt.Errorf("HTTP %s", resp.Status)
-				retry = code == http.StatusTooManyRequests || code >= 500
-				if d, ok := retryAfter(resp.Header.Get("Retry-After")); ok {
-					wait = d
-				}
-				if retry && wait > maxRetryAfter {
-					err, retry = fmt.Errorf("%w (Retry-After %s exceeds %s)", err, wait, maxRetryAfter), false
-				}
-			}
-		}
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		if !retry || attempt == i.retries {
-			return nil, fmt.Errorf("GET %s: %w", rawURL, err)
-		}
-		if err := sleep(ctx, wait); err != nil {
-			return nil, err
-		}
-	}
-}
-
-// retryAfter reads a Retry-After of seconds or an HTTP date.
-func retryAfter(v string) (time.Duration, bool) {
-	if s, err := strconv.Atoi(v); err == nil && s >= 0 {
-		return time.Duration(s) * time.Second, true
-	}
-	if t, err := http.ParseTime(v); err == nil {
-		return max(time.Until(t), 0), true
-	}
-	return 0, false
-}
-
-func sleep(ctx context.Context, d time.Duration) error {
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-t.C:
-		return nil
-	}
 }

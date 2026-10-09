@@ -3,13 +3,14 @@ package huggingface
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
+
+	"github.com/fishman/neocloud-catalog/service/internal/importers/fetch"
 )
 
 // maxBody bounds a response the importer reads; a tree of a large repository
@@ -35,9 +36,8 @@ type httpError struct {
 
 func (e *httpError) Error() string { return fmt.Sprintf("HTTP %d: %s", e.code, e.msg) }
 
-// get reads rawURL. It spaces requests by interval and retries transport
-// errors, 429 and 5xx up to retries times, after Retry-After (at most
-// maxRetryAfter) when the response has one, else after a doubling backoff.
+// get reads rawURL through the importer's getter, interval after the last
+// request, with the token; a 401 or 403 is a gated refusal.
 func (c *client) get(ctx context.Context, rawURL string) ([]byte, http.Header, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -46,44 +46,29 @@ func (c *client) get(ctx context.Context, rawURL string) ([]byte, http.Header, e
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
-	for attempt := 0; ; attempt++ {
-		if err := sleep(ctx, time.Until(c.last.Add(c.interval))); err != nil {
-			return nil, nil, err
-		}
-		c.last = time.Now()
-		wait, retry := c.backoff<<attempt, true
-		resp, err := c.client.Do(req)
-		if err == nil {
-			var body []byte
-			body, err = io.ReadAll(io.LimitReader(resp.Body, maxBody))
-			resp.Body.Close()
-			switch code := resp.StatusCode; {
-			case err != nil:
-			case code == http.StatusOK:
-				return body, resp.Header, nil
-			case code == http.StatusUnauthorized || code == http.StatusForbidden:
-				err, retry = c.gated(&httpError{code, message(body)}), false
-			default:
-				err = &httpError{code, message(body)}
-				retry = code == http.StatusTooManyRequests || code >= 500
-				if d, ok := retryAfter(resp.Header.Get("Retry-After")); ok {
-					wait = d
-				}
-				if retry && wait > maxRetryAfter {
-					err, retry = fmt.Errorf("%w (Retry-After %s exceeds %s)", err, wait, maxRetryAfter), false
-				}
-			}
-		}
-		if ctx.Err() != nil {
-			return nil, nil, ctx.Err()
-		}
-		if !retry || attempt == c.retries {
-			return nil, nil, fmt.Errorf("GET %s: %w", req.URL.Path, err)
-		}
-		if err := sleep(ctx, wait); err != nil {
-			return nil, nil, err
+	if err := fetch.Sleep(ctx, time.Until(c.last.Add(c.interval))); err != nil {
+		return nil, nil, err
+	}
+	c.last = time.Now()
+	body, h, err := c.getter.Get(ctx, req)
+	if ctx.Err() != nil {
+		return nil, nil, ctx.Err()
+	}
+	if se := (*fetch.StatusError)(nil); errors.As(err, &se) {
+		herr := &httpError{se.Code, message(se.Body)}
+		switch {
+		case se.Code == http.StatusUnauthorized || se.Code == http.StatusForbidden:
+			err = c.gated(herr)
+		case se.Wait > 0:
+			err = fmt.Errorf("%w (Retry-After %s exceeds %s)", herr, se.Wait, se.Max)
+		default:
+			err = herr
 		}
 	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("GET %s: %w", req.URL.Path, err)
+	}
+	return body, h, nil
 }
 
 // getJSON decodes the response of rawURL into v.
@@ -148,17 +133,6 @@ func message(body []byte) string {
 	return msg
 }
 
-// retryAfter reads a Retry-After of seconds or an HTTP date.
-func retryAfter(v string) (time.Duration, bool) {
-	if s, err := strconv.Atoi(v); err == nil && s >= 0 {
-		return time.Duration(s) * time.Second, true
-	}
-	if t, err := http.ParseTime(v); err == nil {
-		return max(time.Until(t), 0), true
-	}
-	return 0, false
-}
-
 // nextLink is the URL of the rel="next" entry of a Link header, or "".
 func nextLink(h string) string {
 	for part := range strings.SplitSeq(h, ",") {
@@ -168,18 +142,4 @@ func nextLink(h string) string {
 		}
 	}
 	return ""
-}
-
-func sleep(ctx context.Context, d time.Duration) error {
-	if d <= 0 {
-		return ctx.Err()
-	}
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-t.C:
-		return nil
-	}
 }

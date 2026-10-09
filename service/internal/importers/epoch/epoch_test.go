@@ -93,7 +93,7 @@ func testImporter(t *testing.T, csv []byte, overlay string) *Importer {
 	if err != nil {
 		t.Fatal(err)
 	}
-	i.backoff = time.Millisecond
+	i.getter.Backoff = time.Millisecond
 	return i
 }
 
@@ -543,7 +543,7 @@ func TestFetchRetries(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		i.backoff = time.Millisecond
+		i.getter.Backoff = time.Millisecond
 		return i.fetch(ctx)
 	}
 	statuses = []int{http.StatusServiceUnavailable, http.StatusTooManyRequests}

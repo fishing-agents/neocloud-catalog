@@ -31,7 +31,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"math"
 	"net/http"
@@ -47,6 +46,7 @@ import (
 
 	catalog "github.com/fishman/neocloud-catalog"
 	"github.com/fishman/neocloud-catalog/service/internal/importers"
+	"github.com/fishman/neocloud-catalog/service/internal/importers/fetch"
 	"github.com/fishman/neocloud-catalog/service/internal/model"
 	"github.com/fishman/neocloud-catalog/service/internal/store"
 )
@@ -68,9 +68,7 @@ var dtypeVocabulary = []string{"fp16", "bf16", "fp8", "fp4", "int8"}
 // Importer reads Epoch's CSV at csvURL and the overlay file overlay.
 type Importer struct {
 	csvURL, overlay, overlayURL string
-	client                      *http.Client
-	backoff                     time.Duration
-	retries                     int
+	getter                      fetch.Getter
 }
 
 // New returns the importer of the CSV at csvURL and the overlay file overlay.
@@ -80,7 +78,7 @@ func New(csvURL, overlay string) (*Importer, error) {
 		return nil, err
 	}
 	return &Importer{csvURL: csvURL, overlay: overlay, overlayURL: (&url.URL{Scheme: "file", Path: abs}).String(),
-		client: &http.Client{Timeout: time.Minute}, backoff: time.Second, retries: 3}, nil
+		getter: fetch.Getter{Client: &http.Client{Timeout: time.Minute}, Backoff: time.Second, Retries: 3, MaxBody: maxBody, MaxRetryAfter: maxRetryAfter}}, nil
 }
 
 func (*Importer) Name() string { return "epoch" }
@@ -176,70 +174,17 @@ func readOverlay(path string) ([]overlayFamily, error) {
 	return overlay, nil
 }
 
-// fetch reads the CSV. It retries transport errors, 429 and 5xx up to retries
-// times, after Retry-After (at most maxRetryAfter) when the response has one,
-// else after a doubling backoff.
+// fetch reads the CSV.
 func (i *Importer) fetch(ctx context.Context) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, i.csvURL, nil)
 	if err != nil {
 		return nil, err
 	}
-	for attempt := 0; ; attempt++ {
-		wait, retry := i.backoff<<attempt, true
-		resp, err := i.client.Do(req)
-		if err == nil {
-			var body []byte
-			body, err = io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
-			resp.Body.Close()
-			switch code := resp.StatusCode; {
-			case err != nil:
-			case code == http.StatusOK && len(body) > maxBody:
-				err, retry = fmt.Errorf("body exceeds %d bytes", maxBody), false
-			case code == http.StatusOK:
-				return body, nil
-			default:
-				err = fmt.Errorf("HTTP %s", resp.Status)
-				retry = code == http.StatusTooManyRequests || code >= 500
-				if d, ok := retryAfter(resp.Header.Get("Retry-After")); ok {
-					wait = d
-				}
-				if retry && wait > maxRetryAfter {
-					err, retry = fmt.Errorf("%w (Retry-After %s exceeds %s)", err, wait, maxRetryAfter), false
-				}
-			}
-		}
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		if !retry || attempt == i.retries {
-			return nil, fmt.Errorf("GET %s: %w", i.csvURL, err)
-		}
-		if err := sleep(ctx, wait); err != nil {
-			return nil, err
-		}
+	body, _, err := i.getter.Get(ctx, req)
+	if err != nil && ctx.Err() == nil {
+		return nil, fmt.Errorf("GET %s: %w", i.csvURL, err)
 	}
-}
-
-// retryAfter reads a Retry-After of seconds or an HTTP date.
-func retryAfter(v string) (time.Duration, bool) {
-	if s, err := strconv.Atoi(v); err == nil && s >= 0 {
-		return time.Duration(s) * time.Second, true
-	}
-	if t, err := http.ParseTime(v); err == nil {
-		return max(time.Until(t), 0), true
-	}
-	return 0, false
-}
-
-func sleep(ctx context.Context, d time.Duration) error {
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-t.C:
-		return nil
-	}
+	return body, err
 }
 
 // epochRow holds the figures taken from one CSV row, already in catalog units;

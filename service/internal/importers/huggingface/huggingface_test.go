@@ -88,7 +88,7 @@ func route(p string) (repo, rev, call string, ok bool) {
 // testImporter reads endpoint without spacing requests, retrying quickly.
 func testImporter(endpoint, token string) *Importer {
 	i := New(endpoint, token)
-	i.interval, i.backoff = 0, time.Millisecond
+	i.interval, i.getter.Backoff = 0, time.Millisecond
 	return i
 }
 
@@ -463,7 +463,7 @@ func TestUnreachableHubFailsTheRun(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	imp := testImporter(srv.URL, "")
-	imp.retries = 1
+	imp.getter.Retries = 1
 	run, err := importers.Execute(ctx, s, imp, uuid.New())
 	if err == nil || run.Status != model.RunFailed || !strings.Contains(run.Error, "no source could be read") || !strings.Contains(run.Error, "HTTP 503") {
 		t.Errorf("run %+v, err %v; want failed: no source could be read", run, err)

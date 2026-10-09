@@ -100,7 +100,7 @@ func newPricesAPI(t *testing.T, fail ...string) *pricesAPI {
 // testImporter reads endpoint in regions, retrying quickly.
 func testImporter(endpoint string, regions ...string) *Importer {
 	i := New(endpoint+"/api/retail/prices", regions)
-	i.backoff = time.Millisecond
+	i.getter.Backoff = time.Millisecond
 	return i
 }
 

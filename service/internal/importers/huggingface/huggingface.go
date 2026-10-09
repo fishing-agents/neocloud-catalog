@@ -36,6 +36,7 @@ import (
 
 	catalog "github.com/fishman/neocloud-catalog"
 	"github.com/fishman/neocloud-catalog/service/internal/importers"
+	"github.com/fishman/neocloud-catalog/service/internal/importers/fetch"
 	"github.com/fishman/neocloud-catalog/service/internal/model"
 	"github.com/fishman/neocloud-catalog/service/internal/store"
 )
@@ -46,18 +47,17 @@ const Endpoint = "https://huggingface.co"
 // Importer reads the Hub at endpoint, with token for gated repositories.
 type Importer struct {
 	endpoint, token string
-	client          *http.Client
+	getter          fetch.Getter
 	// interval spaces requests: the Hub allows 500 API requests per five
 	// minutes to an anonymous client. A run over the committed catalog makes
 	// 33, so it takes well under a minute of jobs.job_timeout.
-	interval, backoff time.Duration
-	retries           int
+	interval time.Duration
 }
 
 // New returns the importer of the Hub at endpoint; token may be empty.
 func New(endpoint, token string) *Importer {
-	return &Importer{endpoint: strings.TrimSuffix(endpoint, "/"), token: token, client: &http.Client{Timeout: time.Minute},
-		interval: 700 * time.Millisecond, backoff: time.Second, retries: 3}
+	return &Importer{endpoint: strings.TrimSuffix(endpoint, "/"), token: token, interval: 700 * time.Millisecond,
+		getter: fetch.Getter{Client: &http.Client{Timeout: time.Minute}, Backoff: time.Second, Retries: 3, MaxBody: maxBody, MaxRetryAfter: maxRetryAfter}}
 }
 
 func (*Importer) Name() string { return "huggingface" }
