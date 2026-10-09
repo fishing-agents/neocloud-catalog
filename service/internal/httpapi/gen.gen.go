@@ -212,9 +212,12 @@ type GeneratorRun struct {
 	Status RunStatus `json:"status"`
 }
 
+// ImportConflict a curated value kept over an imported one; field is a column, or files/<path> of a curated manifest, where a file one side lacks is null
+type ImportConflict = store.Conflict
+
 // ImportCreate defines model for ImportCreate.
 type ImportCreate struct {
-	// Importer the importer's name (bootstrap-from-json, ...)
+	// Importer the importer's name (bootstrap-from-json, huggingface)
 	Importer string `json:"importer"`
 }
 
@@ -235,13 +238,15 @@ type ImportRun struct {
 	// Status queued until a worker starts the run
 	Status RunStatus `json:"status"`
 
-	// Summary the importer's result; changes counts the rows it changed per table
+	// Summary the importer's result; changes counts the rows it changed per table, conflicts lists the imported values curated ones were kept over, errors the parts of its input a succeeded run could not read
 	Summary ImportSummary `json:"summary"`
 }
 
-// ImportSummary the importer's result; changes counts the rows it changed per table
+// ImportSummary the importer's result; changes counts the rows it changed per table, conflicts lists the imported values curated ones were kept over, errors the parts of its input a succeeded run could not read
 type ImportSummary struct {
 	Changes              map[string]Change      `json:"changes"`
+	Conflicts            *[]ImportConflict      `json:"conflicts,omitempty"`
+	Errors               *[]string              `json:"errors,omitempty"`
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
@@ -423,6 +428,22 @@ func (a *ImportSummary) UnmarshalJSON(b []byte) error {
 		delete(object, "changes")
 	}
 
+	if raw, found := object["conflicts"]; found {
+		err = json.Unmarshal(raw, &a.Conflicts)
+		if err != nil {
+			return fmt.Errorf("error reading 'conflicts': %w", err)
+		}
+		delete(object, "conflicts")
+	}
+
+	if raw, found := object["errors"]; found {
+		err = json.Unmarshal(raw, &a.Errors)
+		if err != nil {
+			return fmt.Errorf("error reading 'errors': %w", err)
+		}
+		delete(object, "errors")
+	}
+
 	if len(object) != 0 {
 		a.AdditionalProperties = make(map[string]interface{})
 		for fieldName, fieldBuf := range object {
@@ -446,6 +467,20 @@ func (a ImportSummary) MarshalJSON() ([]byte, error) {
 		object["changes"], err = json.Marshal(a.Changes)
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling 'changes': %w", err)
+		}
+	}
+
+	if a.Conflicts != nil {
+		object["conflicts"], err = json.Marshal(a.Conflicts)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'conflicts': %w", err)
+		}
+	}
+
+	if a.Errors != nil {
+		object["errors"], err = json.Marshal(a.Errors)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'errors': %w", err)
 		}
 	}
 

@@ -31,10 +31,14 @@ type Origin struct {
 }
 
 // Summary is an import run's result: the version of the input it read, kept
-// in import_runs.input_version, and the rows it changed per table.
+// in import_runs.input_version, the rows it changed per table, the imported
+// values curated ones were kept over (R12), and the parts of its input a run
+// that went on without them could not read.
 type Summary struct {
-	InputVersion string        `json:"-"`
-	Changes      store.Changes `json:"changes"`
+	InputVersion string           `json:"-"`
+	Changes      store.Changes    `json:"changes"`
+	Conflicts    []store.Conflict `json:"conflicts,omitempty"`
+	Errors       []string         `json:"errors,omitempty"`
 }
 
 // Registry holds importers by name.

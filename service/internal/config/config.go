@@ -26,13 +26,14 @@ var defaultsFS embed.FS
 const envPrefix = "NEOCLOUD_CATALOG_"
 
 type Config struct {
-	Server    ServerConfig    `koanf:"server"`
-	Database  DatabaseConfig  `koanf:"database"`
-	Telemetry TelemetryConfig `koanf:"telemetry"`
-	Bootstrap BootstrapConfig `koanf:"bootstrap"`
-	Auth      AuthConfig      `koanf:"auth"`
-	Jobs      JobsConfig      `koanf:"jobs"`
-	Release   ReleaseConfig   `koanf:"release"`
+	Server      ServerConfig      `koanf:"server"`
+	Database    DatabaseConfig    `koanf:"database"`
+	Telemetry   TelemetryConfig   `koanf:"telemetry"`
+	Bootstrap   BootstrapConfig   `koanf:"bootstrap"`
+	HuggingFace HuggingFaceConfig `koanf:"huggingface"`
+	Auth        AuthConfig        `koanf:"auth"`
+	Jobs        JobsConfig        `koanf:"jobs"`
+	Release     ReleaseConfig     `koanf:"release"`
 }
 
 type ServerConfig struct {
@@ -54,6 +55,13 @@ type TelemetryConfig struct {
 // importer reads; relative to the working directory.
 type BootstrapConfig struct {
 	DataDir string `koanf:"data_dir"`
+}
+
+// HuggingFaceConfig: TokenFile holds the Hugging Face token (a mounted
+// secret) the huggingface importer reads gated repositories with; empty
+// reads public metadata only.
+type HuggingFaceConfig struct {
+	TokenFile string `koanf:"token_file"`
 }
 
 // AuthConfig: API keys always work; an issuer_url (ICP) also enables OIDC

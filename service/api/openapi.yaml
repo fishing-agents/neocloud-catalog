@@ -763,14 +763,44 @@ components:
           type: string
     ImportSummary:
       type: object
-      description: the importer's result; changes counts the rows it changed per table
+      description: >-
+        the importer's result; changes counts the rows it changed per table,
+        conflicts lists the imported values curated ones were kept over, errors
+        the parts of its input a succeeded run could not read
       required: [changes]
       properties:
         changes:
           type: object
           additionalProperties:
             $ref: "#/components/schemas/Change"
+        conflicts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ImportConflict"
+        errors:
+          type: array
+          items:
+            type: string
       additionalProperties: true
+    ImportConflict:
+      x-go-type: store.Conflict
+      x-go-type-import:
+        name: store
+        path: github.com/fishman/neocloud-catalog/service/internal/store
+      type: object
+      description: >-
+        a curated value kept over an imported one; field is a column, or
+        files/<path> of a curated manifest, where a file one side lacks is null
+      required: [kind, key, field, curated, imported]
+      properties:
+        kind:
+          type: string
+        key:
+          type: string
+        field:
+          type: string
+        curated: {}
+        imported: {}
     Change:
       x-go-type: store.Change
       x-go-type-import:
@@ -823,7 +853,7 @@ components:
       properties:
         importer:
           type: string
-          description: the importer's name (bootstrap-from-json, ...)
+          description: the importer's name (bootstrap-from-json, huggingface)
     ReleaseCreate:
       type: object
       required: [generator_run]

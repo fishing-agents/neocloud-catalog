@@ -13,6 +13,12 @@ metrics_addr = "0.0.0.0:8081"
 [bootstrap]
 data_dir = "../data"
 
+[huggingface]
+# token_file holds the Hugging Face token gated repositories need (a mounted
+# secret, never the token itself). Empty: the huggingface importer reports
+# gated sources as "gated: token missing".
+token_file = ""
+
 [auth]
 # API keys (catalog-service auth issue) always work. An issuer_url (ICP) also
 # accepts its OIDC JWTs whose aud contains audience; their roles claim must
@@ -23,7 +29,8 @@ audience = ""
 [jobs]
 # job_timeout cancels a run on the catalog queue that takes longer (jobs are
 # never retried); a run still running after rescue_after (> job_timeout) was
-# left by a worker that exited and is failed.
+# left by a worker that exited and is failed. The huggingface import of the
+# committed catalog takes under a minute.
 job_timeout = "30m"
 rescue_after = "1h"
 

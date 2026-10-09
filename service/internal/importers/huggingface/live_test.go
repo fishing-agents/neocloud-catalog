@@ -1,0 +1,46 @@
+package huggingface
+
+import (
+	"os"
+	"reflect"
+	"strings"
+	"testing"
+
+	catalog "github.com/fishman/neocloud-catalog"
+	"github.com/fishman/neocloud-catalog/service/internal/store"
+)
+
+// The recordings under testdata/hf still say what the Hub says: every source
+// of the committed catalog, and the missing revision, read the same live as
+// recorded. It reads without a token, as they were recorded. Opt in with
+// NEOCLOUD_CATALOG_LIVE=1.
+func TestLiveHubMatchesRecordings(t *testing.T) {
+	if os.Getenv("NEOCLOUD_CATALOG_LIVE") != "1" {
+		t.Skip("NEOCLOUD_CATALOG_LIVE unset; skipping the live Hugging Face test")
+	}
+	recorded := &client{Importer: testImporter(hub(t).URL, "")}
+	live := &client{Importer: New(Endpoint, "")}
+	jobs := append(plan(committed(t), func(string, string) bool { return true }), job{owner: store.Manifest{ModelSlug: "missing"},
+		src: catalog.ModelSource{Type: catalog.SourceHuggingFace, Repo: "Qwen/Qwen2.5-14B-Instruct", Revision: strings.Repeat("f", 40)}})
+	for _, j := range jobs {
+		if got, want := view(live.read(ctx, j)), view(recorded.read(ctx, j)); !reflect.DeepEqual(got, want) {
+			t.Errorf("%s:\n live     %+v\n recorded %+v", j, got, want)
+		}
+	}
+}
+
+type sourceView struct {
+	Info    *info
+	Files   []catalog.ModelFile
+	Weights int64
+	Config  *config
+	Errs    []string
+}
+
+func view(r source) sourceView {
+	v := sourceView{Info: r.info, Files: r.files, Weights: r.weights, Config: r.config}
+	for _, err := range r.errs {
+		v.Errs = append(v.Errs, err.Error())
+	}
+	return v
+}
