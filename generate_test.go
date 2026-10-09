@@ -625,6 +625,23 @@ func TestValidateRendersEveryVendor(t *testing.T) {
 	wantValidate(t, "nvidia only", snap, "")
 }
 
+// A multi-node preset renders pipeline parallel across its nodes, so a flag
+// table without it fails validation.
+func TestValidateRendersMultiNodePipeline(t *testing.T) {
+	m := llama70b()
+	p := vllmPreset("vllm-bf16-2node", "bf16", 8192)
+	p.Topology = Topology{Kind: "multi-node", Nodes: 2}
+	m.Presets = []Preset{p}
+	snap := curatedSnap(t, m)
+	wantValidate(t, "pipeline parallel flag", snap, "")
+	for _, b := range snap.Backends {
+		if b.Name == "vllm" {
+			b.Versions[0].Flags.PipelineParallel = ""
+		}
+	}
+	wantValidate(t, "no pipeline parallel flag", snap, "llama-3.1-70b/vllm-bf16-2node on vllm v0.31.0: cannot express pipeline parallel")
+}
+
 // A preset its backend version has no image for, among the vendors it allows,
 // deploys nowhere.
 func TestValidateRejectsPresetWithoutVendor(t *testing.T) {

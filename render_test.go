@@ -61,6 +61,7 @@ func TestRender(t *testing.T) {
 		backend string
 		preset  Preset
 		gpus    int
+		nodes   int
 		draft   *DraftModel
 		role    string
 		rank    int
@@ -108,14 +109,18 @@ func TestRender(t *testing.T) {
 			want: []string{"--tensor-parallel-size=2", `--kv-transfer-config={"kv_connector":"NixlConnector","kv_role":"kv_producer"}`}},
 		{name: "vllm decode runs on the decode gpus", backend: "vllm", gpus: 1, role: "decode", preset: Preset{TensorParallel: 8, Topology: pd},
 			want: []string{"--tensor-parallel-size=4", `--kv-transfer-config={"kv_connector":"NixlConnector","kv_role":"kv_consumer"}`}},
-		{name: "vllm multi-node head", backend: "vllm", gpus: 16, preset: Preset{Topology: twoNodes},
-			want: []string{"--tensor-parallel-size=16", "--nnodes=2", "--node-rank=0", "--master-addr={{master_addr}}", "--master-port={{master_port}}"}},
-		{name: "vllm multi-node worker", backend: "vllm", gpus: 16, rank: 1, preset: Preset{Topology: twoNodes},
-			want: []string{"--tensor-parallel-size=16", "--nnodes=2", "--node-rank=1", "--master-addr={{master_addr}}", "--master-port={{master_port}}", "--headless"}},
-		{name: "vllm pipeline", backend: "vllm", gpus: 16, preset: Preset{TensorParallel: 8, Topology: Topology{Kind: "multi-node", Nodes: 2, Pipeline: 2}},
+		// A 2-node fit of llama-3.1-70b on H100 (16 GPUs): tensor parallel
+		// within a node, pipeline parallel across nodes, as the fit is sized.
+		{name: "vllm multi-node head", backend: "vllm", gpus: 16, nodes: 2, preset: Preset{Topology: twoNodes},
 			want: []string{"--tensor-parallel-size=8", "--pipeline-parallel-size=2", "--nnodes=2", "--node-rank=0", "--master-addr={{master_addr}}", "--master-port={{master_port}}"}},
-		{name: "sglang multi-node worker", backend: "sglang", gpus: 16, rank: 1, preset: Preset{Topology: twoNodes},
-			want: []string{"--tp-size=16", "--nnodes=2", "--node-rank=1", "--dist-init-addr={{master_addr}}:{{master_port}}"}},
+		{name: "vllm multi-node worker", backend: "vllm", gpus: 16, nodes: 2, rank: 1, preset: Preset{Topology: twoNodes},
+			want: []string{"--tensor-parallel-size=8", "--pipeline-parallel-size=2", "--nnodes=2", "--node-rank=1", "--master-addr={{master_addr}}", "--master-port={{master_port}}", "--headless"}},
+		{name: "vllm stages of the preset", backend: "vllm", gpus: 16, nodes: 2, preset: Preset{Topology: Topology{Kind: "multi-node", Nodes: 2, Pipeline: 4}},
+			want: []string{"--tensor-parallel-size=4", "--pipeline-parallel-size=4", "--nnodes=2", "--node-rank=0", "--master-addr={{master_addr}}", "--master-port={{master_port}}"}},
+		{name: "vllm preset tp wins", backend: "vllm", gpus: 16, nodes: 2, preset: Preset{TensorParallel: 8, Topology: Topology{Kind: "multi-node", Nodes: 2, Pipeline: 2}},
+			want: []string{"--tensor-parallel-size=8", "--pipeline-parallel-size=2", "--nnodes=2", "--node-rank=0", "--master-addr={{master_addr}}", "--master-port={{master_port}}"}},
+		{name: "sglang multi-node worker", backend: "sglang", gpus: 16, nodes: 2, rank: 1, preset: Preset{Topology: twoNodes},
+			want: []string{"--tp-size=8", "--pp-size=2", "--nnodes=2", "--node-rank=1", "--dist-init-addr={{master_addr}}:{{master_port}}"}},
 		{name: "llamacpp separate values", backend: "llamacpp", gpus: 1,
 			preset: Preset{Context: 8192, ToolParser: "qwen25"},
 			want:   []string{"-c", "8192", "--jinja"}},
@@ -136,7 +141,7 @@ func TestRender(t *testing.T) {
 			t.Fatalf("no curated backend %s", c.backend)
 		}
 		c.preset.Name, c.preset.Backend, c.preset.BackendVersion = "p", c.backend, bv.Version
-		m, fit := ModelTemplate{Slug: "m"}, ModelFit{GPUCount: c.gpus}
+		m, fit := ModelTemplate{Slug: "m"}, ModelFit{GPUCount: c.gpus, Nodes: c.nodes}
 		var got []string
 		var err error
 		if c.role == "" && c.rank == 0 {

@@ -18,11 +18,12 @@ func Render(m ModelTemplate, p Preset, bv BackendVersion, fit ModelFit, draft *D
 // version's command, in a stable order: context, parallelism, KV cache dtype,
 // prefix caching, parsers, chat template, speculative decoding, topology, extra
 // args. Tensor parallel is the role's GPU count on a disaggregated side, else
-// the preset's, else the fit's GPU count. vendor is the GPU vendor (or cpu) of
-// the image the arguments are for. role is "prefill" or "decode" for one side
-// of a disaggregated preset and empty otherwise; nodeRank is the node of a
-// multi-node preset, whose arguments carry the placeholders {{master_addr}}
-// and {{master_port}} for the caller to fill.
+// the preset's, else the fit's GPU count per pipeline stage. A fit across nodes
+// runs pipeline parallel across them: the preset's stages, else one per node.
+// vendor is the GPU vendor (or cpu) of the image the arguments are for. role is
+// "prefill" or "decode" for one side of a disaggregated preset and empty
+// otherwise; nodeRank is the node of a multi-node preset, whose arguments carry
+// the placeholders {{master_addr}} and {{master_port}} for the caller to fill.
 // A field the flag table cannot express is an error naming the backend version.
 func RenderRole(m ModelTemplate, p Preset, bv BackendVersion, fit ModelFit, draft *DraftModel, vendor, role string, nodeRank int) ([]string, error) {
 	args, err := render(p, bv.Flags, fit, draft, vendor, role, nodeRank)
@@ -42,12 +43,18 @@ func render(p Preset, f FlagTable, fit ModelFit, draft *DraftModel, vendor, role
 	}
 
 	pp := p.Topology.Pipeline
-	if pp > 1 && p.TensorParallel == 0 {
-		// The world size is tensor times pipeline parallel, so the fit's GPU
-		// count does not say how to split it.
+	tp := cmp.Or(p.TensorParallel, fit.GPUCount)
+	switch {
+	case fit.Nodes > 1:
+		pp = cmp.Or(pp, fit.Nodes)
+		if p.TensorParallel == 0 {
+			tp = fit.GPUCount / pp
+		}
+	case pp > 1 && p.TensorParallel == 0:
+		// The world size is tensor times pipeline parallel, so a single-node
+		// fit's GPU count does not say how to split it.
 		return nil, errors.New("pipeline parallel needs an explicit tensor_parallel")
 	}
-	tp := cmp.Or(p.TensorParallel, fit.GPUCount)
 	switch role {
 	case "prefill":
 		tp = p.Topology.Prefill

@@ -544,7 +544,11 @@ func validatePreset(m ModelTemplate, p Preset, q Quantization, bv BackendVersion
 	if p.Topology.Kind == "disaggregated" {
 		roles = []string{"prefill", "decode"}
 	}
-	fit := ModelFit{ModelSlug: m.Slug, Quantization: p.Quantization, GPUCount: cmp.Or(p.TensorParallel, 1)}
+	fit := ModelFit{ModelSlug: m.Slug, Quantization: p.Quantization, GPUCount: cmp.Or(p.TensorParallel, 1), Nodes: 1}
+	if t := p.Topology; t.Kind == "multi-node" {
+		// Across its nodes, so its pipeline parallel renders as deployed.
+		fit.GPUCount, fit.Nodes = fit.GPUCount*cmp.Or(t.Pipeline, t.Nodes), t.Nodes
+	}
 	for _, vendor := range vendors {
 		for _, role := range roles {
 			if _, err := RenderRole(m, p, bv, fit, draft, vendor, role, 0); err != nil {
