@@ -150,6 +150,19 @@ func patchRow[T any](tx *gorm.DB, st stamp, v Values, where string, args ...any)
 	if err != nil {
 		return false, nil, err
 	}
+	// fieldProvenance stamps a column without provenance even when its value
+	// is unchanged; a patch stamps only the columns it sets.
+	prev := meta(&o).fields.Data()
+	for col := range fp {
+		if _, set := v.Columns[col]; set {
+			continue
+		}
+		if p, ok := prev[col]; ok {
+			fp[col] = p
+		} else {
+			delete(fp, col)
+		}
+	}
 	var kept []Conflict
 	for i, f := range fields {
 		if got := f.Interface(); !reflect.DeepEqual(got, imported[i]) {

@@ -23,24 +23,8 @@ func TestLiveHubMatchesRecordings(t *testing.T) {
 	jobs := append(plan(committed(t), func(string, string) bool { return true }), job{owner: store.Manifest{ModelSlug: "missing"},
 		src: catalog.ModelSource{Type: catalog.SourceHuggingFace, Repo: "Qwen/Qwen2.5-14B-Instruct", Revision: strings.Repeat("f", 40)}})
 	for _, j := range jobs {
-		if got, want := view(live.read(ctx, j)), view(recorded.read(ctx, j)); !reflect.DeepEqual(got, want) {
+		if got, want := live.read(ctx, j).record(), recorded.read(ctx, j).record(); !reflect.DeepEqual(got, want) {
 			t.Errorf("%s:\n live     %+v\n recorded %+v", j, got, want)
 		}
 	}
-}
-
-type sourceView struct {
-	Info    *info
-	Files   []catalog.ModelFile
-	Weights int64
-	Config  *config
-	Errs    []string
-}
-
-func view(r source) sourceView {
-	v := sourceView{Info: r.info, Files: r.files, Weights: r.weights, Config: r.config}
-	for _, err := range r.errs {
-		v.Errs = append(v.Errs, err.Error())
-	}
-	return v
 }

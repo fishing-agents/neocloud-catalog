@@ -10,14 +10,19 @@
 //
 // A source the Hub refuses (a missing revision, a gated repository without
 // an accepted token, errors after retries) is listed in the run's errors and
-// keeps its rows; the run fails only when it could read no source, when its
-// write fails, or when it is cancelled, which writes nothing.
+// keeps its rows; the summary counts the sources read in full and those with
+// errors. The run fails only when it could read no source, when its write
+// fails, or when it is cancelled, which writes nothing. Its input version
+// hashes what the Hub returned that the run used, so it changes with the
+// imported facts (a token making gated files readable, a licence change)
+// and not with download counts.
 package huggingface
 
 import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -85,17 +90,50 @@ type entry struct {
 	} `json:"lfs"`
 }
 
-// config is the part of config.json that sizes the model.
+// config is the part of config.json that sizes the model. MoE lists its keys
+// and architectures naming experts or MoE; a dense model has none.
 type config struct {
-	Layers        int `json:"num_hidden_layers"`
-	Heads         int `json:"num_attention_heads"`
-	KVHeads       int `json:"num_key_value_heads"`
-	HeadDim       int `json:"head_dim"`
-	Hidden        int `json:"hidden_size"`
-	Intermediate  int `json:"intermediate_size"`
-	MaxPositions  int `json:"max_position_embeddings"`
-	Experts       int `json:"num_local_experts"`
-	ExpertsPerTok int `json:"num_experts_per_tok"`
+	Layers        int      `json:"num_hidden_layers"`
+	Heads         int      `json:"num_attention_heads"`
+	KVHeads       int      `json:"num_key_value_heads"`
+	HeadDim       int      `json:"head_dim"`
+	Hidden        int      `json:"hidden_size"`
+	Intermediate  int      `json:"intermediate_size"`
+	MaxPositions  int      `json:"max_position_embeddings"`
+	Experts       int      `json:"num_local_experts"`
+	ExpertsPerTok int      `json:"num_experts_per_tok"`
+	Architectures []string `json:"architectures"`
+	MoE           []string `json:"-"`
+}
+
+func parseConfig(b []byte) (config, error) {
+	var c config
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(b, &c); err != nil {
+		return c, fmt.Errorf("config.json: %w", err)
+	}
+	if err := json.Unmarshal(b, &keys); err != nil {
+		return c, fmt.Errorf("config.json: %w", err)
+	}
+	moe := func(s string) bool {
+		s = strings.ToLower(s)
+		return strings.Contains(s, "expert") || strings.Contains(s, "moe")
+	}
+	for k := range keys {
+		if moe(k) {
+			c.MoE = append(c.MoE, k)
+		}
+	}
+	for _, a := range c.Architectures {
+		if moe(a) {
+			c.MoE = append(c.MoE, a)
+		}
+	}
+	slices.Sort(c.MoE)
+	if a := c.architecture(); a.Layers == 0 || a.AttentionHeads == 0 || a.HeadDim == 0 || c.MaxPositions == 0 {
+		return c, errors.New("config.json lacks the layers, attention heads, head size or maximum position")
+	}
+	return c, nil
 }
 
 func (c config) architecture() catalog.Architecture {
@@ -109,14 +147,23 @@ func (c config) architecture() catalog.Architecture {
 	return a
 }
 
-// active is the parameters one token runs through: a mixture of experts
-// skips the gated MLPs (three hidden x intermediate matrices per layer) of
-// the experts it does not route to.
-func (c config) active(total int64) int64 {
-	if c.Experts == 0 || c.ExpertsPerTok == 0 {
-		return total
+// mixtral are the expert keys of a Mixtral-style mixture: every layer routes
+// each token to num_experts_per_tok of num_local_experts gated MLPs, with no
+// shared experts.
+var mixtral = []string{"num_experts_per_tok", "num_local_experts"}
+
+// active is the parameters one token runs through: all of a dense model's;
+// a Mixtral-style mixture skips the gated MLPs (three hidden x intermediate
+// matrices per layer) of the experts it does not route to. Other mixtures
+// are not recognised.
+func (c config) active(total int64) (int64, error) {
+	switch {
+	case len(c.MoE) == 0:
+		return total, nil
+	case slices.Equal(c.MoE, mixtral) && c.Experts > c.ExpertsPerTok && c.ExpertsPerTok > 0:
+		return total - int64(c.Experts-c.ExpertsPerTok)*int64(c.Layers)*3*int64(c.Hidden)*int64(c.Intermediate), nil
 	}
-	return total - int64(c.Experts-c.ExpertsPerTok)*int64(c.Layers)*3*int64(c.Hidden)*int64(c.Intermediate)
+	return 0, fmt.Errorf("config.json: mixture of experts %v not recognised, active parameters not imported", c.MoE)
 }
 
 // job is a source to read: its owner (a quantization or a draft model),
@@ -161,13 +208,36 @@ func plan(in store.Inputs, upstream func(kind, key string) bool) []job {
 }
 
 // source is what a source's revision says; a part that could not be read is
-// zero and its error listed.
+// zero and its error listed. active is the parameters per token a reference
+// source's config gives, 0 when unknown.
 type source struct {
 	info    *info
 	files   []catalog.ModelFile
 	weights int64
 	config  *config
+	active  int64
 	errs    []error
+}
+
+// record is what a read gave, the input a run's input version hashes.
+type record struct {
+	Info    *info
+	Files   []catalog.ModelFile
+	Weights int64
+	Config  *config
+	MoE     []string
+	Errs    []string
+}
+
+func (r source) record() record {
+	rec := record{Info: r.info, Files: r.files, Weights: r.weights, Config: r.config}
+	if r.config != nil {
+		rec.MoE = r.config.MoE
+	}
+	for _, err := range r.errs {
+		rec.Errs = append(rec.Errs, err.Error())
+	}
+	return rec
 }
 
 // read reads j's source: its info, then its tree, and config.json for a
@@ -195,17 +265,22 @@ func (c *client) read(ctx context.Context, j job) source {
 	if err != nil {
 		r.errs = append(r.errs, err)
 	}
-	if j.ref {
-		var cfg config
-		err := c.getJSON(ctx, c.endpoint+"/"+j.src.Repo+"/resolve/"+j.src.Revision+"/config.json", &cfg)
-		a := cfg.architecture()
-		if err == nil && (a.Layers == 0 || a.AttentionHeads == 0 || a.HeadDim == 0 || cfg.MaxPositions == 0) {
-			err = errors.New("config.json lacks the layers, attention heads, head size or maximum position")
-		}
-		if err != nil {
+	if !j.ref {
+		return r
+	}
+	body, _, err := c.get(ctx, c.endpoint+"/"+j.src.Repo+"/resolve/"+j.src.Revision+"/config.json")
+	var cfg config
+	if err == nil {
+		cfg, err = parseConfig(body)
+	}
+	if err != nil {
+		r.errs = append(r.errs, err)
+		return r
+	}
+	r.config = &cfg
+	if inf.Safetensors != nil && inf.Safetensors.Total > 0 {
+		if r.active, err = cfg.active(inf.Safetensors.Total); err != nil {
 			r.errs = append(r.errs, err)
-		} else {
-			r.config = &cfg
 		}
 	}
 	return r
@@ -217,9 +292,9 @@ var errDigestHidden = errors.New("LFS digest hidden")
 // them: it loads only the first one a revision has.
 var weightFormats = []string{".safetensors", ".bin", ".pt", ".pth"}
 
-// manifest is the files of tree a server fetches: all but the weights in
-// formats other than the first present (Meta's original/*.pth, Mistral's
-// consolidated *.pt). A gguf quantization's manifest is its curated
+// manifest is the files of tree a server fetches: all but empty files and the
+// weights in formats other than the first present (Meta's original/*.pth,
+// Mistral's consolidated *.pt). A gguf quantization's manifest is its curated
 // selection as the tree has it, since the repository holds every
 // quantization. weights is the size of the manifest's weight files; it is
 // known even when a digest is not (a gated repository read without a token),
@@ -240,7 +315,7 @@ func manifest(tree []entry, gguf bool, selection []catalog.ModelFile) ([]catalog
 			weights += tree[i].Size
 		}
 	} else {
-		files := slices.DeleteFunc(slices.Clone(tree), func(e entry) bool { return e.Type != "file" })
+		files := slices.DeleteFunc(slices.Clone(tree), func(e entry) bool { return e.Type != "file" || e.Size == 0 })
 		format := ""
 		for _, ext := range weightFormats {
 			if slices.ContainsFunc(files, func(e entry) bool { return path.Ext(e.Path) == ext }) {
@@ -293,9 +368,9 @@ func modelValues(r source) map[string]any {
 	if r.config != nil {
 		cols["architecture"] = r.config.architecture()
 		cols["context_max"] = r.config.MaxPositions
-		if params > 0 {
-			cols["params_active_b"] = tenths(r.config.active(params))
-		}
+	}
+	if r.active > 0 {
+		cols["params_active_b"] = tenths(r.active)
 	}
 	return cols
 }
@@ -312,23 +387,34 @@ func (i *Importer) Run(ctx context.Context, s *store.Store, run uuid.UUID) (impo
 	})
 	c := &client{Importer: i}
 	h := sha256.New()
-	var sum importers.Summary
+	enc := json.NewEncoder(h)
+	sum := importers.Summary{Sources: &importers.SourceCounts{}}
 	var p store.Patch
 	weighed := map[string]bool{}
-	read := 0
+	readable := 0
 	for _, j := range jobs {
-		fmt.Fprintln(h, j)
 		r := c.read(ctx, j)
 		if err := ctx.Err(); err != nil {
+			return importers.Summary{}, err
+		}
+		if err := enc.Encode(struct {
+			Job string
+			record
+		}{j.String(), r.record()}); err != nil {
 			return importers.Summary{}, err
 		}
 		for _, err := range r.errs {
 			sum.Errors = append(sum.Errors, fmt.Sprintf("%s: %v", j, err))
 		}
+		if len(r.errs) > 0 {
+			sum.Sources.Failed++
+		} else {
+			sum.Sources.Read++
+		}
 		if r.info == nil {
 			continue
 		}
-		read++
+		readable++
 		if j.ref {
 			p.Values = append(p.Values, store.Values{Kind: store.KindModel, Key: j.owner.ModelSlug, Columns: modelValues(r)})
 		}
@@ -348,7 +434,7 @@ func (i *Importer) Run(ctx context.Context, s *store.Store, run uuid.UUID) (impo
 		}
 	}
 	sum.InputVersion = "sha256:" + hex.EncodeToString(h.Sum(nil))
-	if read == 0 && len(jobs) > 0 {
+	if readable == 0 && len(jobs) > 0 {
 		return sum, fmt.Errorf("no source could be read: %s", strings.Join(sum.Errors, "; "))
 	}
 	sum.Changes, sum.Conflicts, err = s.Patch(ctx, run, p)

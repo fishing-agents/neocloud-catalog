@@ -766,7 +766,9 @@ components:
       description: >-
         the importer's result; changes counts the rows it changed per table,
         conflicts lists the imported values curated ones were kept over, errors
-        the parts of its input a succeeded run could not read
+        the parts of its input the run could not read and sources counts the
+        sources read in full and those with errors. A succeeded run may list
+        errors and failed sources: it imported what it could read.
       required: [changes]
       properties:
         changes:
@@ -781,6 +783,14 @@ components:
           type: array
           items:
             type: string
+        sources:
+          type: object
+          required: [read, failed]
+          properties:
+            read:
+              type: integer
+            failed:
+              type: integer
       additionalProperties: true
     ImportConflict:
       x-go-type: store.Conflict

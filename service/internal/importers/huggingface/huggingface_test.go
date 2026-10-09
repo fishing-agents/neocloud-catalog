@@ -38,7 +38,10 @@ var ctx = context.Background()
 // hub serves the Hub responses recorded under testdata/hf: the file
 // <repo>/<revision>/<call>.<status>.<ext> answers a call (info, tree or
 // config) of a repository at a revision. An unrecorded call fails the test.
-func hub(t *testing.T) *httptest.Server {
+func hub(t *testing.T) *httptest.Server { return rewritingHub(t, nil) }
+
+// rewritingHub is hub with each recorded body passed through rewrite.
+func rewritingHub(t *testing.T, rewrite func(path string, body []byte) []byte) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		repo, rev, call, ok := route(r.URL.Path)
@@ -56,6 +59,9 @@ func hub(t *testing.T) *httptest.Server {
 		body, rerr := os.ReadFile(matches[0])
 		if err != nil || rerr != nil {
 			t.Errorf("fixture %s: %v %v", matches[0], err, rerr)
+		}
+		if rewrite != nil {
+			body = rewrite(r.URL.Path, body)
 		}
 		w.Header().Set("Content-Type", map[string]string{"json": "application/json; charset=utf-8", "txt": "text/plain; charset=utf-8"}[name[2]])
 		w.WriteHeader(status)
@@ -204,11 +210,11 @@ var manifestSizes = map[string]int{
 	"RedHatAI/Llama-3.1-8B-Instruct-speculator.eagle3": 9, "lmsys/sglang-EAGLE3-LLaMA3.1-Instruct-8B": 4,
 }
 
-// Importing the committed catalog: weights, architecture, context, licence
-// and gating equal the curated values, the differences (nominal parameter
-// counts, Qwen's YaRN context) are listed and the curated values kept (R12);
-// gated sources without a token are listed as errors; every other source gets
-// its manifest. A second run changes nothing.
+// Importing the committed catalog: parameters, weights, architecture,
+// context, licence and gating equal the curated values (R18, R19), so no
+// conflict is listed; gated sources without a token are listed as errors and
+// counted failed; every other source gets its manifest. A second run changes
+// nothing.
 func TestImportCuratedCatalog(t *testing.T) {
 	s, db := newStore(t, "hf_curated")
 	in := committed(t)
@@ -225,15 +231,11 @@ func TestImportCuratedCatalog(t *testing.T) {
 		t.Fatalf("run = %+v, want a succeeded huggingface run of the upstream layer", first)
 	}
 	sum, conflicts := summaryOf(t, first)
-	diff(t, "conflicts", conflicts, []string{
-		`{"kind":"model","key":"llama-3.1-70b","field":"params_b","curated":70,"imported":70.6}`,
-		`{"kind":"model","key":"mixtral-8x7b","field":"params_b","curated":47,"imported":46.7}`,
-		`{"kind":"model","key":"gemma-2-9b","field":"params_b","curated":9,"imported":9.2}`,
-		`{"kind":"model","key":"qwen-2.5-14b","field":"context_max","curated":131072,"imported":32768}`,
-		`{"kind":"model","key":"qwen-2.5-14b","field":"params_active_b","curated":14,"imported":14.8}`,
-		`{"kind":"model","key":"qwen-2.5-14b","field":"params_b","curated":14,"imported":14.8}`,
-	})
+	diff(t, "conflicts", conflicts, []string{})
 	diff(t, "errors", sum.Errors, curatedRunErrors)
+	if sum.Sources == nil || *sum.Sources != (importers.SourceCounts{Read: 11, Failed: 3}) {
+		t.Errorf("sources = %+v, want 11 read and the 3 gated failed", sum.Sources)
+	}
 	inserted := 0
 	for _, n := range manifestSizes {
 		inserted += n
@@ -325,18 +327,65 @@ func TestImportCuratedCatalog(t *testing.T) {
 	}
 }
 
-// Over values no curation holds the importer writes what the Hub says, each
-// column recording its run; values it agrees with keep their provenance.
-func TestImportFillsUncuratedValues(t *testing.T) {
-	s, _ := newStore(t, "hf_fill")
-	seed(t, s, "other", committed(t))
+// nominal sets the values curated before R18/R19, which the Hub contradicts:
+// rounded parameter counts and Qwen's YaRN context.
+func nominal(in store.Inputs) store.Inputs {
+	in.Models[2].ParamsB = 47
+	qwen := &in.Models[4]
+	qwen.ParamsB, qwen.ParamsActiveB, qwen.ContextMax = 14, 14, 131072
+	return in
+}
+
+// Curated values the Hub contradicts are kept with their curation provenance
+// and listed as conflicts (R12).
+func TestImportKeepsCuratedValues(t *testing.T) {
+	s, _ := newStore(t, "hf_keep")
+	in := nominal(committed(t))
+	seed(t, s, model.SourceCuration, in)
 	run, err := importers.Execute(ctx, s, testImporter(hub(t).URL, ""), uuid.New())
 	if err != nil {
 		t.Fatal(err)
 	}
 	sum, conflicts := summaryOf(t, run)
-	if len(conflicts) != 0 || sum.Changes["models"] != (store.Change{Updated: 4}) {
-		t.Errorf("conflicts %v, changes %+v; want none and 4 models updated", conflicts, sum.Changes)
+	diff(t, "conflicts", conflicts, []string{
+		`{"kind":"model","key":"mixtral-8x7b","field":"params_b","curated":47,"imported":46.7}`,
+		`{"kind":"model","key":"qwen-2.5-14b","field":"context_max","curated":131072,"imported":32768}`,
+		`{"kind":"model","key":"qwen-2.5-14b","field":"params_active_b","curated":14,"imported":14.8}`,
+		`{"kind":"model","key":"qwen-2.5-14b","field":"params_b","curated":14,"imported":14.8}`,
+	})
+	if _, ok := sum.Changes["models"]; ok {
+		t.Errorf("changes %+v, want no model updated", sum.Changes)
+	}
+	eff, err := s.Effective(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q := eff.Models[4]; q.ContextMax != 131072 || q.ParamsB != 14 || eff.Models[2].ParamsB != 47 {
+		t.Errorf("qwen context %d params %v, mixtral params %v; want the curated values", q.ContextMax, q.ParamsB, eff.Models[2].ParamsB)
+	}
+	p, err := s.Provenance(ctx, store.KindModel, "qwen-2.5-14b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"context_max", "params_b", "params_active_b"} {
+		if src := p[0].Fields[f].Source; src != model.SourceCuration {
+			t.Errorf("qwen %s provenance %s, want curation kept", f, src)
+		}
+	}
+}
+
+// Over values no curation holds the importer writes what the Hub says, each
+// column recording its run; values it agrees with keep their provenance.
+func TestImportFillsUncuratedValues(t *testing.T) {
+	s, _ := newStore(t, "hf_fill")
+	seed(t, s, "other", nominal(committed(t)))
+	run, err := importers.Execute(ctx, s, testImporter(hub(t).URL, ""), uuid.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum, conflicts := summaryOf(t, run)
+	if len(conflicts) != 0 || sum.Changes["models"] != (store.Change{Updated: 2}) {
+		t.Errorf("conflicts %v, changes %+v; want none and mixtral and qwen updated", conflicts, sum.Changes)
 	}
 	eff, err := s.Effective(ctx)
 	if err != nil {
@@ -381,6 +430,9 @@ func TestMissingRevisionFailsTheSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	sum, conflicts := summaryOf(t, run)
+	if sum.Sources == nil || *sum.Sources != (importers.SourceCounts{Read: 10, Failed: 4}) {
+		t.Errorf("sources = %+v, want 10 read, 4 failed", sum.Sources)
+	}
 	missing := "qwen-2.5-14b/bf16 Qwen/Qwen2.5-14B-Instruct@" + qwen.Revision + ": GET /api/models/Qwen/Qwen2.5-14B-Instruct/revision/" +
 		qwen.Revision + ": HTTP 404: Invalid rev id: " + qwen.Revision
 	diff(t, "errors", sum.Errors, slices.Insert(slices.Clone(curatedRunErrors), 6, missing))
@@ -418,6 +470,9 @@ func TestUnreachableHubFailsTheRun(t *testing.T) {
 	if n := calls.Load(); n != 2*14 {
 		t.Errorf("%d requests, want 2 per source (one retry) for 14 sources", n)
 	}
+	if sum, _ := summaryOf(t, run); sum.Sources == nil || *sum.Sources != (importers.SourceCounts{Failed: 14}) {
+		t.Errorf("sources = %+v, want all 14 failed", sum.Sources)
+	}
 	if after := rowTimes(t, db); !reflect.DeepEqual(after, before) {
 		t.Error("failed run changed rows")
 	}
@@ -454,7 +509,7 @@ func TestMixtralActiveParameters(t *testing.T) {
 	if len(r.errs) > 0 || r.config == nil || r.info == nil || r.info.Safetensors == nil {
 		t.Fatalf("read: %v", r.errs)
 	}
-	active := float64(r.config.active(r.info.Safetensors.Total)) / 1e9
+	active := float64(r.active) / 1e9
 	if math.Abs(active-12.9) > 0.1 {
 		t.Errorf("active parameters %.3f B, want within 0.1 of 12.9", active)
 	}
@@ -565,5 +620,114 @@ func TestTreeFollowsNextPage(t *testing.T) {
 	next = other.URL + "/api/models/o/m/tree/r?recursive=1&cursor=x"
 	if _, err := c.tree(ctx, srv.URL+"/api/models/o/m/tree/r?recursive=1"); err == nil || elsewhere.Load() != 0 {
 		t.Errorf("next page on another host: err %v, %d requests there; want refused", err, elsewhere.Load())
+	}
+}
+
+// The input version identifies what the run imported: unchanged by fields the
+// importer does not use (download counts), changed by one it does (licence).
+func TestInputVersionFollowsTheData(t *testing.T) {
+	s, _ := newStore(t, "hf_version")
+	seed(t, s, model.SourceCuration, committed(t))
+	const qwenInfo = "/api/models/Qwen/Qwen2.5-14B-Instruct/revision/cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8"
+	version := func(rewrite func(string, []byte) []byte) string {
+		t.Helper()
+		run, err := importers.Execute(ctx, s, testImporter(rewritingHub(t, rewrite).URL, ""), uuid.New())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return run.InputVersion
+	}
+	replace := func(old, new string) func(string, []byte) []byte {
+		return func(path string, body []byte) []byte {
+			if path == qwenInfo {
+				if !strings.Contains(string(body), old) {
+					t.Fatalf("qwen info lacks %s", old)
+				}
+				return []byte(strings.Replace(string(body), old, new, 1))
+			}
+			return body
+		}
+	}
+	recorded := version(nil)
+	if v := version(replace(`"downloads":`, `"downloads":1`)); v != recorded {
+		t.Errorf("download count changed the input version: %s, recorded %s", v, recorded)
+	}
+	if v := version(replace(`"license":"apache-2.0"`, `"license":"mit"`)); v == recorded {
+		t.Error("a licence change kept the input version")
+	}
+}
+
+// A Retry-After beyond maxRetryAfter fails the request at once instead of
+// spending the run's job timeout.
+func TestRetryAfterIsCapped(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Retry-After", "3600")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	t.Cleanup(srv.Close)
+	start := time.Now()
+	_, _, err := (&client{Importer: testImporter(srv.URL, "")}).get(ctx, srv.URL+"/x")
+	if err == nil || !strings.Contains(err.Error(), "Retry-After 1h0m0s exceeds 5m0s") || calls.Load() != 1 || time.Since(start) > time.Second {
+		t.Errorf("err %v after %d requests in %s; want an immediate error naming the Retry-After", err, calls.Load(), time.Since(start))
+	}
+}
+
+// An empty file in a revision has nothing to fetch or verify: it is left
+// out of the manifest rather than failing the source.
+func TestManifestSkipsEmptyFiles(t *testing.T) {
+	oid := strings.Repeat("a", 40)
+	files, weights, err := manifest([]entry{
+		{Type: "file", Path: ".gitkeep", OID: oid},
+		{Type: "file", Path: "config.json", Size: 2, OID: oid},
+		{Type: "file", Path: "model.safetensors", Size: 8, OID: oid, LFS: &struct {
+			OID string `json:"oid"`
+		}{strings.Repeat("b", 64)}},
+	}, false, nil)
+	if err != nil || weights != 8 || len(files) != 2 || files[0].Path != "config.json" {
+		t.Errorf("manifest %+v weights %d, err %v; want config.json and the weights", files, weights, err)
+	}
+}
+
+// Active parameters are imported for a dense model and a Mixtral-style
+// mixture only; another mixture layout is listed, its active count omitted.
+func TestActiveParametersOfKnownLayoutsOnly(t *testing.T) {
+	cases := map[string]struct {
+		config string
+		active int64
+		err    string
+	}{
+		"dense": {`{"architectures":["Qwen2ForCausalLM"]}`, 1000, ""},
+		"mixtral": {`{"architectures":["MixtralForCausalLM"],"num_local_experts":8,"num_experts_per_tok":2,"output_router_logits":false}`,
+			1000 - 6*2*3*4*5, ""},
+		"qwen moe": {`{"architectures":["Qwen2MoeForCausalLM"],"num_experts":60,"num_experts_per_tok":4,"moe_intermediate_size":1408}`, 0,
+			"mixture of experts [Qwen2MoeForCausalLM moe_intermediate_size num_experts num_experts_per_tok] not recognised"},
+		"shared experts": {`{"architectures":["DeepseekV3ForCausalLM"],"n_routed_experts":256,"n_shared_experts":1,"num_experts_per_tok":8}`, 0,
+			"mixture of experts [n_routed_experts n_shared_experts num_experts_per_tok] not recognised"},
+	}
+	for name, c := range cases {
+		body := strings.Replace(c.config, "{", `{"num_hidden_layers":2,"num_attention_heads":2,"hidden_size":4,"intermediate_size":5,"max_position_embeddings":8,`, 1)
+		cfg, err := parseConfig([]byte(body))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		active, err := cfg.active(1000)
+		if active != c.active || c.err == "" && err != nil || c.err != "" && (err == nil || !strings.Contains(err.Error(), c.err)) {
+			t.Errorf("%s: active %d, err %v; want %d, %q", name, active, err, c.active, c.err)
+		}
+	}
+
+	srv := rewritingHub(t, func(path string, body []byte) []byte {
+		if strings.HasSuffix(path, "/config.json") {
+			return []byte(strings.Replace(string(body), "{", `{"n_shared_experts":1,`, 1))
+		}
+		return body
+	})
+	r := (&client{Importer: testImporter(srv.URL, "")}).read(ctx, job{src: catalog.ModelSource{Type: catalog.SourceHuggingFace,
+		Repo: "mistralai/Mixtral-8x7B-Instruct-v0.1", Revision: "eba92302a2861cdc0098cc54bc9f17cb2c47eb61"}, ref: true})
+	cols := modelValues(r)
+	if _, ok := cols["params_active_b"]; ok || cols["params_b"] != 46.7 || len(r.errs) != 1 || !strings.Contains(r.errs[0].Error(), "not recognised") {
+		t.Errorf("columns %v, errors %v; want params_b without params_active_b and the layout listed", cols, r.errs)
 	}
 }

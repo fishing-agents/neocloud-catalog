@@ -39,6 +39,14 @@ type Summary struct {
 	Changes      store.Changes    `json:"changes"`
 	Conflicts    []store.Conflict `json:"conflicts,omitempty"`
 	Errors       []string         `json:"errors,omitempty"`
+	Sources      *SourceCounts    `json:"sources,omitempty"`
+}
+
+// SourceCounts are the sources of a run's input it read in full and those it
+// listed errors for; a succeeded run may have failed sources.
+type SourceCounts struct {
+	Read   int `json:"read"`
+	Failed int `json:"failed"`
 }
 
 // Registry holds importers by name.

@@ -15,7 +15,8 @@ data_dir = "../data"
 
 [huggingface]
 # token_file holds the Hugging Face token gated repositories need (a mounted
-# secret, never the token itself). Empty: the huggingface importer reports
+# secret, never the token itself). It is read once at startup: a rotated
+# token takes effect after a restart. Empty: the huggingface importer reports
 # gated sources as "gated: token missing".
 token_file = ""
 

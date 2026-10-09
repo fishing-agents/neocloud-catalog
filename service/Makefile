@@ -11,7 +11,7 @@ build:
 	$(GO) build ./...
 
 generate:
-	$(GO) run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest -config api/codegen.yaml api/openapi.yaml
+	$(GO) run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0 -config api/codegen.yaml api/openapi.yaml
 
 vet:
 	$(GO) vet ./...

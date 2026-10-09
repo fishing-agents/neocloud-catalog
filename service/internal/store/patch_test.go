@@ -77,7 +77,7 @@ func TestPatchKeepsCuratedValues(t *testing.T) {
 	run := startRun(t, db, model.LayerUpstream, "huggingface")
 	changes, conflicts, err := s.Patch(ctx, run, store.Patch{
 		Values: []store.Values{
-			{Kind: store.KindModel, Key: qwen.Slug, Columns: map[string]any{"context_max": 32768, "params_b": 14.0}},
+			{Kind: store.KindModel, Key: qwen.Slug, Columns: map[string]any{"context_max": 131072, "params_b": 14.8}},
 			{Kind: store.KindQuantization, Key: qwen.Slug + "/bf16", Columns: map[string]any{"weights_gb": 29.5}},
 		},
 		Manifests: []store.Manifest{manifestOf(qwen, 0, twoFiles), manifestOf(qwen, 2, []catalog.ModelFile{bigger})},
@@ -89,7 +89,7 @@ func TestPatchKeepsCuratedValues(t *testing.T) {
 		t.Errorf("changes = %+v, want %+v", changes, want)
 	}
 	wantConflicts := []string{
-		`{"kind":"model","key":"qwen-2.5-14b","field":"context_max","curated":131072,"imported":32768}`,
+		`{"kind":"model","key":"qwen-2.5-14b","field":"context_max","curated":32768,"imported":131072}`,
 		`{"kind":"source","key":"qwen-2.5-14b/Q4_K_M huggingface bartowski/Qwen2.5-14B-Instruct-GGUF","field":"files/Qwen2.5-14B-Instruct-Q4_K_M.gguf",` +
 			`"curated":{"path":"Qwen2.5-14B-Instruct-Q4_K_M.gguf","size":8988110976,"digest":"sha256:e47ad95dad6ff848b431053b375adb5d39321290ea2c638682577dafca87c008"},` +
 			`"imported":{"path":"Qwen2.5-14B-Instruct-Q4_K_M.gguf","size":8988110977,"digest":"sha256:e47ad95dad6ff848b431053b375adb5d39321290ea2c638682577dafca87c008"}}`,
@@ -211,4 +211,40 @@ func TestPatchRefuses(t *testing.T) {
 		}
 	}
 	sameCore(t, effective(t, s), in)
+}
+
+// A patch stamps only the columns it sets: a column the row has no field
+// provenance for (one a later migration added) stays without one.
+func TestPatchStampsOnlyItsColumns(t *testing.T) {
+	s, db := newStore(t, "patch_untouched")
+	in := committed(t)
+	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, "other"), in); err != nil {
+		t.Fatal(err)
+	}
+	llama := in.Models[0]
+	if err := db.Exec(`UPDATE models SET field_provenance = field_provenance - 'license' WHERE slug = ?`, llama.Slug).Error; err != nil {
+		t.Fatal(err)
+	}
+	patch := func(contextMax int) store.Changes {
+		t.Helper()
+		changes, _, err := s.Patch(ctx, startRun(t, db, model.LayerUpstream, "huggingface"),
+			store.Patch{Values: []store.Values{{Kind: store.KindModel, Key: llama.Slug, Columns: map[string]any{"context_max": contextMax}}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return changes
+	}
+	if changes := patch(llama.ContextMax); len(changes) != 0 {
+		t.Errorf("same value: changes %+v, want none", changes)
+	}
+	if changes := patch(1); !reflect.DeepEqual(changes, store.Changes{"models": {Updated: 1}}) {
+		t.Errorf("new value: changes %+v, want the model updated", changes)
+	}
+	fields := provenance(t, s, store.KindModel, llama.Slug)[0].Fields
+	if f, ok := fields["license"]; ok {
+		t.Errorf("license provenance %+v, want none: the patch did not set it", f)
+	}
+	if fields["context_max"].Source != "huggingface" {
+		t.Errorf("context_max provenance %+v, want the patch's", fields["context_max"])
+	}
 }

@@ -16,6 +16,11 @@ import (
 // stays well below it.
 const maxBody = 64 << 20
 
+// maxRetryAfter bounds a Retry-After the importer waits out; the Hub asking
+// for longer fails the request, so one throttled source cannot spend the
+// run's jobs.job_timeout.
+const maxRetryAfter = 5 * time.Minute
+
 // client reads the Hub for one run, spacing its requests.
 type client struct {
 	*Importer
@@ -31,8 +36,8 @@ type httpError struct {
 func (e *httpError) Error() string { return fmt.Sprintf("HTTP %d: %s", e.code, e.msg) }
 
 // get reads rawURL. It spaces requests by interval and retries transport
-// errors, 429 and 5xx up to retries times, after Retry-After when the
-// response has one, else after a doubling backoff.
+// errors, 429 and 5xx up to retries times, after Retry-After (at most
+// maxRetryAfter) when the response has one, else after a doubling backoff.
 func (c *client) get(ctx context.Context, rawURL string) ([]byte, http.Header, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -63,6 +68,9 @@ func (c *client) get(ctx context.Context, rawURL string) ([]byte, http.Header, e
 				retry = code == http.StatusTooManyRequests || code >= 500
 				if d, ok := retryAfter(resp.Header.Get("Retry-After")); ok {
 					wait = d
+				}
+				if retry && wait > maxRetryAfter {
+					err, retry = fmt.Errorf("%w (Retry-After %s exceeds %s)", err, wait, maxRetryAfter), false
 				}
 			}
 		}

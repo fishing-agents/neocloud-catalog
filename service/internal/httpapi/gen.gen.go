@@ -238,15 +238,19 @@ type ImportRun struct {
 	// Status queued until a worker starts the run
 	Status RunStatus `json:"status"`
 
-	// Summary the importer's result; changes counts the rows it changed per table, conflicts lists the imported values curated ones were kept over, errors the parts of its input a succeeded run could not read
+	// Summary the importer's result; changes counts the rows it changed per table, conflicts lists the imported values curated ones were kept over, errors the parts of its input the run could not read and sources counts the sources read in full and those with errors. A succeeded run may list errors and failed sources: it imported what it could read.
 	Summary ImportSummary `json:"summary"`
 }
 
-// ImportSummary the importer's result; changes counts the rows it changed per table, conflicts lists the imported values curated ones were kept over, errors the parts of its input a succeeded run could not read
+// ImportSummary the importer's result; changes counts the rows it changed per table, conflicts lists the imported values curated ones were kept over, errors the parts of its input the run could not read and sources counts the sources read in full and those with errors. A succeeded run may list errors and failed sources: it imported what it could read.
 type ImportSummary struct {
-	Changes              map[string]Change      `json:"changes"`
-	Conflicts            *[]ImportConflict      `json:"conflicts,omitempty"`
-	Errors               *[]string              `json:"errors,omitempty"`
+	Changes   map[string]Change `json:"changes"`
+	Conflicts *[]ImportConflict `json:"conflicts,omitempty"`
+	Errors    *[]string         `json:"errors,omitempty"`
+	Sources   *struct {
+		Failed int `json:"failed"`
+		Read   int `json:"read"`
+	} `json:"sources,omitempty"`
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
@@ -444,6 +448,14 @@ func (a *ImportSummary) UnmarshalJSON(b []byte) error {
 		delete(object, "errors")
 	}
 
+	if raw, found := object["sources"]; found {
+		err = json.Unmarshal(raw, &a.Sources)
+		if err != nil {
+			return fmt.Errorf("error reading 'sources': %w", err)
+		}
+		delete(object, "sources")
+	}
+
 	if len(object) != 0 {
 		a.AdditionalProperties = make(map[string]interface{})
 		for fieldName, fieldBuf := range object {
@@ -481,6 +493,13 @@ func (a ImportSummary) MarshalJSON() ([]byte, error) {
 		object["errors"], err = json.Marshal(a.Errors)
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling 'errors': %w", err)
+		}
+	}
+
+	if a.Sources != nil {
+		object["sources"], err = json.Marshal(a.Sources)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'sources': %w", err)
 		}
 	}
 

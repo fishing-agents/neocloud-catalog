@@ -58,8 +58,8 @@ type BootstrapConfig struct {
 }
 
 // HuggingFaceConfig: TokenFile holds the Hugging Face token (a mounted
-// secret) the huggingface importer reads gated repositories with; empty
-// reads public metadata only.
+// secret) the huggingface importer reads gated repositories with, read once
+// at startup (rotation needs a restart); empty reads public metadata only.
 type HuggingFaceConfig struct {
 	TokenFile string `koanf:"token_file"`
 }
