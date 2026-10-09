@@ -11,6 +11,12 @@ image:
   digest: ""
   pullPolicy: IfNotPresent
 
+# Pull secrets of the Deployment and the migrate Job (which also pulls the
+# service image as its image volume), e.g. [{name: catalog-registry}]. A
+# kubernetes.io/dockerconfigjson Secret can serve both this and
+# registryAuth.secretName.
+imagePullSecrets: []
+
 service:
   port: 8080
   metricsPort: 8081
@@ -69,6 +75,7 @@ signing:
 # A Secret holding the Hugging Face token gated repositories need (licences
 # accepted on its account). Read once at startup: a rotated token takes effect
 # after a restart. Empty: gated sources are reported "gated: token missing".
+# Not mounted in an operator deployment, which has no huggingface importer.
 huggingface:
   tokenSecretName: ""
   tokenSecretKey: token
@@ -83,7 +90,8 @@ registryAuth:
 # as files: publicKey and overlayPublicKey are cosign public keys (PEM) that
 # replace the keyless identities of the release and the overlay; trustedRoot
 # is a Sigstore trusted_root.json for keyless verification without network
-# access to the public-good TUF repository (air-gapped).
+# access to the public-good TUF repository (air-gapped). Refused without
+# config.upstream.ref.
 upstreamTrust:
   publicKey: ""
   overlayPublicKey: ""

@@ -1,3 +1,7 @@
+{{- $trust := .Values.upstreamTrust -}}
+{{- if and (or $trust.publicKey $trust.overlayPublicKey $trust.trustedRoot) (not (.Values.config.upstream | default dict).ref) -}}
+{{- fail "upstreamTrust.* needs config.upstream.ref: the trust material verifies the upstream release" -}}
+{{- end -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:

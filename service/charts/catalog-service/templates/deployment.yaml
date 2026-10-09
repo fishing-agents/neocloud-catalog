@@ -20,6 +20,10 @@ spec:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         {{- include "catalog-service.podSecurityContext" . | nindent 8 }}
       containers:
@@ -56,7 +60,7 @@ spec:
               mountPath: /var/run/secrets/catalog-service/signing
               readOnly: true
             {{- end }}
-            {{- if .Values.huggingface.tokenSecretName }}
+            {{- if include "catalog-service.hfTokenSecret" . }}
             - name: huggingface
               mountPath: /var/run/secrets/catalog-service/huggingface
               readOnly: true
@@ -90,12 +94,12 @@ spec:
               - key: cosign.key
                 path: cosign.key
         {{- end }}
-        {{- if .Values.huggingface.tokenSecretName }}
+        {{- with include "catalog-service.hfTokenSecret" . }}
         - name: huggingface
           secret:
-            secretName: {{ .Values.huggingface.tokenSecretName }}
+            secretName: {{ . }}
             items:
-              - key: {{ .Values.huggingface.tokenSecretKey }}
+              - key: {{ $.Values.huggingface.tokenSecretKey }}
                 path: token
         {{- end }}
         {{- if .Values.registryAuth.secretName }}

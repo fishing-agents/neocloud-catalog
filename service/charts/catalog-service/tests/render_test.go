@@ -57,8 +57,9 @@ type container struct {
 }
 
 type podSpec struct {
-	Containers []container
-	Volumes    []volume
+	Containers       []container
+	Volumes          []volume
+	ImagePullSecrets []struct{ Name string } `yaml:"imagePullSecrets"`
 }
 
 type object struct {
@@ -341,9 +342,33 @@ func TestOperatorMode(t *testing.T) {
 }
 
 func TestHuggingFaceToken(t *testing.T) {
-	r := render(t, "--set", "huggingface.tokenSecretName=hf", "--set", "huggingface.tokenSecretKey=hf_token")
+	token := []string{"--set", "huggingface.tokenSecretName=hf", "--set", "huggingface.tokenSecretKey=hf_token"}
+	r := render(t, token...)
 	if got := r.file(t, r.get(t, "Deployment", "catalog-service"), r.config(t).HuggingFace.TokenFile); got != "secret hf hf_token" {
 		t.Errorf("huggingface.token_file from %s", got)
+	}
+
+	// An operator deployment has no huggingface importer: no token mounted.
+	r = render(t, append([]string{"-f", "fixtures/operator.yaml"}, token...)...)
+	if f := r.config(t).HuggingFace.TokenFile; f != "" {
+		t.Errorf("operator mode: huggingface.token_file = %q", f)
+	}
+	for _, v := range r.get(t, "Deployment", "catalog-service").Spec.Template.Spec.Volumes {
+		if v.Secret != nil && v.Secret.SecretName == "hf" {
+			t.Errorf("operator mode mounts the Hugging Face token Secret as %s", v.Name)
+		}
+	}
+}
+
+// The migrate Job pulls the service image too (its image volume), so both
+// pods carry the pull secrets.
+func TestImagePullSecrets(t *testing.T) {
+	r := render(t, "--set", "imagePullSecrets[0].name=catalog-registry")
+	for _, kind := range [][2]string{{"Deployment", "catalog-service"}, {"Job", "catalog-service-migrate"}} {
+		got := r.get(t, kind[0], kind[1]).Spec.Template.Spec.ImagePullSecrets
+		if len(got) != 1 || got[0].Name != "catalog-registry" {
+			t.Errorf("%s imagePullSecrets = %+v", kind[0], got)
+		}
 	}
 }
 
@@ -372,6 +397,8 @@ func TestRefused(t *testing.T) {
 	}{
 		{"no DSN Secret", "1.36.0", []string{"--set", "database.dsnSecretName="}, "database.dsnSecretName is required"},
 		{"publish without a key", "1.36.0", []string{"--set", "config.release.ref=r.example/c:v4"}, "signing.secretName is required"},
+		{"trust without upstream", "1.36.0", []string{"--set", "upstreamTrust.publicKey=pem"}, "upstreamTrust.* needs config.upstream.ref"},
+		{"trusted root without upstream", "1.36.0", []string{"--set", "upstreamTrust.trustedRoot={}"}, "upstreamTrust.* needs config.upstream.ref"},
 		{"kubernetes 1.35", "1.35.0", nil, "kubeVersion"},
 	} {
 		out, err := template(t, tc.kube, tc.args...)

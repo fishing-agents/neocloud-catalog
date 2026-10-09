@@ -206,8 +206,9 @@ Secrets are referenced, never values:
 |---|---|---|
 | `database.dsnSecretName`, `dsnSecretKey` | the Postgres DSN | service and migrate Job (env only) |
 | `signing.secretName` | `cosign.key`, `cosign.password` | `release.key`; required with `config.release.ref` |
-| `huggingface.tokenSecretName`, `tokenSecretKey` | Hugging Face token | `huggingface.token_file` (gated repositories) |
+| `huggingface.tokenSecretName`, `tokenSecretKey` | Hugging Face token | `huggingface.token_file` (gated repositories); not mounted in an operator deployment |
 | `registryAuth.secretName` | `kubernetes.io/dockerconfigjson` | pushing releases, pulling a private upstream |
+| `imagePullSecrets` | `kubernetes.io/dockerconfigjson` | pulling the service image (Deployment and migrate Job); may name the `registryAuth` Secret |
 
 ```sh
 kubectl create secret generic catalog-service-db --from-literal=dsn='postgres://...'
@@ -252,7 +253,8 @@ Air-gapped or private registries: `upstreamTrust.publicKey` and
 `overlayPublicKey` (PEM) trust a key instead of a keyless identity,
 `upstreamTrust.trustedRoot` (a Sigstore `trusted_root.json`) verifies keyless
 signatures without the public-good TUF repository, and
-`config.upstream.plain_http` talks HTTP to a registry mirror.
+`config.upstream.plain_http` talks HTTP to a registry mirror. The chart
+refuses `upstreamTrust` without `config.upstream.ref`.
 
 The operator's neocloud-api then trusts the operator's key:
 `catalog.ref` at the operator's release, `catalog.public_key` and

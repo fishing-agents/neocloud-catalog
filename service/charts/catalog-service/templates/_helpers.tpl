@@ -24,6 +24,14 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | default .Chart.Version }}
       key: {{ .Values.database.dsnSecretKey }}
 {{- end -}}
 
+{{/*
+The HF token Secret, unless this is an operator deployment (upstream.ref
+set), which refuses the huggingface importer.
+*/}}
+{{- define "catalog-service.hfTokenSecret" -}}
+{{- if not (.Values.config.upstream | default dict).ref }}{{ .Values.huggingface.tokenSecretName }}{{ end -}}
+{{- end -}}
+
 {{- define "catalog-service.securityContext" -}}
 allowPrivilegeEscalation: false
 readOnlyRootFilesystem: true
@@ -49,7 +57,7 @@ directory and the paths it mounts Secrets and trust material at).
 {{- $_ := set $cfg "server" (merge (dict "addr" (printf "0.0.0.0:%v" .Values.service.port)) ($cfg.server | default dict)) -}}
 {{- $_ := set $cfg "telemetry" (merge (dict "metrics_addr" (printf "0.0.0.0:%v" .Values.service.metricsPort)) ($cfg.telemetry | default dict)) -}}
 {{- $_ := set $cfg "bootstrap" (merge (dict "data_dir" "/data") ($cfg.bootstrap | default dict)) -}}
-{{- if .Values.huggingface.tokenSecretName -}}
+{{- if include "catalog-service.hfTokenSecret" . -}}
 {{- $_ := set $cfg "huggingface" (merge (dict "token_file" "/var/run/secrets/catalog-service/huggingface/token") ($cfg.huggingface | default dict)) -}}
 {{- end -}}
 {{- $release := $cfg.release | default dict -}}

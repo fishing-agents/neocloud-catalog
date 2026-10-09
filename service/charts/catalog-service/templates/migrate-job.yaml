@@ -36,6 +36,10 @@ spec:
         app: {{ include "catalog-service.name" . }}-migrate
     spec:
       restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         {{- include "catalog-service.podSecurityContext" . | nindent 8 }}
       containers:
