@@ -1,0 +1,11 @@
+[server]
+addr = "0.0.0.0:8080"
+read_timeout = "15s"
+write_timeout = "15s"
+
+[database]
+dsn = "postgres://neocloud:neocloud@localhost:5432/neocloud_catalog?sslmode=disable"
+max_conns = 20
+
+[telemetry]
+metrics_addr = "0.0.0.0:8081"

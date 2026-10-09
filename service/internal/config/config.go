@@ -1,0 +1,151 @@
+// Package config loads the service configuration: embedded TOML defaults, an
+// optional overlay directory of *.toml merged in lexical order (later wins),
+// then NEOCLOUD_CATALOG_<KEY> env overrides matched to known keys
+// (NEOCLOUD_CATALOG_DATABASE_MAX_CONNS -> database.max_conns).
+package config
+
+import (
+	"embed"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/knadh/koanf/parsers/toml"
+	"github.com/knadh/koanf/providers/file"
+	"github.com/knadh/koanf/providers/rawbytes"
+	"github.com/knadh/koanf/v2"
+)
+
+//go:embed defaults.toml
+var defaultsFS embed.FS
+
+const envPrefix = "NEOCLOUD_CATALOG_"
+
+type Config struct {
+	Server    ServerConfig    `koanf:"server"`
+	Database  DatabaseConfig  `koanf:"database"`
+	Telemetry TelemetryConfig `koanf:"telemetry"`
+}
+
+type ServerConfig struct {
+	Addr         string        `koanf:"addr"`
+	ReadTimeout  time.Duration `koanf:"read_timeout"`
+	WriteTimeout time.Duration `koanf:"write_timeout"`
+}
+
+type DatabaseConfig struct {
+	DSN      string `koanf:"dsn"`
+	MaxConns int    `koanf:"max_conns"`
+}
+
+type TelemetryConfig struct {
+	MetricsAddr string `koanf:"metrics_addr"`
+}
+
+// applyEnv sets NEOCLOUD_CATALOG_<NAME> on the known key whose path, with "."
+// and "_" removed, equals NAME without "_" (case-insensitive). A plain "_" ->
+// "." mapping cannot reach keys that contain underscores. Names matching no
+// known key, or more than one, are ignored rather than guessed.
+func applyEnv(k *koanf.Koanf) error {
+	strip := func(s string) string {
+		return strings.ToLower(strings.NewReplacer(".", "", "_", "").Replace(s))
+	}
+	keys := map[string]string{}
+	ambiguous := map[string]bool{}
+	for _, key := range k.Keys() {
+		sk := strip(key)
+		if _, dup := keys[sk]; dup {
+			ambiguous[sk] = true
+		}
+		keys[sk] = key
+	}
+	for _, kv := range os.Environ() {
+		name, val, _ := strings.Cut(kv, "=")
+		n, ok := strings.CutPrefix(name, envPrefix)
+		if !ok {
+			continue
+		}
+		sk := strip(n)
+		key, ok := keys[sk]
+		if !ok || ambiguous[sk] {
+			continue
+		}
+		if err := k.Set(key, val); err != nil {
+			return fmt.Errorf("env %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// Load builds the merged, validated Config. overlayDir is optional; pass "" to
+// skip.
+func Load(overlayDir string) (*Config, error) {
+	k := koanf.New(".")
+
+	def, err := defaultsFS.ReadFile("defaults.toml")
+	if err != nil {
+		return nil, fmt.Errorf("read embedded defaults: %w", err)
+	}
+	if err := k.Load(rawbytes.Provider(def), toml.Parser()); err != nil {
+		return nil, fmt.Errorf("load embedded defaults: %w", err)
+	}
+
+	if overlayDir != "" {
+		files, _ := filepath.Glob(filepath.Join(overlayDir, "*.toml"))
+		sort.Strings(files)
+		for _, f := range files {
+			if err := k.Load(file.Provider(f), toml.Parser()); err != nil {
+				return nil, fmt.Errorf("load overlay %s: %w", f, err)
+			}
+		}
+	}
+
+	if err := applyEnv(k); err != nil {
+		return nil, err
+	}
+
+	var cfg Config
+	if err := k.Unmarshal("", &cfg); err != nil {
+		return nil, fmt.Errorf("decode config: %w", err)
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+func (c *Config) Validate() error {
+	if c.Database.DSN == "" {
+		return errors.New("database.dsn is required")
+	}
+	if c.Database.MaxConns < 0 {
+		return fmt.Errorf("database.max_conns must not be negative, got %d", c.Database.MaxConns)
+	}
+	if c.Server.Addr == "" {
+		return errors.New("server.addr is required")
+	}
+	if c.Telemetry.MetricsAddr == "" {
+		return errors.New("telemetry.metrics_addr is required")
+	}
+	if c.Telemetry.MetricsAddr == c.Server.Addr {
+		return fmt.Errorf("telemetry.metrics_addr must differ from server.addr (%s)", c.Server.Addr)
+	}
+	for _, d := range []struct {
+		key string
+		d   time.Duration
+	}{{"server.read_timeout", c.Server.ReadTimeout}, {"server.write_timeout", c.Server.WriteTimeout}} {
+		if d.d <= 0 {
+			return fmt.Errorf("%s must be a positive duration, got %s", d.key, d.d)
+		}
+	}
+	return nil
+}
+
+// OverlayDir is the overlay directory NEOCLOUD_CATALOG_CONFIG_DIR names, or "".
+func OverlayDir() string {
+	return os.Getenv(envPrefix + "CONFIG_DIR")
+}
