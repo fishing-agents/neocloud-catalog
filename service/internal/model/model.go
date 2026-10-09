@@ -6,7 +6,6 @@
 package model
 
 import (
-	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -82,19 +81,6 @@ type FieldSource struct {
 // FieldProvenance maps a field name to where that field's value came from;
 // the row's Provenance stays the row's origin.
 type FieldProvenance map[string]FieldSource
-
-// CuratedFields returns the fields whose value is curated, sorted; importers
-// leave them alone.
-func (p FieldProvenance) CuratedFields() []string {
-	var fields []string
-	for f, s := range p {
-		if s.Source == SourceCuration {
-			fields = append(fields, f)
-		}
-	}
-	slices.Sort(fields)
-	return fields
-}
 
 type Family struct {
 	Base
@@ -398,9 +384,9 @@ type Release struct {
 
 // ImportRun is one importer run; importers are idempotent per (Importer,
 // InputVersion). Source and SourceURL are the provenance of the rows the run
-// writes (an importer's name, or "curation" for curated input), as of StartedAt. Summary holds
-// the result and diff summary. ReleaseVersion is the upstream release an
-// upstream import wrote, recorded in the transaction that wrote it.
+// writes (the importer's name), as of StartedAt. Summary holds the result and
+// diff summary. ReleaseVersion is the upstream release an upstream import
+// wrote, recorded in the transaction that wrote it.
 type ImportRun struct {
 	Base
 	Timestamps
