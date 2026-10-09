@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"strings"
 	"time"
 
 	catalog "github.com/fishman/neocloud-catalog"
@@ -56,9 +57,12 @@ func run() error {
 
 	// Unchanged content keeps the committed version, so the release workflow
 	// reproduces the committed snapshot byte for byte.
-	var prev catalog.CatalogSnapshot
-	if err := loadJSON(snapshotPath, &prev); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	prev, changed, err := previous(snapshotPath)
+	if err != nil {
 		return err
+	}
+	if changed != "" {
+		fmt.Println(changed)
 	}
 	snap.Version, snap.GeneratedAt = prev.Version, prev.GeneratedAt
 	if prev.Version == "" || snap.Digest() != prev.Digest() {
@@ -71,6 +75,33 @@ func run() error {
 	fmt.Printf("wrote %s (version=%s models=%d fits=%d backends=%d digest=%s)\n",
 		snapshotPath, snap.Version, len(snap.Models), len(snap.Fits), len(snap.Backends), snap.Digest())
 	return nil
+}
+
+// previous reads the committed snapshot. One that does not decode or has
+// another schema major.minor is changed content: it returns an empty snapshot
+// and the reason, so a shape change gets a new version instead of failing.
+func previous(path string) (catalog.CatalogSnapshot, string, error) {
+	var prev catalog.CatalogSnapshot
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return prev, "", nil
+	}
+	if err != nil {
+		return prev, "", err
+	}
+	if err := json.Unmarshal(b, &prev); err != nil {
+		return catalog.CatalogSnapshot{}, fmt.Sprintf("previous %s does not decode (%v): new version", path, err), nil
+	}
+	if majorMinor(prev.SchemaVersion) != majorMinor(catalog.SchemaVersion) {
+		return catalog.CatalogSnapshot{}, fmt.Sprintf("previous %s has schema %q, not %s: new version", path, prev.SchemaVersion, catalog.SchemaVersion), nil
+	}
+	return prev, "", nil
+}
+
+func majorMinor(v string) string {
+	major, rest, _ := strings.Cut(v, ".")
+	minor, _, _ := strings.Cut(rest, ".")
+	return major + "." + minor
 }
 
 func loadJSON(path string, v any) error {
