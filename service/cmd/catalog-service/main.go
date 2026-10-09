@@ -116,7 +116,9 @@ commands:
                     mint an API key for the /v1 API (neocatalog_<prefix>_...);
                     it is printed once and stored only as its SHA-256
 
-import and generate work the queue themselves until their job finished.
+import and generate work the queue themselves until their job finished, and
+then until a job of another process they took finished (at most
+jobs.job_timeout); a signal cancels their own job only, a second one exits.
 
 config: embedded defaults, then $NEOCLOUD_CATALOG_CONFIG_DIR/*.toml, then
 NEOCLOUD_CATALOG_<KEY> env (NEOCLOUD_CATALOG_DATABASE_DSN -> database.dsn)`)
@@ -257,6 +259,9 @@ func registry(cfg *config.Config) (importers.Registry, error) {
 func runJob(cfg *config.Config, sqlDB *sql.DB, s *store.Store, reg importers.Registry, args river.JobArgs) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// A second signal exits at once, leaving a job still running to be
+	// rescued after jobs.rescue_after.
+	context.AfterFunc(ctx, stop)
 	out, err := work(ctx, cfg, sqlDB, s, reg, args)
 	if err != nil {
 		log.Fatalf("%s: %v", args.Kind(), err)
@@ -268,6 +273,10 @@ func runJob(cfg *config.Config, sqlDB *sql.DB, s *store.Store, reg importers.Reg
 	fmt.Println(b.String())
 }
 
+// work runs args as a job on the catalog queue, which serve's worker shares:
+// either may take either's jobs. A job of another process this worker took
+// is neither cancelled by ctx nor by stopping, which waits for it; ctx
+// cancels args' job only.
 func work(ctx context.Context, cfg *config.Config, sqlDB *sql.DB, s *store.Store, reg importers.Registry, args river.JobArgs) ([]byte, error) {
 	if err := jobs.Migrate(ctx, sqlDB); err != nil {
 		return nil, fmt.Errorf("river migrate: %w", err)
@@ -276,15 +285,20 @@ func work(ctx context.Context, cfg *config.Config, sqlDB *sql.DB, s *store.Store
 	if err != nil {
 		return nil, err
 	}
-	if err := c.Start(ctx); err != nil {
+	if err := c.Start(context.WithoutCancel(ctx)); err != nil {
 		return nil, err
 	}
-	defer c.Shutdown(cfg.Server.WriteTimeout)
+	defer c.Stop(context.Background())
 	res, err := c.Insert(ctx, args, nil)
 	if err != nil {
 		return nil, err
 	}
-	return jobs.Wait(ctx, c, res.Job.ID)
+	out, err := jobs.Wait(ctx, c, res.Job.ID)
+	if ctx.Err() != nil {
+		_, cancelErr := c.JobCancel(context.WithoutCancel(ctx), res.Job.ID)
+		err = errors.Join(err, cancelErr)
+	}
+	return out, err
 }
 
 func cmdReleaseCreate(args []string) {
