@@ -765,7 +765,9 @@ components:
       type: object
       description: >-
         the importer's result; changes counts the rows it changed per table,
-        conflicts lists the imported values curated ones were kept over, errors
+        conflicts lists the imported values curated ones were kept over (for
+        the kaito cross-check, which writes nothing, the catalog's values
+        KAITO's model catalog disagrees with), errors
         the parts of its input the run could not read and sources counts the
         sources read in full and those with errors. A succeeded run may list
         errors and failed sources: it imported what it could read.
@@ -800,7 +802,9 @@ components:
       type: object
       description: >-
         a curated value kept over an imported one; field is a column, or
-        files/<path> of a curated manifest, where a file one side lacks is null
+        files/<path> of a curated manifest, where a file one side lacks is
+        null. The kaito cross-check lists the effective catalog's value as
+        curated and KAITO's as imported.
       required: [kind, key, field, curated, imported]
       properties:
         kind:
@@ -863,7 +867,7 @@ components:
       properties:
         importer:
           type: string
-          description: the importer's name (bootstrap-from-json, epoch, huggingface)
+          description: the importer's name (bootstrap-from-json, epoch, huggingface, azure-prices, kaito)
     ReleaseCreate:
       type: object
       required: [generator_run]

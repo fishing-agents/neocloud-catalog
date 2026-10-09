@@ -32,6 +32,7 @@ import (
 	"github.com/fishman/neocloud-catalog/service/internal/importers/bootstrap"
 	"github.com/fishman/neocloud-catalog/service/internal/importers/epoch"
 	"github.com/fishman/neocloud-catalog/service/internal/importers/huggingface"
+	"github.com/fishman/neocloud-catalog/service/internal/importers/kaito"
 	"github.com/fishman/neocloud-catalog/service/internal/jobs"
 	"github.com/fishman/neocloud-catalog/service/internal/model"
 	"github.com/fishman/neocloud-catalog/service/internal/release"
@@ -83,9 +84,12 @@ commands:
                     families.overlay.json in bootstrap.data_dir),
                     huggingface (manifests, weights and model facts of the
                     upstream sources at their pinned revisions; gated
-                    repositories need huggingface.token_file) or
+                    repositories need huggingface.token_file),
                     azure-prices (Azure Retail Prices of the azure/ node
-                    types in azure_prices.regions, internal)
+                    types in azure_prices.regions, internal) or kaito
+                    (cross-check of model architectures and context limits
+                    against KAITO's model catalog at its pinned release;
+                    lists disagreements, writes nothing)
   generate          run the generator over the effective catalog as a job on
                     the catalog queue, and print its run
   release create <generator-run-id>
@@ -206,7 +210,7 @@ func registry(cfg *config.Config) importers.Registry {
 		log.Fatalf("bootstrap.data_dir: %v", err)
 	}
 	return importers.NewRegistry(boot, hardware, huggingface.New(huggingface.Endpoint, token),
-		azureprices.New(azureprices.Endpoint, cfg.AzurePrices.Regions))
+		azureprices.New(azureprices.Endpoint, cfg.AzurePrices.Regions), kaito.New(kaito.Catalog))
 }
 
 // runJob enqueues args and works the catalog queue until the job finished,

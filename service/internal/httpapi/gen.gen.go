@@ -215,12 +215,12 @@ type GeneratorRun struct {
 	Status RunStatus `json:"status"`
 }
 
-// ImportConflict a curated value kept over an imported one; field is a column, or files/<path> of a curated manifest, where a file one side lacks is null
+// ImportConflict a curated value kept over an imported one; field is a column, or files/<path> of a curated manifest, where a file one side lacks is null. The kaito cross-check lists the effective catalog's value as curated and KAITO's as imported.
 type ImportConflict = store.Conflict
 
 // ImportCreate defines model for ImportCreate.
 type ImportCreate struct {
-	// Importer the importer's name (bootstrap-from-json, epoch, huggingface)
+	// Importer the importer's name (bootstrap-from-json, epoch, huggingface, azure-prices, kaito)
 	Importer string `json:"importer"`
 }
 
@@ -241,11 +241,11 @@ type ImportRun struct {
 	// Status queued until a worker starts the run
 	Status RunStatus `json:"status"`
 
-	// Summary the importer's result; changes counts the rows it changed per table, conflicts lists the imported values curated ones were kept over, errors the parts of its input the run could not read and sources counts the sources read in full and those with errors. A succeeded run may list errors and failed sources: it imported what it could read.
+	// Summary the importer's result; changes counts the rows it changed per table, conflicts lists the imported values curated ones were kept over (for the kaito cross-check, which writes nothing, the catalog's values KAITO's model catalog disagrees with), errors the parts of its input the run could not read and sources counts the sources read in full and those with errors. A succeeded run may list errors and failed sources: it imported what it could read.
 	Summary ImportSummary `json:"summary"`
 }
 
-// ImportSummary the importer's result; changes counts the rows it changed per table, conflicts lists the imported values curated ones were kept over, errors the parts of its input the run could not read and sources counts the sources read in full and those with errors. A succeeded run may list errors and failed sources: it imported what it could read.
+// ImportSummary the importer's result; changes counts the rows it changed per table, conflicts lists the imported values curated ones were kept over (for the kaito cross-check, which writes nothing, the catalog's values KAITO's model catalog disagrees with), errors the parts of its input the run could not read and sources counts the sources read in full and those with errors. A succeeded run may list errors and failed sources: it imported what it could read.
 type ImportSummary struct {
 	Changes   map[string]Change `json:"changes"`
 	Conflicts *[]ImportConflict `json:"conflicts,omitempty"`
