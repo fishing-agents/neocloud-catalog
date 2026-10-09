@@ -35,12 +35,10 @@ const (
 
 var ctx = context.Background()
 
-// hub serves the Hub responses recorded under testdata/hf: the file
-// <repo>/<revision>/<call>.<status>.<ext> answers a call (info, tree or
-// config) of a repository at a revision. An unrecorded call fails the test.
+// hub serves testdata/hf/<repo>/<revision>/<call>.<status>.<ext>; an unrecorded
+// call fails the test.
 func hub(t *testing.T) *httptest.Server { return rewritingHub(t, nil) }
 
-// rewritingHub is hub with each recorded body passed through rewrite.
 func rewritingHub(t *testing.T, rewrite func(path string, body []byte) []byte) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -71,7 +69,6 @@ func rewritingHub(t *testing.T, rewrite func(path string, body []byte) []byte) *
 	return srv
 }
 
-// route names the recorded call of a Hub request path.
 func route(p string) (repo, rev, call string, ok bool) {
 	s := strings.Split(strings.TrimPrefix(p, "/"), "/")
 	switch {
@@ -85,7 +82,6 @@ func route(p string) (repo, rev, call string, ok bool) {
 	return "", "", "", false
 }
 
-// testImporter reads endpoint without spacing requests, retrying quickly.
 func testImporter(endpoint, token string) *Importer {
 	i := New(endpoint, token)
 	i.interval, i.getter.Backoff = 0, time.Millisecond
@@ -108,7 +104,6 @@ func committed(t *testing.T) store.Inputs {
 	return in
 }
 
-// seed writes in into the upstream layer as a finished run of source.
 func seed(t *testing.T, s *store.Store, source string, in store.Inputs) {
 	t.Helper()
 	run, err := s.StartImport(ctx, uuid.New(), "seed", model.LayerUpstream, source, "")
@@ -123,7 +118,6 @@ func seed(t *testing.T, s *store.Store, source string, in store.Inputs) {
 	}
 }
 
-// rowTimes maps every curated row's id to its update time.
 func rowTimes(t *testing.T, db *gorm.DB) map[uuid.UUID]time.Time {
 	t.Helper()
 	rows := map[uuid.UUID]time.Time{}
@@ -164,8 +158,6 @@ func diff(t *testing.T, what string, got, want []string) {
 	}
 }
 
-// filesBySource are the manifests of the effective catalog's sources by type
-// and repository.
 func filesBySource(in store.Inputs) map[string][]catalog.ModelFile {
 	files := map[string][]catalog.ModelFile{}
 	for _, m := range in.Models {
@@ -181,8 +173,7 @@ func filesBySource(in store.Inputs) map[string][]catalog.ModelFile {
 	return files
 }
 
-// gatedErrors are what a run without a token reports for a gated reference
-// source: its LFS digests are hidden and its config.json refused.
+// gatedErrors are a tokenless run's errors for a gated reference source.
 func gatedErrors(owner, repo, rev, firstLFS string) []string {
 	src := owner + " " + repo + "@" + rev + ": "
 	return []string{
@@ -198,9 +189,8 @@ var curatedRunErrors = slices.Concat(
 	gatedErrors("gemma-2-9b/bf16", "google/gemma-2-9b-it", "11c9b309abf73637e4b6f9a3fa1e92e615547819", "model-00001-of-00004.safetensors"),
 )
 
-// manifestSizes are the number of files the Hub's trees give each
-// huggingface source of the committed data: none for a gated repository
-// read without a token, the curated selection of a gguf quantization.
+// manifestSizes are file counts per source; none for gated sources read without
+// a token.
 var manifestSizes = map[string]int{
 	"meta-llama/Llama-3.1-8B-Instruct": 0, "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8": 11, "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF": 1,
 	"meta-llama/Llama-3.1-70B-Instruct": 0, "RedHatAI/Meta-Llama-3.1-70B-Instruct-FP8": 24,
@@ -210,11 +200,8 @@ var manifestSizes = map[string]int{
 	"RedHatAI/Llama-3.1-8B-Instruct-speculator.eagle3": 9, "lmsys/sglang-EAGLE3-LLaMA3.1-Instruct-8B": 4,
 }
 
-// Importing the committed catalog: parameters, weights, architecture,
-// context, licence and gating equal the curated values (R18, R19), so no
-// conflict is listed; gated sources without a token are listed as errors and
-// counted failed; every other source gets its manifest. A second run changes
-// nothing.
+// The committed catalog imports without conflicts; tokenless gated sources
+// fail; a rerun changes nothing.
 func TestImportCuratedCatalog(t *testing.T) {
 	s, db := newStore(t, "hf_curated")
 	in := committed(t)
@@ -272,7 +259,6 @@ func TestImportCuratedCatalog(t *testing.T) {
 	if f := files["huggingface lmsys/sglang-EAGLE3-LLaMA3.1-Instruct-8B"]; !slices.ContainsFunc(f, func(f catalog.ModelFile) bool { return f.Path == "pytorch_model.bin" }) {
 		t.Errorf("lmsys draft manifest %+v lacks its only weights, pytorch_model.bin", f)
 	}
-	// Apart from the filled manifests the effective catalog is the curated one.
 	for _, m := range eff.Models {
 		for _, q := range m.Quantizations {
 			for k := range q.Sources {
@@ -324,8 +310,8 @@ func TestImportCuratedCatalog(t *testing.T) {
 	}
 }
 
-// nominal sets the values curated before R18/R19, which the Hub contradicts:
-// rounded parameter counts and Qwen's YaRN context.
+// nominal sets older curated values the Hub contradicts: rounded parameters and
+// Qwen's YaRN context.
 func nominal(in store.Inputs) store.Inputs {
 	in.Models[2].ParamsB = 47
 	qwen := &in.Models[4]
@@ -333,8 +319,7 @@ func nominal(in store.Inputs) store.Inputs {
 	return in
 }
 
-// Curated values the Hub contradicts are kept with their curation provenance
-// and listed as conflicts (R12).
+// Contradicted curated values are kept and listed as conflicts.
 func TestImportKeepsCuratedValues(t *testing.T) {
 	s, _ := newStore(t, "hf_keep")
 	in := nominal(committed(t))
@@ -368,8 +353,7 @@ func TestImportKeepsCuratedValues(t *testing.T) {
 	}
 }
 
-// Over bootstrapped values (R21) the importer writes what the Hub says, each
-// column recording its run, no conflict listed; values it agrees with keep
+// Over bootstrapped values the Hub's values replace them; agreeing values keep
 // their provenance.
 func TestImportFillsUncuratedValues(t *testing.T) {
 	s, _ := newStore(t, "hf_fill")
@@ -410,7 +394,6 @@ func TestImportFillsUncuratedValues(t *testing.T) {
 	}
 }
 
-// A revision the Hub does not have fails its source, listed, not the run.
 func TestMissingRevisionFailsTheSource(t *testing.T) {
 	s, _ := newStore(t, "hf_missing")
 	in := committed(t)
@@ -442,7 +425,6 @@ func TestMissingRevisionFailsTheSource(t *testing.T) {
 	}
 }
 
-// A run that reads no source at all fails and writes nothing.
 func TestUnreachableHubFailsTheRun(t *testing.T) {
 	s, db := newStore(t, "hf_down")
 	seed(t, s, model.SourceCuration, committed(t))
@@ -470,8 +452,6 @@ func TestUnreachableHubFailsTheRun(t *testing.T) {
 	}
 }
 
-// A cancelled run (job timeout, shutdown) is recorded as failed and writes
-// nothing.
 func TestCancelledRunIsFailed(t *testing.T) {
 	s, db := newStore(t, "hf_cancel")
 	seed(t, s, model.SourceCuration, committed(t))
@@ -492,8 +472,7 @@ func TestCancelledRunIsFailed(t *testing.T) {
 	}
 }
 
-// Mixtral's active parameters follow from its config: the shared weights
-// plus two of eight experts' MLPs per layer, 12.9 B of 46.7 B.
+// Mixtral's active parameters are 12.9 B of 46.7 B.
 func TestMixtralActiveParameters(t *testing.T) {
 	c := &client{Importer: testImporter(hub(t).URL, "")}
 	r := c.read(ctx, job{src: catalog.ModelSource{Type: catalog.SourceHuggingFace, Repo: "mistralai/Mixtral-8x7B-Instruct-v0.1",
@@ -510,8 +489,8 @@ func TestMixtralActiveParameters(t *testing.T) {
 	}
 }
 
-// Requests are spaced by the interval; 429 and 5xx are retried, after
-// Retry-After when given, other errors are not.
+// Requests are spaced; 429 and 5xx are retried after Retry-After, other errors
+// are not.
 func TestRequestsAreSpacedAndRetried(t *testing.T) {
 	var calls atomic.Int32
 	statuses := []int{}
@@ -564,8 +543,8 @@ func TestRequestsAreSpacedAndRetried(t *testing.T) {
 	}
 }
 
-// A gated refusal says whether the token is missing or not accepted; the
-// token goes to the Hub only, never into an error.
+// A gated refusal says whether the token is missing or rejected, and never
+// leaks it.
 func TestGatedRefusals(t *testing.T) {
 	var auth atomic.Value
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -588,7 +567,6 @@ func TestGatedRefusals(t *testing.T) {
 	}
 }
 
-// A tree longer than a page continues at its Link rel="next", on the Hub only.
 func TestTreeFollowsNextPage(t *testing.T) {
 	var next string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -615,8 +593,7 @@ func TestTreeFollowsNextPage(t *testing.T) {
 	}
 }
 
-// The input version identifies what the run imported: unchanged by fields the
-// importer does not use (download counts), changed by one it does (licence).
+// The input version ignores download counts and follows the licence.
 func TestInputVersionFollowsTheData(t *testing.T) {
 	s, _ := newStore(t, "hf_version")
 	seed(t, s, model.SourceCuration, committed(t))
@@ -649,8 +626,6 @@ func TestInputVersionFollowsTheData(t *testing.T) {
 	}
 }
 
-// A Retry-After beyond maxRetryAfter fails the request at once instead of
-// spending the run's job timeout.
 func TestRetryAfterIsCapped(t *testing.T) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -666,8 +641,6 @@ func TestRetryAfterIsCapped(t *testing.T) {
 	}
 }
 
-// An empty file in a revision has nothing to fetch or verify: it is left
-// out of the manifest rather than failing the source.
 func TestManifestSkipsEmptyFiles(t *testing.T) {
 	oid := strings.Repeat("a", 40)
 	files, weights, err := manifest([]entry{
@@ -682,8 +655,8 @@ func TestManifestSkipsEmptyFiles(t *testing.T) {
 	}
 }
 
-// Active parameters are imported for a dense model and a Mixtral-style
-// mixture only; another mixture layout is listed, its active count omitted.
+// Active parameters import for dense and Mixtral-style models only; others are
+// listed.
 func TestActiveParametersOfKnownLayoutsOnly(t *testing.T) {
 	cases := map[string]struct {
 		config string

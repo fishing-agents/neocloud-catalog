@@ -31,8 +31,7 @@ const (
 	fixtureDir = "../../../testdata/azure"
 	h100       = "azure/Standard_ND96isr_H100_v5"
 	mi300x     = "azure/Standard_ND96isr_MI300X_v5"
-	// h100Query is the query the H100 fixture was recorded with.
-	h100Query = "%24filter=serviceName+eq+%27Virtual+Machines%27+and+armSkuName+eq+%27Standard_ND96isr_H100_v5%27+and+%28armRegionName+eq+%27eastus%27+or+armRegionName+eq+%27eastus2%27%29+and+isPrimaryMeterRegion+eq+true+and+contains%28productName%2C+%27Windows%27%29+eq+false+and+%28priceType+eq+%27Consumption%27+or+reservationTerm+eq+%271+Year%27%29"
+	h100Query  = "%24filter=serviceName+eq+%27Virtual+Machines%27+and+armSkuName+eq+%27Standard_ND96isr_H100_v5%27+and+%28armRegionName+eq+%27eastus%27+or+armRegionName+eq+%27eastus2%27%29+and+isPrimaryMeterRegion+eq+true+and+contains%28productName%2C+%27Windows%27%29+eq+false+and+%28priceType+eq+%27Consumption%27+or+reservationTerm+eq+%271+Year%27%29"
 )
 
 var (
@@ -41,9 +40,7 @@ var (
 	skuOf          = regexp.MustCompile(`armSkuName eq '([^']*)'`)
 )
 
-// recorded are the prices the fixtures give for the default regions: the
-// 1-year reservations are the term's price over 8760 hours, to the
-// micro-dollar (551221 and 269107 USD a year).
+// 1-year reservations are the term's price over 8760 hours.
 var recorded = map[string]float64{
 	h100 + " eastus on_demand":      98.32,
 	h100 + " eastus spot":           18.169536,
@@ -56,9 +53,8 @@ var recorded = map[string]float64{
 	mi300x + " eastus2 reserved_1y": 30.719977,
 }
 
-// pricesAPI serves the responses recorded under testdata/azure: the file
-// <ARM SKU name>.200.json answers the query of that SKU. fail names SKUs
-// answered 503 instead. It records the queries it got.
+// pricesAPI serves testdata/azure/<ARM SKU>.200.json; fail names SKUs answered
+// 503.
 type pricesAPI struct {
 	*httptest.Server
 	mu      sync.Mutex
@@ -97,15 +93,12 @@ func newPricesAPI(t *testing.T, fail ...string) *pricesAPI {
 	return api
 }
 
-// testImporter reads endpoint in regions, retrying quickly.
 func testImporter(endpoint string, regions ...string) *Importer {
 	i := New(endpoint+"/api/retail/prices", regions)
 	i.getter.Backoff = time.Millisecond
 	return i
 }
 
-// newStore is a store holding the committed catalog in upstream, as the
-// bootstrap writes it.
 func newStore(t *testing.T, suffix string) (*store.Store, *gorm.DB) {
 	t.Helper()
 	sqlDB, db := dbtest.Fresh(t, suffix)
@@ -130,7 +123,6 @@ func newStore(t *testing.T, suffix string) (*store.Store, *gorm.DB) {
 
 func priceKey(p model.NodeTypePrice) string { return p.NodeTypeID + " " + p.Region + " " + p.Billing }
 
-// prices are the rows of layer by node type, region and billing.
 func prices(t *testing.T, db *gorm.DB, layer string) map[string]model.NodeTypePrice {
 	t.Helper()
 	var rows []model.NodeTypePrice
@@ -168,10 +160,8 @@ func price(layer, nodeType, region, billing string, usd float64) *model.NodeType
 		NodeTypeID: nodeType, Region: region, Billing: billing, USDPerHour: usd}
 }
 
-// The recorded responses give on-demand, spot and 1-year reserved prices of
-// both Azure node types, stamped with the run, as of its start. The run
-// replaces the upstream Azure prices only: other providers' and local prices
-// stay. A second run of the same input changes nothing.
+// Recorded prices import; other providers' and local prices stay; a rerun
+// changes nothing.
 func TestImportRecordedPrices(t *testing.T) {
 	s, db := newStore(t, "azure_recorded")
 	for _, p := range []*model.NodeTypePrice{
@@ -233,9 +223,7 @@ func TestImportRecordedPrices(t *testing.T) {
 	}
 }
 
-// A node type priced in none of the regions is listed as a failed source and
-// loses its prices (R23); a node type read replaces its prices of every
-// region, so regions no longer configured lose theirs.
+// An unpriced node type loses its prices; unconfigured regions lose theirs.
 func TestUnpricedNodeTypeFailsItsSource(t *testing.T) {
 	s, db := newStore(t, "azure_unpriced")
 	api := newPricesAPI(t)
@@ -263,8 +251,8 @@ func TestUnpricedNodeTypeFailsItsSource(t *testing.T) {
 	}
 }
 
-// A node type whose prices cannot be read keeps them and is listed; a run
-// that reads no node type fails and writes nothing.
+// Unreadable prices are kept and listed; a run reading nothing fails and writes
+// nothing.
 func TestUnreadablePrices(t *testing.T) {
 	s, db := newStore(t, "azure_unreadable")
 	if _, err := importers.Execute(ctx, s, testImporter(newPricesAPI(t).URL, defaultRegions...), uuid.New()); err != nil {
@@ -288,8 +276,7 @@ func TestUnreadablePrices(t *testing.T) {
 	}
 }
 
-// A catalog without Azure node types reads nothing and is no failure: the run
-// succeeds and the upstream Azure prices go.
+// No Azure node types is no failure, and the upstream Azure prices go.
 func TestNoAzureNodeTypes(t *testing.T) {
 	sqlDB, db := dbtest.Fresh(t, "azure_none")
 	dbtest.Migrate(t, sqlDB)
@@ -315,9 +302,7 @@ func TestNoAzureNodeTypes(t *testing.T) {
 	}
 }
 
-// Rows the importer does not price are skipped, zero prices among them; a
-// node type left without a row has no prices. Prices it cannot take as USD
-// per hour, or two prices of one region and billing, fail the node type.
+// Unpriced rows are skipped; non-USD/hour or duplicate prices fail the node type.
 func TestPricesOfItems(t *testing.T) {
 	imp := New(Endpoint, defaultRegions)
 	row := func(region, sku, typ, term string, usd float64) item {
@@ -368,8 +353,6 @@ func TestPricesOfItems(t *testing.T) {
 	}
 }
 
-// Throttling is retried after Retry-After, unless it asks for longer than the
-// importer waits.
 func TestRetryAfter(t *testing.T) {
 	var calls atomic.Int32
 	retryAfter := "0"
@@ -395,7 +378,7 @@ func TestRetryAfter(t *testing.T) {
 	}
 }
 
-// A response continues at its NextPageLink on the API's origin only.
+// NextPageLink is followed on the API's origin only.
 func TestNextPageLink(t *testing.T) {
 	var elsewhere atomic.Int32
 	other := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { elsewhere.Add(1) }))

@@ -15,10 +15,7 @@ import (
 	catalog "github.com/fishman/neocloud-catalog"
 )
 
-// Exporter writes a snapshot in platform formats. Adapter and Format select
-// one adapter and one of its formats; empty selects every registered adapter
-// and every format. Extensions run on their adapter's exports; Log, if set,
-// gets a line per format and per skipped preset.
+// Exporter writes a snapshot in platform formats. Empty Adapter or Format selects all.
 type Exporter struct {
 	Adapter, Format string
 	Options         Options
@@ -26,9 +23,8 @@ type Exporter struct {
 	Log             io.Writer
 }
 
-// Write renders snap in the selected formats to out/<format>/..., refuses an
-// export whose presets are not all exported or skipped with a documented
-// reason, and writes out/SHA256SUMS over every file for the release to sign.
+// Write renders snap to out/<format>/, fails on incomplete Coverage, and writes
+// out/SHA256SUMS over every file.
 func (x Exporter) Write(out string, snap catalog.CatalogSnapshot) error {
 	if x.Log == nil {
 		x.Log = io.Discard
@@ -82,8 +78,7 @@ func (x Exporter) Write(out string, snap catalog.CatalogSnapshot) error {
 	return sums(out, files)
 }
 
-// extend runs the extensions of adapter on its export of format. An extension
-// may change the files but not which presets are exported or skipped.
+// extend runs adapter's extensions; they may change files but not which presets are exported.
 func extend(xs []ExportExtension, adapter, format string, snap catalog.CatalogSnapshot, e *Export) error {
 	for _, x := range xs {
 		if x.Adapter() != adapter {

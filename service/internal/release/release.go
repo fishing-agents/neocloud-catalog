@@ -1,7 +1,6 @@
-// Package release freezes generator runs as releases and publishes them as
-// neocloud-catalog's release workflow does and neocloud-api's catalogsrc
-// verifies: the public snapshot as a signed single-layer OCI artifact, and the
-// adapter exports with a signed SHA256SUMS.
+// Package release freezes generator runs as releases and publishes them as the
+// release workflow does: a signed single-layer OCI artifact of the snapshot,
+// and adapter exports with a signed SHA256SUMS.
 package release
 
 import (
@@ -29,8 +28,7 @@ import (
 	"github.com/fishman/neocloud-catalog/service/internal/store"
 )
 
-// BundleType is the artifact and layer type of a Sigstore bundle attached to
-// a signed manifest as an OCI referrer, as cosign v3 attaches it.
+// BundleType is the media type of a Sigstore bundle attached as an OCI referrer, as cosign v3 does.
 const BundleType = "application/vnd.dev.sigstore.bundle.v0.3+json"
 
 const (
@@ -44,10 +42,8 @@ type Release struct {
 	s *store.Store
 }
 
-// Create freezes the succeeded generator run generatorRunID as a release: its
-// version is the run's generation time, its digest the run's snapshot's at
-// that version, and its overlay the overlay layer's payloads now, pinned to
-// that digest.
+// Create freezes the succeeded generator run as a release versioned by its
+// generation time, with the current overlay pinned to its digest.
 func Create(ctx context.Context, s *store.Store, generatorRunID uuid.UUID) (Release, error) {
 	run, err := s.GeneratorRun(ctx, generatorRunID)
 	if err != nil {
@@ -83,8 +79,8 @@ func Get(ctx context.Context, s *store.Store, version string) (Release, error) {
 	return Release{rel, s}, err
 }
 
-// Snapshot returns the release's public snapshot: its generator run's at the
-// release version, refused once it no longer has the release digest.
+// Snapshot returns the release's public snapshot, refused once it no longer
+// has the release digest.
 func (r Release) Snapshot(ctx context.Context) (catalog.CatalogSnapshot, error) {
 	run, err := r.s.GeneratorRun(ctx, r.GeneratorRunID)
 	if err != nil {
@@ -101,26 +97,18 @@ func (r Release) Snapshot(ctx context.Context) (catalog.CatalogSnapshot, error) 
 	return snap, nil
 }
 
-// Target is where Publish pushes a release: Ref names the repository and the
-// tag clients poll (e.g. ghcr.io/org/neocloud-catalog:v4); OverlayRef, when
-// set, the repository and tag of the release's overlay; Signer signs every
-// pushed manifest.
+// Target is where Publish pushes: Ref is the polled repository:tag, OverlayRef
+// the optional overlay's, Signer signs every manifest.
 type Target struct {
 	Ref, OverlayRef string
 	Signer          Signer
 }
 
-// Publish pushes the release's snapshot to t.Ref's repository as the catalog
-// artifact, one catalog.ArtifactType layer under the version annotation, and,
-// with t.OverlayRef, the release's overlay (pinned to the release digest) to
-// that repository as the overlay artifact; it signs each manifest, then points
-// the tags at them and records where the release, and its overlay, were
-// published. A published release is not pushed again: publishing it again
-// changes nothing when its content still makes the published manifest, and is
-// refused otherwise; its overlay, if not published yet, is published then,
-// and refused if published elsewhere. A release older than a published one is
-// refused, its late overlay too, as clients refuse a catalog that is not
-// newer than theirs, so neither tag moves back.
+// Publish pushes and signs the snapshot artifact (and with t.OverlayRef the
+// overlay), then moves the tags and records where it was published.
+// Republishing identical content is a no-op; differing content, an overlay
+// published elsewhere, or a release older than a published one is refused,
+// since clients refuse a catalog not newer than theirs.
 func Publish(ctx context.Context, rel Release, t Target) error {
 	if t.Signer == nil {
 		return errors.New("publish: no signer")
@@ -223,10 +211,8 @@ func publish(ctx context.Context, signer Signer, pushes []push) error {
 	return nil
 }
 
-// WriteExports writes the release's adapter exports to dir, the assets the
-// file-based release workflow publishes: every format of every registered
-// adapter, SHA256SUMS over them, and signer's Sigstore bundle over SHA256SUMS
-// as SHA256SUMS.sigstore.json.
+// WriteExports writes every adapter's exports to dir, SHA256SUMS over them, and
+// signer's bundle over that as SHA256SUMS.sigstore.json.
 func WriteExports(ctx context.Context, rel Release, dir string, signer Signer) error {
 	snap, err := rel.Snapshot(ctx)
 	if err != nil {
@@ -244,8 +230,7 @@ func remoteOptions(ctx context.Context) []remote.Option {
 	return []remote.Option{remote.WithContext(ctx), remote.WithAuthFromKeychain(authn.DefaultKeychain)}
 }
 
-// artifact is a single-layer OCI artifact: an empty config, one layer of the
-// artifact type, and the manifest, which a subject makes a referrer. Its
+// artifact is a single-layer OCI artifact; a subject makes it a referrer. Its
 // manifest digest depends on its content only.
 type artifact struct {
 	config, layer v1.Layer
@@ -253,8 +238,7 @@ type artifact struct {
 	desc          v1.Descriptor
 }
 
-// newArtifact builds the artifact of body; a title names the layer's file,
-// as oras push records it.
+// newArtifact builds the artifact of body; title names the layer's file, as oras push does.
 func newArtifact(artifactType, title string, body []byte, annotations map[string]string, subject *v1.Descriptor) (artifact, error) {
 	a := artifact{config: static.NewLayer([]byte("{}"), emptyType), layer: static.NewLayer(body, types.MediaType(artifactType))}
 	config, err := partial.Descriptor(a.config)
@@ -282,7 +266,7 @@ func (a artifact) RawManifest() ([]byte, error) { return a.manifest, nil }
 
 func (a artifact) MediaType() (types.MediaType, error) { return types.OCIManifestSchema1, nil }
 
-// push writes the artifact's blobs and its manifest, by digest, to repo.
+// push writes the artifact's blobs and manifest, by digest, to repo.
 func (a artifact) push(repo name.Repository, opts []remote.Option) error {
 	for _, l := range []v1.Layer{a.config, a.layer} {
 		if err := remote.WriteLayer(repo, l, opts...); err != nil {

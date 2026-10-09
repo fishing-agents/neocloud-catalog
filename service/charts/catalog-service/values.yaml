@@ -1,20 +1,16 @@
 replicaCount: 1
 
-# Built from service/Dockerfile (context: the repository root). It carries the
-# binary, the curated data/ that bootstrap-from-json and epoch read, and the
-# versioned migrations the migrate Job applies.
+# Built from service/Dockerfile (context: repository root); carries the binary,
+# data/ and the migrations.
 image:
   repository: catalog-service
   tag: latest
-  # Optional sha256 digest; pins the image the Deployment runs and the migrate
-  # Job mounts.
+  # Optional sha256 digest pinning the Deployment's image and the migrate Job's mount.
   digest: ""
   pullPolicy: IfNotPresent
 
-# Pull secrets of the Deployment and the migrate Job (which also pulls the
-# service image as its image volume), e.g. [{name: catalog-registry}]. A
-# kubernetes.io/dockerconfigjson Secret can serve both this and
-# registryAuth.secretName.
+# Pull secrets for the Deployment and the migrate Job (which mounts the service
+# image), e.g. [{name: catalog-registry}].
 imagePullSecrets: []
 
 service:
@@ -32,22 +28,15 @@ resources:
     cpu: "1"
     memory: 1Gi
 
-# The Postgres DSN comes from a Secret, never a value. The service and the
-# migrate Job read it as NEOCLOUD_CATALOG_DATABASE_DSN.
+# Postgres DSN from a Secret, never a value (env NEOCLOUD_CATALOG_DATABASE_DSN).
 database:
   dsnSecretName: catalog-service-db
   dsnSecretKey: dsn
 
-# Service configuration: a TOML file over the service's embedded defaults
-# (service/internal/config/defaults.toml), with the same keys and sections.
-# The chart sets server.addr and telemetry.metrics_addr (from service.*),
-# bootstrap.data_dir (the image's /data), and the paths of the files it
-# mounts: huggingface.token_file, release.key and upstream.public_key,
-# overlay_public_key and trusted_root. Never put a secret here.
-#
-# Our deployment leaves upstream.ref empty: bootstrap-from-json, epoch,
-# huggingface, azure-prices and kaito run. An operator deployment sets
-# upstream.ref (see the README): upstream, azure-prices and kaito run.
+# TOML over the service defaults (service/internal/config/defaults.toml). The
+# chart sets listen addresses, bootstrap.data_dir and the paths of the files
+# it mounts. Never put a secret here. Setting upstream.ref makes an operator
+# deployment (see the README).
 config: {}
 #  auth:
 #    issuer_url: https://icp.example.com
@@ -64,41 +53,31 @@ config: {}
 #    identity_issuer: https://token.actions.githubusercontent.com
 #    identity: '^https://github\.com/fishing-agents/neocloud-catalog/\.github/workflows/release\.yml@refs/tags/v.*$'
 
-# The deployment's cosign key pair, which signs what the API publishes:
-# ours, or in an operator deployment the operator's, which signs its releases
-# and the overlays re-pinned to them. Required with config.release.ref. The
-# Secret has the layout `cosign generate-key-pair k8s://<namespace>/<name>`
-# writes: cosign.key (encrypted private key) and cosign.password.
+# Secret from `cosign generate-key-pair k8s://<namespace>/<name>` (cosign.key,
+# cosign.password) signing what the API publishes. Required with config.release.ref.
 signing:
   secretName: ""
 
-# A Secret holding the Hugging Face token gated repositories need (licences
-# accepted on its account). Read once at startup: a rotated token takes effect
-# after a restart. Empty: gated sources are reported "gated: token missing".
-# Not mounted in an operator deployment, which has no huggingface importer.
+# Secret with the Hugging Face token for gated repositories, read once at
+# startup. Not mounted in an operator deployment.
 huggingface:
   tokenSecretName: ""
   tokenSecretKey: token
 
-# A kubernetes.io/dockerconfigjson Secret with the registry credentials
-# releases are pushed with and a private upstream release or overlay is
-# pulled with. Empty: anonymous pulls, no push credentials.
+# dockerconfigjson Secret for pushing releases and pulling a private upstream.
+# Empty: anonymous pulls, no push.
 registryAuth:
   secretName: ""
 
-# Public trust material for config.upstream (operator deployments), mounted
-# as files: publicKey and overlayPublicKey are cosign public keys (PEM) that
-# replace the keyless identities of the release and the overlay; trustedRoot
-# is a Sigstore trusted_root.json for keyless verification without network
-# access to the public-good TUF repository (air-gapped). Refused without
-# config.upstream.ref.
+# Trust files for config.upstream (refused without config.upstream.ref):
+# cosign public keys replacing the keyless identities, and a Sigstore
+# trusted_root.json for air-gapped keyless verification.
 upstreamTrust:
   publicKey: ""
   overlayPublicKey: ""
   trustedRoot: ""
 
-# The pre-install and pre-upgrade hook Job: Atlas applies the image's
-# versioned migrations (never GORM AutoMigrate) before the Deployment rolls.
+# pre-install/pre-upgrade hook: Atlas applies the image's versioned migrations.
 migrate:
   image:
     repository: arigaio/atlas

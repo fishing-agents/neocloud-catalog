@@ -18,12 +18,10 @@ import (
 	"github.com/fishman/neocloud-catalog/service/internal/model"
 )
 
-// now is the current time as Postgres stores it, to the microsecond, so a
-// run's start reads back as written.
+// now is truncated to Postgres' microsecond precision so a run's start reads back as written.
 func now() time.Time { return time.Now().UTC().Truncate(time.Microsecond) }
 
-// StartImport records the running import run id of importer, started now,
-// that writes layer with source and sourceURL.
+// StartImport records a running import run of importer writing layer with source and sourceURL.
 func (s *Store) StartImport(ctx context.Context, id uuid.UUID, importer, layer, source, sourceURL string) (model.ImportRun, error) {
 	run := model.ImportRun{Base: model.Base{ID: id}, Importer: importer, Layer: layer, Source: source, SourceURL: sourceURL,
 		Status: model.RunRunning, StartedAt: now()}
@@ -40,8 +38,7 @@ func (s *Store) ImportRun(ctx context.Context, id uuid.UUID) (model.ImportRun, e
 	return run, err
 }
 
-// ImportRuns returns the newest limit import runs, of importer unless it is
-// "".
+// ImportRuns returns the newest limit import runs, of importer unless it is "".
 func (s *Store) ImportRuns(ctx context.Context, importer string, limit int) ([]model.ImportRun, error) {
 	q := s.db.WithContext(ctx).Order("started_at DESC, id").Limit(limit)
 	if importer != "" {
@@ -54,9 +51,8 @@ func (s *Store) ImportRuns(ctx context.Context, importer string, limit int) ([]m
 // AbandonedError is the error of a run its worker left running.
 const AbandonedError = "abandoned: worker exited"
 
-// FailAbandonedRuns fails the import and generator runs still running that
-// started more than olderThan ago, and returns how many: their worker exited
-// without finishing them, and their jobs are never retried.
+// FailAbandonedRuns fails runs still running after olderThan and returns how many: their worker
+// exited and their jobs are never retried.
 func (s *Store) FailAbandonedRuns(ctx context.Context, olderThan time.Duration) (int64, error) {
 	t := now()
 	var n int64
@@ -74,8 +70,7 @@ func (s *Store) FailAbandonedRuns(ctx context.Context, olderThan time.Duration) 
 	return n, err
 }
 
-// FinishImport ends the running import run run with the version of the input
-// it read and its summary: failed with runErr, else succeeded.
+// FinishImport ends the running import run: failed with runErr, else succeeded.
 func (s *Store) FinishImport(ctx context.Context, run uuid.UUID, inputVersion string, summary any, runErr error) (model.ImportRun, error) {
 	b, err := json.Marshal(summary)
 	if err != nil {
@@ -94,8 +89,7 @@ func (s *Store) FinishImport(ctx context.Context, run uuid.UUID, inputVersion st
 	return r, res.Error
 }
 
-// EffectiveWithRuns is Effective plus the import runs of its core values,
-// read on one snapshot (see importRuns).
+// EffectiveWithRuns is Effective plus the import runs of its core values, read on one snapshot.
 func (s *Store) EffectiveWithRuns(ctx context.Context) (Inputs, []uuid.UUID, error) {
 	var in Inputs
 	var runs []uuid.UUID
@@ -113,9 +107,8 @@ func (s *Store) EffectiveWithRuns(ctx context.Context) (Inputs, []uuid.UUID, err
 	return in, runs, err
 }
 
-// importRuns lists, sorted, the import runs of the effective core rows and of
-// their values (field provenance): per object the rows of the layer it is
-// taken from. Overlay payloads are not core inputs.
+// importRuns lists, sorted, the runs of the effective core rows and their field provenance, each object's
+// rows taken from its effective layer. Overlay payloads are not core inputs.
 func importRuns(up, local rowSet) []uuid.UUID {
 	seen := map[uuid.UUID]bool{}
 	add := func(row any) {
@@ -188,8 +181,7 @@ func (rs rowSet) each(fn func(object string, row any)) {
 	}
 }
 
-// StartGeneratorRun records the running generator run id of the core's schema
-// version, started now.
+// StartGeneratorRun records a running generator run of the core's schema version.
 func (s *Store) StartGeneratorRun(ctx context.Context, id uuid.UUID) (model.GeneratorRun, error) {
 	run := model.GeneratorRun{Base: model.Base{ID: id}, Status: model.RunRunning, StartedAt: now(), SchemaVersion: catalog.SchemaVersion}
 	return run, s.db.WithContext(ctx).Create(&run).Error
@@ -198,8 +190,7 @@ func (s *Store) StartGeneratorRun(ctx context.Context, id uuid.UUID) (model.Gene
 // CostFilter narrows CostEstimates; an empty field matches all.
 type CostFilter struct{ Model, Billing, Region string }
 
-// CostEstimates returns the cost estimates of the newest succeeded generator
-// run that f matches.
+// CostEstimates returns the newest succeeded generator run's cost estimates that f matches.
 func (s *Store) CostEstimates(ctx context.Context, f CostFilter) ([]model.CostEstimate, error) {
 	newest := s.db.Model(&model.GeneratorRun{}).Select("id").Where("status = ?", model.RunSucceeded).Order("started_at DESC").Limit(1)
 	q := s.db.WithContext(ctx).Where("generator_run_id = (?)", newest)
@@ -212,9 +203,8 @@ func (s *Store) CostEstimates(ctx context.Context, f CostFilter) ([]model.CostEs
 	return estimates, q.Order("model_slug, setup, fit_key, node_type_id, region, billing").Find(&estimates).Error
 }
 
-// FinishGeneratorRun stores the running generator run run as it ended, now,
-// in one transaction with the fits, fit estimates and guidance of its
-// snapshot and costs, if it has a snapshot.
+// FinishGeneratorRun stores run as ended, with its snapshot's fits, estimates and guidance and costs,
+// in one transaction.
 func (s *Store) FinishGeneratorRun(ctx context.Context, run *model.GeneratorRun, costs []model.CostEstimate) error {
 	t := now()
 	run.FinishedAt = &t
@@ -252,8 +242,7 @@ func insert[T any](tx *gorm.DB, rows []T) error {
 	return tx.CreateInBatches(&rows, 500).Error
 }
 
-// derive maps snap to the derived rows of run: a fit per fit with its
-// estimate, and each model's minimum and optimal guidance.
+// derive maps snap to run's fit, fit estimate and guidance rows.
 func derive(run uuid.UUID, snap *catalog.CatalogSnapshot) ([]model.Fit, []model.FitEstimate, []model.Guidance) {
 	d := model.Derivation{GeneratorRunID: run}
 	fits := make([]model.Fit, len(snap.Fits))

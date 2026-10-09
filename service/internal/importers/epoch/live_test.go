@@ -10,9 +10,8 @@ import (
 	catalog "github.com/fishman/neocloud-catalog"
 )
 
-// Epoch's live CSV still says what the recorded sample says for its rows, and
-// merged with the committed overlay it gives the committed families. Opt in
-// with NEOCLOUD_CATALOG_LIVE=1.
+// Live CSV matches the recorded sample and the committed families. Opt in with
+// NEOCLOUD_CATALOG_LIVE=1.
 func TestLiveEpochMatchesRecordings(t *testing.T) {
 	if os.Getenv("NEOCLOUD_CATALOG_LIVE") != "1" {
 		t.Skip("NEOCLOUD_CATALOG_LIVE unset; skipping the live Epoch test")

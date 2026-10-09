@@ -16,10 +16,8 @@ import (
 	"github.com/fishman/neocloud-catalog/service/internal/model"
 )
 
-// Effective is the effective catalog: per natural key the local object, else
-// the upstream one, in cross-layer order (R24, see pick); node types by id.
-// Extensions holds the overlay layer's payloads keyed as catalog.Merge
-// expects; its SnapshotDigest stays empty until a generated snapshot pins it.
+// Effective is the effective catalog: per natural key the local object, else the upstream one,
+// ordered as pick orders them (node types by id). Extensions.SnapshotDigest stays empty.
 func (s *Store) Effective(ctx context.Context) (Inputs, error) {
 	var in Inputs
 	err := s.read(ctx, func(tx *gorm.DB) error {
@@ -43,7 +41,6 @@ func effective(tx *gorm.DB) (Inputs, error) {
 	return merge(up, local, payloads)
 }
 
-// loadEffective reads the rows the effective catalog is made of.
 func loadEffective(tx *gorm.DB) (up, local rowSet, payloads []model.ExtensionPayload, err error) {
 	if up, err = load(tx, model.LayerUpstream, scope{}); err != nil {
 		return
@@ -55,8 +52,6 @@ func loadEffective(tx *gorm.DB) (up, local rowSet, payloads []model.ExtensionPay
 	return
 }
 
-// merge builds the effective catalog from the upstream and local rows and the
-// overlay's payloads.
 func merge(up, local rowSet, payloads []model.ExtensionPayload) (Inputs, error) {
 	u, err := assemble(up)
 	if err != nil {
@@ -78,8 +73,7 @@ func merge(up, local rowSet, payloads []model.ExtensionPayload) (Inputs, error) 
 	}, nil
 }
 
-// Overlay is the overlay layer's payloads keyed as catalog.Merge expects, its
-// SnapshotDigest empty.
+// Overlay is the overlay layer's payloads keyed as catalog.Merge expects, SnapshotDigest empty.
 func (s *Store) Overlay(ctx context.Context) (catalog.Overlay, error) {
 	var payloads []model.ExtensionPayload
 	err := s.db.WithContext(ctx).Where("layer = ?", model.LayerOverlay).Find(&payloads).Error
@@ -102,18 +96,16 @@ func overlay(payloads []model.ExtensionPayload) catalog.Overlay {
 	return o
 }
 
-// entry is one layer's object with its place in curated order.
+// entry is one layer's object with its curated position.
 type entry[T any] struct {
 	pos int
 	key string
 	obj T
 }
 
-// pick takes per key the local entry over the upstream one (R24): the
-// upstream keys in their (position, key) order, a local override in its
-// upstream row's place, then the local-only keys by their own (position,
-// key). Local positions are frozen at write time, so they order only among
-// local-only keys, and upstream reorders carry the overrides along.
+// pick takes per key the local entry over the upstream one: upstream keys by (position, key), an
+// override in its upstream row's place, then local-only keys by (position, key). Local positions
+// are frozen at write time, so they order only local-only keys and upstream reorders carry overrides.
 func pick[T any](upstream, local []entry[T]) []T {
 	if len(upstream)+len(local) == 0 {
 		return nil
@@ -141,8 +133,7 @@ func pick[T any](upstream, local []entry[T]) []T {
 	return out
 }
 
-// rowSet holds the rows of one layer, or of one object in it, each table in
-// its curated order; files[i] are the files of sources[i].
+// rowSet holds the rows of a layer, or of one object, each table in curated order; files[i] belong to sources[i].
 type rowSet struct {
 	families  []model.Family
 	nodeTypes []model.NodeType
@@ -163,7 +154,6 @@ func (rs rowSet) size() int {
 		len(rs.drafts) + len(rs.backends) + len(rs.versions) + len(rs.flags) + len(rs.payloads)
 }
 
-// load reads the rows of layer within sc.
 func load(tx *gorm.DB, layer string, sc scope) (rowSet, error) {
 	var rs rowSet
 	for _, t := range []struct {
@@ -214,8 +204,7 @@ func load(tx *gorm.DB, layer string, sc scope) (rowSet, error) {
 	return rs, nil
 }
 
-// orEmpty keeps a list the snapshot marshals without omitempty (quantizations,
-// versions) from turning null when its parent has no child rows.
+// orEmpty keeps lists the snapshot marshals without omitempty (quantizations, versions) from turning null.
 func orEmpty[T any](s []T) []T {
 	if s == nil {
 		return []T{}
@@ -223,7 +212,6 @@ func orEmpty[T any](s []T) []T {
 	return s
 }
 
-// objects are one layer's core objects.
 type objects struct {
 	families  []entry[catalog.Family]
 	nodeTypes []entry[catalog.NodeType]
@@ -232,8 +220,7 @@ type objects struct {
 	backends  []entry[catalog.Backend]
 }
 
-// assemble builds one layer's core objects, each from the children of that
-// layer, and refuses rows without their parent in the layer.
+// assemble builds one layer's core objects from that layer's children; a row without its parent there is an error.
 func assemble(rs rowSet) (objects, error) {
 	var o objects
 	var problems []string

@@ -28,33 +28,26 @@ import (
 	"github.com/fishman/neocloud-catalog/service/internal/release"
 )
 
-// maxBlobBytes bounds a snapshot or bundle download.
 const maxBlobBytes = 64 << 20
 
-// Config selects an upstream artifact and whom to trust, as neocloud-api's
-// catalog.* keys do. Keyless (IdentityIssuer and Identity) trusts the
-// upstream's release workflow; PublicKey trusts a cosign key pair instead.
+// Config selects an upstream artifact and its trust: keyless (IdentityIssuer and
+// Identity) or a cosign PublicKey.
 type Config struct {
-	// Ref is the artifact reference, for example ghcr.io/fishing-agents/neocloud-catalog:v4.
-	Ref string
-	// IdentityIssuer is the exact OIDC issuer of the signing certificate.
+	// Ref is e.g. ghcr.io/fishing-agents/neocloud-catalog:v4.
+	Ref            string
 	IdentityIssuer string
-	// Identity is an anchored regexp (^...$) over the certificate's subject
-	// alternative name: the release workflow, never an org-wide pattern.
-	Identity string
-	// PublicKey is a PEM file holding a cosign public key.
+	// Identity is an anchored regexp over the certificate SAN: the release
+	// workflow, never an org-wide pattern.
+	Identity  string
 	PublicKey string
-	// TrustedRoot is a Sigstore trusted_root.json file for offline (air-gapped)
-	// keyless verification; empty fetches the public-good root through TUF.
+	// TrustedRoot is a trusted_root.json for air-gapped keyless verification;
+	// empty uses TUF.
 	TrustedRoot string
-	// PlainHTTP talks HTTP to the registry, for a mirror without TLS.
-	PlainHTTP bool
-	// Overlay reads the overlay artifact (catalog.OverlayArtifactType),
-	// configured under upstream.overlay_*, instead of the snapshot.
+	PlainHTTP   bool
+	// Overlay reads the overlay artifact instead of the snapshot.
 	Overlay bool
 }
 
-// key names cfg's configuration key in errors.
 func (c Config) key(name string) string {
 	if c.Overlay {
 		return "upstream.overlay_" + name
@@ -62,8 +55,7 @@ func (c Config) key(name string) string {
 	return "upstream." + name
 }
 
-// Release is an upstream manifest whose signature verified. An overlay release
-// has no version: its manifest digest identifies it.
+// Release is a verified upstream manifest; an overlay release has no version.
 type Release struct {
 	Digest  v1.Hash
 	Version string
@@ -71,24 +63,21 @@ type Release struct {
 	layer   v1.Descriptor
 }
 
-// Source is a configured upstream artifact. It verifies what neocloud-api's
-// catalogsrc verifies, the same way: Check verifies a signature on the
-// manifest digest before trusting anything in the manifest; Pull and
-// PullOverlay download what the verified manifest pins.
+// Source verifies what neocloud-api's catalogsrc verifies: a signature on the
+// manifest digest before trusting the manifest.
 type Source struct {
 	ref      name.Reference
 	opts     []remote.Option
 	material func() (root.TrustedMaterial, error)
 	identity verify.PolicyOption
 	keyless  bool
-	// scts is how many certificate-transparency timestamps a keyless signing
-	// certificate must embed; Fulcio's always carry one.
+	// scts is the CT timestamps a keyless certificate must embed; Fulcio's carry one.
 	scts    int
 	overlay bool
 }
 
-// NewSource validates cfg and returns its Source, or nil when cfg.Ref is empty.
-// Registry auth comes from the default keychain.
+// NewSource returns nil when cfg.Ref is empty. Registry auth comes from the
+// default keychain.
 func NewSource(cfg Config) (*Source, error) {
 	if cfg.Ref == "" {
 		return nil, nil
@@ -140,8 +129,8 @@ func NewSource(cfg Config) (*Source, error) {
 			}
 			s.material = func() (root.TrustedMaterial, error) { return tr, nil }
 		} else {
-			// Fetched per check, so a Sigstore key rotation reaches running
-			// services; in memory, as the pod's filesystem may be read-only.
+			// Fetched per check so a Sigstore key rotation reaches running services; in
+			// memory as the filesystem may be read-only.
 			s.material = func() (root.TrustedMaterial, error) {
 				return root.FetchTrustedRootWithOptions(tuf.DefaultOptions().WithDisableLocalCache())
 			}
@@ -152,11 +141,9 @@ func NewSource(cfg Config) (*Source, error) {
 	return s, nil
 }
 
-// Ref is the configured reference.
 func (s *Source) Ref() string { return s.ref.String() }
 
-// Check resolves the reference, verifies a signature on its manifest digest,
-// and returns the release the signed manifest describes.
+// Check verifies a signature on the manifest digest and returns its release.
 func (s *Source) Check(ctx context.Context) (Release, error) {
 	opts := append([]remote.Option{remote.WithContext(ctx)}, s.opts...)
 	desc, err := remote.Get(s.ref, opts...)
@@ -188,14 +175,13 @@ func (s *Source) Check(ctx context.Context) (Release, error) {
 	return Release{Digest: desc.Digest, Version: version, Time: t, layer: m.Layers[0]}, nil
 }
 
-// verify accepts the manifest digest when any attached bundle verifies.
 func (s *Source) verify(digest v1.Hash, ropts []remote.Option) error {
 	tm, err := s.material()
 	if err != nil {
 		return fmt.Errorf("signature: trusted root: %w", err)
 	}
-	// A key is trusted by itself; a keyless certificate is short-lived, so its
-	// signature must be logged in Rekor while it was valid.
+	// Keyless certificates are short-lived, so the signature must be logged in
+	// Rekor while valid.
 	opts := []verify.VerifierOption{verify.WithNoObserverTimestamps()}
 	if s.keyless {
 		opts = []verify.VerifierOption{verify.WithTransparencyLog(1), verify.WithObserverTimestamps(1)}
@@ -265,8 +251,8 @@ func (s *Source) bundle(ref name.Digest, opts []remote.Option) (*bundle.Bundle, 
 	return &b, nil
 }
 
-// Pull downloads the snapshot of a checked release, checked against the layer
-// digest in the signed manifest.
+// Pull downloads a checked release's snapshot, verified against the signed
+// layer digest.
 func (s *Source) Pull(ctx context.Context, r Release) (catalog.CatalogSnapshot, error) {
 	var snap catalog.CatalogSnapshot
 	raw, err := s.blob(s.ref.Context(), r.layer, append([]remote.Option{remote.WithContext(ctx)}, s.opts...))
@@ -282,8 +268,8 @@ func (s *Source) Pull(ctx context.Context, r Release) (catalog.CatalogSnapshot, 
 	return snap, nil
 }
 
-// PullOverlay downloads the overlay of a checked overlay release, checked
-// against the layer digest in the signed manifest.
+// PullOverlay downloads a checked overlay, verified against the signed layer
+// digest.
 func (s *Source) PullOverlay(ctx context.Context, r Release) (catalog.Overlay, error) {
 	var o catalog.Overlay
 	raw, err := s.blob(s.ref.Context(), r.layer, append([]remote.Option{remote.WithContext(ctx)}, s.opts...))

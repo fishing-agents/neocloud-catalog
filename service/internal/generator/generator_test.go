@@ -87,9 +87,7 @@ func count(t *testing.T, db *gorm.DB, row any, run uuid.UUID) int {
 	return int(n)
 }
 
-// Importing data/*.json and generating from the database gives the snapshot
-// generated from the files, and the committed snapshot's content (spec
-// acceptance: digest-equal export).
+// Generating from imported data/*.json gives the committed snapshot's content.
 func TestBootstrapRoundTripDigest(t *testing.T) {
 	s, db, imp := bootstrapped(t, "gen_digest")
 	run, err := generator.Run(ctx, s, uuid.New())
@@ -120,8 +118,7 @@ func TestBootstrapRoundTripDigest(t *testing.T) {
 	}
 }
 
-// A generator run stores its report, inputs, snapshot and derived rows; a
-// failed generation is stored as a failed run without derived rows.
+// A failed generation is stored as a failed run without derived rows.
 func TestGeneratorRunStoresReport(t *testing.T) {
 	s, db, _ := bootstrapped(t, "gen_report")
 	eff, err := s.Effective(ctx)
@@ -228,8 +225,7 @@ func TestGeneratorRunStoresReport(t *testing.T) {
 	}
 }
 
-// Generator runs over the same inputs give the same input digest and snapshot
-// digest, each with derived rows of its own.
+// Same inputs give the same digests, each run with derived rows of its own.
 func TestGeneratorRunsAreReproducible(t *testing.T) {
 	s, db, _ := bootstrapped(t, "gen_repro")
 	first, err := generator.Run(ctx, s, uuid.New())
@@ -266,8 +262,7 @@ func TestGeneratorRunsAreReproducible(t *testing.T) {
 	}
 }
 
-// costLines are the estimates of the newest succeeded run for llama-3.1-70b
-// on node type in region, with their price's source.
+// costLines are the newest succeeded run's estimates for llama-3.1-70b on nodeType in region.
 func costLines(t *testing.T, s *store.Store, nodeType, region string) []string {
 	t.Helper()
 	rows, err := s.CostEstimates(ctx, store.CostFilter{Model: "llama-3.1-70b", Region: region})
@@ -284,11 +279,7 @@ func costLines(t *testing.T, s *store.Store, nodeType, region string) []string {
 	return lines
 }
 
-// A generator run estimates costs from the effective prices: a local price
-// overrides the upstream price of its node type, region and billing, and
-// removing it restores the upstream one. Prices feed only the internal
-// estimates, so they leave the input digest alone, and the same prices give
-// the same estimates.
+// A local price overrides the upstream one and removing it restores it; prices never touch the input digest.
 func TestCostEstimatesUseEffectivePrices(t *testing.T) {
 	s, db, _ := bootstrapped(t, "gen_costs")
 	const mi300x, h100 = "azure/Standard_ND96isr_MI300X_v5", "azure/Standard_ND96isr_H100_v5"

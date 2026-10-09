@@ -12,26 +12,19 @@ import (
 	"github.com/fishman/neocloud-catalog/adapters"
 )
 
-// RequiredProviderAnnotation names the AI Runway provider a manifest runs on
-// and spec.provider.name pins.
+// RequiredProviderAnnotation names the AI Runway provider spec.provider.name pins.
 const RequiredProviderAnnotation = "neocloud.io/required-provider"
 
-// HFTokenSecret is the secret AI Runway's settings store a Hugging Face token
-// in (key HF_TOKEN); manifests of gated models reference it.
+// HFTokenSecret is where AI Runway stores the HF token (key HF_TOKEN); gated models reference it.
 const HFTokenSecret = "hf-token-secret"
 
-// runtime is how AI Runway runs a catalog backend.
 type runtime struct {
 	provider string
-	// pinnedImage: the provider runs the backend's own image. Dynamo starts
-	// python3 -m dynamo.<engine> and its frontend inside spec.engine.image
-	// (providers/dynamo/transformer.go), which the upstream SGLang image
+	// Dynamo runs python3 -m dynamo.<engine> in the image, which upstream SGLang
 	// lacks, so SGLang keeps Dynamo's sglang-runtime image.
 	pinnedImage bool
-	// derivesTP: the provider sets tensor parallelism from the GPU count (the
-	// vLLM provider does, Dynamo does not), so no fit sets it.
-	derivesTP bool
-	// disaggregated: the provider runs serving.mode disaggregated.
+	// derivesTP: the provider sets tensor parallelism from the GPU count.
+	derivesTP     bool
 	disaggregated bool
 }
 
@@ -40,7 +33,7 @@ var runtimes = map[string]runtime{
 	"sglang": {provider: "dynamo", disaggregated: true},
 }
 
-// The ModelDeployment fields set (controller/api/v1alpha1/modeldeployment_types.go).
+// modelDeployment mirrors controller/api/v1alpha1/modeldeployment_types.go.
 type modelDeployment struct {
 	APIVersion string   `json:"apiVersion"`
 	Kind       string   `json:"kind"`
@@ -112,8 +105,7 @@ type mdSecrets struct {
 	HuggingFaceToken string `json:"huggingFaceToken"`
 }
 
-// The POST /api/deployments body (createDeploymentSchema in
-// backend/src/routes/deployments.ts).
+// apiBody mirrors createDeploymentSchema in backend/src/routes/deployments.ts.
 type apiBody struct {
 	Name            string            `json:"name"`
 	ModelID         string            `json:"modelId"`
@@ -247,11 +239,9 @@ func exportDeployments(snap catalog.CatalogSnapshot, opts adapters.Options) (ada
 	return e, nil
 }
 
-// render is a deployment's engine arguments without the context, which
-// contextLength carries and the providers write in the engine's flag. Dynamo
-// gives both workers of a disaggregated preset one set and adds each worker's
-// --disaggregation-mode itself (providers/dynamo/transformer.go), so ok is
-// false when the roles need different ones.
+// render returns engine args without the context (contextLength carries it). Dynamo
+// gives both disaggregated workers one set and adds --disaggregation-mode itself,
+// so ok is false when the roles differ.
 func render(t target, rt runtime) (args map[string]string, extra []string, ok bool, err error) {
 	p := t.Preset
 	p.Context = 0
@@ -281,8 +271,7 @@ func render(t target, rt runtime) (args map[string]string, extra []string, ok bo
 	return roleArgs[0], roleExtra[0], ok, nil
 }
 
-// dnsLabel turns s into a name the webhook accepts (no dots) that also fits the
-// Service and volume names derived from it.
+// dnsLabel turns s into a webhook-accepted name (no dots) that fits derived Service names.
 func dnsLabel(s string) (string, error) {
 	name := strings.Trim(strings.Map(func(r rune) rune {
 		if 'a' <= r && r <= 'z' || '0' <= r && r <= '9' {
@@ -296,13 +285,10 @@ func dnsLabel(s string) (string, error) {
 	return name, nil
 }
 
-// argKey is a key AI Runway accepts in spec.engine.args.
 var argKey = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 
-// engineArgs maps flags to spec.engine.args, which providers render as
-// "--key value", or "--key" for an empty value. Arguments a map cannot hold
-// (a positional token, a repeated key, an empty "--key=") all stay in
-// extraArgs, in order, since the webhook rejects a key in both.
+// engineArgs maps flags to spec.engine.args ("--key value", "--key" if empty). What a
+// map cannot hold stays in extraArgs, in order; the webhook rejects a key in both.
 func engineArgs(tokens []string) (map[string]string, []string) {
 	args := map[string]string{}
 	for i := 0; i < len(tokens); i++ {

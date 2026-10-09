@@ -1,6 +1,5 @@
-// Package httpapi serves the catalog service's /v1 API. api/openapi.yaml is
-// the contract: gen.gen.go is generated from it (make generate), the handlers
-// implement its ServerInterface.
+// Package httpapi serves the /v1 API; api/openapi.yaml is the contract and
+// gen.gen.go is generated from it (make generate).
 package httpapi
 
 import (
@@ -24,20 +23,17 @@ type Config struct {
 	Auth      auth.Authenticator
 	Jobs      *jobs.Client
 	Importers importers.Registry
-	// Publish is where releases are published; nil refuses publishing.
-	// PublishTimeout bounds one publish request.
+	// Publish nil refuses publishing.
 	Publish        *release.Target
 	PublishTimeout time.Duration
 }
 
-// publishAnswerTime is how long answering a publish may take after its
-// PublishTimeout.
+// publishAnswerTime is extra time to answer a publish after PublishTimeout.
 const publishAnswerTime = 10 * time.Second
 
 type handlers struct{ Config }
 
-// New returns the API: every request needs a valid bearer token, and writes a
-// principal that may write.
+// New returns the API; every request needs a valid bearer token.
 func New(c Config) http.Handler {
 	api := HandlerWithOptions(&handlers{c}, StdHTTPServerOptions{
 		ErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
@@ -47,10 +43,9 @@ func New(c Config) http.Handler {
 	return authenticate(c.Auth, api)
 }
 
-// authenticate answers 401 without a valid bearer token, 503 when the token
-// cannot be checked (database or OIDC issuer down), and 403 to a write (any
-// method but GET and HEAD) by a principal that may only read. It never logs
-// the token.
+// authenticate answers 401 without a valid token, 503 when it cannot be checked
+// (database or issuer down), and 403 to a non-GET/HEAD by a read-only principal.
+// It never logs the token.
 func authenticate(a auth.Authenticator, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		scheme, token, _ := strings.Cut(r.Header.Get("Authorization"), " ")
@@ -92,8 +87,7 @@ func writeError(w http.ResponseWriter, status int, code, msg string) {
 	writeJSON(w, status, Error{Code: code, Message: msg})
 }
 
-// fail answers err: a missing object 404, refused objects 400, a refused
-// change 409, anything else 500 with the error logged, not returned.
+// fail maps err to 404, 400 or 409; anything else is a logged 500 without detail.
 func fail(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, store.ErrNotFound):

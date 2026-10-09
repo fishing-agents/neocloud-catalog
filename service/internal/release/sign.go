@@ -21,25 +21,19 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-// Signer signs what Publish pushes and WriteExports writes, in the formats
-// cosign v3 writes and catalogsrc verifies.
+// Signer signs in the formats cosign v3 writes and catalogsrc verifies.
 type Signer interface {
-	// SignManifest attaches a Sigstore bundle over the manifest's digest to
-	// it in repo as an OCI referrer of type BundleType, as cosign sign does.
+	// SignManifest attaches a bundle as an OCI referrer of type BundleType, as cosign sign does.
 	SignManifest(ctx context.Context, repo name.Repository, manifest v1.Descriptor) error
-	// SignBlob writes a Sigstore bundle over the file at path to bundle, as
-	// cosign sign-blob --bundle does.
+	// SignBlob writes a bundle over path to bundle, as cosign sign-blob --bundle does.
 	SignBlob(ctx context.Context, path, bundle string) error
 }
 
-// KeySigner signs with a cosign key pair, offline: its bundles carry the
-// key's hint and no transparency-log entry, which catalogsrc accepts for its
-// configured public key.
+// KeySigner signs offline with a cosign key pair: bundles carry the key hint
+// and no transparency-log entry, which catalogsrc accepts for a public key.
 type KeySigner struct{ kp keypair }
 
-// NewKeySigner returns a signer of the PEM private key keyPEM: a cosign.key
-// as cosign generate-key-pair writes it, encrypted with password, or an
-// unencrypted PKCS#8 key.
+// NewKeySigner loads a cosign.key encrypted with password, or an unencrypted PKCS#8 key.
 func NewKeySigner(keyPEM, password []byte) (*KeySigner, error) {
 	priv, err := cryptoutils.UnmarshalPEMToPrivateKey(keyPEM, cryptoutils.StaticPasswordFunc(password))
 	if err != nil {
@@ -61,8 +55,7 @@ func NewKeySigner(keyPEM, password []byte) (*KeySigner, error) {
 	return &KeySigner{keypair{signer, alg, []byte(base64.StdEncoding.EncodeToString(h[:]))}}, nil
 }
 
-// SignManifest signs an in-toto statement whose subject is the manifest
-// digest, the DSSE payload cosign signs for an image.
+// SignManifest signs an in-toto statement on the manifest digest, as cosign does for images.
 func (k *KeySigner) SignManifest(ctx context.Context, repo name.Repository, manifest v1.Descriptor) error {
 	stmt, err := json.Marshal(map[string]any{
 		"_type":         "https://in-toto.io/Statement/v1",
@@ -105,8 +98,7 @@ func (k *KeySigner) bundle(ctx context.Context, content sign.Content) ([]byte, e
 	return protojson.Marshal(b)
 }
 
-// keypair is a sign.Keypair of a loaded key; sigstore-go's own only
-// generates ephemeral ones.
+// keypair is a sign.Keypair of a loaded key; sigstore-go only generates ephemeral ones.
 type keypair struct {
 	priv crypto.Signer
 	alg  signature.AlgorithmDetails
@@ -137,8 +129,8 @@ func (k keypair) GetPublicKeyPem() (string, error) {
 	return string(pem), err
 }
 
-// SignData signs the digest of data, or data itself for pure Ed25519, and
-// returns the signature and what it signed.
+// SignData signs the digest of data (data itself for pure Ed25519) and returns
+// the signature and what it signed.
 func (k keypair) SignData(_ context.Context, data []byte) ([]byte, []byte, error) {
 	hf := k.alg.GetHashType()
 	signed := data
@@ -151,9 +143,8 @@ func (k keypair) SignData(_ context.Context, data []byte) ([]byte, []byte, error
 	return sig, signed, err
 }
 
-// Keyless signs by running cosign's keyless flow, in CI only: the signature
-// binds the content to the workflow's OIDC identity, which neocloud-api's
-// catalog.identity pins. Registry auth is cosign's own.
+// Keyless runs cosign's keyless flow (CI only), binding content to the
+// workflow's OIDC identity. Registry auth is cosign's own.
 type Keyless struct{}
 
 func (Keyless) SignManifest(ctx context.Context, repo name.Repository, manifest v1.Descriptor) error {

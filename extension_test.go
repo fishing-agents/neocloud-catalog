@@ -229,9 +229,7 @@ func TestMergeRefuses(t *testing.T) {
 	}
 }
 
-// The embedded file is walked rather than SnapshotV4's decoded value: decoding
-// would drop an "extensions" key on an object whose type has no such field
-// (node types).
+// Walks the raw file: decoding would drop "extensions" on types without that field.
 func TestPublicSnapshotHasNoExtensions(t *testing.T) {
 	var v any
 	if err := json.Unmarshal(snapshotJSON, &v); err != nil {

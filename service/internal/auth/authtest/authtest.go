@@ -1,5 +1,4 @@
-// Package authtest is an OIDC issuer for tests: discovery, a JWKS and signed
-// tokens.
+// Package authtest is a test OIDC issuer: discovery, a JWKS and signed tokens.
 package authtest
 
 import (
@@ -42,8 +41,7 @@ func NewIssuer(t testing.TB) *Issuer {
 	return iss
 }
 
-// Claims are claims of the issuer for audience, valid for an hour, with
-// roles.
+// Claims are the issuer's claims for audience with roles, valid for an hour.
 func (iss *Issuer) Claims(audience string, roles ...string) map[string]any {
 	now := time.Now()
 	c := map[string]any{"iss": iss.URL, "aud": audience, "sub": "user-1", "iat": now.Unix(), "exp": now.Add(time.Hour).Unix()}

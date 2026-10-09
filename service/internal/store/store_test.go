@@ -125,9 +125,8 @@ func rowsOf(t *testing.T, db *gorm.DB, run uuid.UUID) int64 {
 	return n
 }
 
-// committedWithEmptyLists is the committed data plus a model without
-// quantizations and a backend without versions, explicitly empty: the snapshot
-// marshals both lists without omitempty, so nil would change its digest.
+// committedWithEmptyLists adds a model and a backend with explicitly empty lists: the snapshot
+// marshals them without omitempty, so nil would change the digest.
 func committedWithEmptyLists(t *testing.T) store.Inputs {
 	in := committed(t)
 	in.Models = append(in.Models, catalog.ModelTemplate{Slug: "no-quantizations", Name: "None", Family: "none", Task: "chat",
@@ -136,8 +135,7 @@ func committedWithEmptyLists(t *testing.T) store.Inputs {
 	return in
 }
 
-// everyField sets every stored core field the committed data leaves zero,
-// with prefix caching unset, off and on.
+// everyField sets every stored core field the committed data leaves zero (prefix caching unset, off and on).
 func everyField() store.Inputs {
 	on, off := true, false
 	preset := func(name string, prefix *bool) catalog.Preset {
@@ -178,9 +176,8 @@ func everyField() store.Inputs {
 	}
 }
 
-// requireEveryField fails on a zero field anywhere in v, except the derived and
-// overlay-only fields and the paths in unset, so a field added to the core
-// types has to join the fixture.
+// requireEveryField fails on a zero field in v outside the derived, overlay-only and unset paths,
+// so a new core field must join the fixture.
 func requireEveryField(t *testing.T, path string, v reflect.Value, unset map[string]bool) {
 	t.Helper()
 	switch {
@@ -212,9 +209,8 @@ func requireEveryField(t *testing.T, path string, v reflect.Value, unset map[str
 	}
 }
 
-// Every core field survives ReplaceLayer and Effective, in curated order, so
-// Generate over the effective catalog gives the file-generated digest; replacing
-// the layer with the same input changes no row.
+// Every core field survives ReplaceLayer and Effective in order, Generate reproduces the file digest,
+// and replacing with the same input changes no row.
 func TestReplaceLayerRoundTripsCommittedData(t *testing.T) {
 	s, db := newStore(t, "roundtrip")
 	in := committedWithEmptyLists(t)
@@ -311,10 +307,8 @@ func TestEffectiveCatalogLayering(t *testing.T) {
 	}
 }
 
-// R24: a local override takes its upstream row's place and local-only keys
-// follow every upstream row by their own (position, key), also after the
-// upstream layer is reordered and grows past the local positions. Node types
-// stay ordered by id.
+// A local override takes its upstream row's place and local-only keys follow by (position, key), even
+// after upstream reorders and grows; node types stay ordered by id.
 func TestEffectiveCrossLayerOrder(t *testing.T) {
 	s, db := newStore(t, "cross_layer_order")
 	in := committed(t)
@@ -363,9 +357,7 @@ func TestEffectiveCrossLayerOrder(t *testing.T) {
 	}
 }
 
-// ReplaceUpstream writes the upstream layer and the overlay layer as one:
-// an overlay that does not apply leaves both layers as they were, and a
-// release without an overlay empties the overlay layer.
+// An overlay that does not apply leaves both layers unchanged; a release without one empties the overlay layer.
 func TestReplaceUpstreamIsAtomic(t *testing.T) {
 	s, db := newStore(t, "replace_upstream")
 	in := committed(t)
@@ -390,8 +382,7 @@ func TestReplaceUpstreamIsAtomic(t *testing.T) {
 		t.Errorf("overlay payload provenance = %+v, want layer overlay, run %s, the overlay's URL", p.Provenance, first)
 	}
 
-	// The operator's override drops the preset the next overlay holds a
-	// payload for; the upstream layer would change too.
+	// The override drops a preset the next overlay targets; the upstream layer would change too.
 	override := clone(t, m)
 	override.Presets = override.Presets[:1]
 	if err := s.Upsert(ctx, override); err != nil {
@@ -431,10 +422,8 @@ func TestReplaceUpstreamIsAtomic(t *testing.T) {
 	}
 }
 
-// Under the write lock a run cannot write a release older than one another
-// run of its importer wrote, finished or not, so two imports that both passed
-// the early check cannot roll the layers back. The version is recorded with
-// the write only.
+// Under the write lock a release older than one another run wrote (finished or not) is refused, so
+// imports that both passed the early check cannot roll back; the version is recorded only with the write.
 func TestReplaceUpstreamRefusesOlderVersion(t *testing.T) {
 	s, db := newStore(t, "upstream_versions")
 	start := func() uuid.UUID {
@@ -489,8 +478,7 @@ func TestReplaceLayerIsAtomic(t *testing.T) {
 	}
 	before := effective(t, s)
 
-	// Rows of other tables change first; the backend's NUL byte then fails
-	// in Postgres.
+	// Other tables change first; the backend's NUL byte then fails in Postgres.
 	bad := committed(t)
 	bad.Models = bad.Models[1:]
 	bad.Families[0].MemoryGB++
@@ -593,9 +581,8 @@ func TestOverlayOnlyAddsPayloads(t *testing.T) {
 	}
 }
 
-// An importer run never overwrites a curated value (R12) and lists the value
-// it disagrees on; values it imported itself it updates, and every unchanged
-// value keeps its provenance.
+// An importer run never overwrites a curated value and reports the disagreement; its own values it
+// updates, and unchanged values keep their provenance.
 func TestImporterKeepsCuratedFields(t *testing.T) {
 	s, db := newStore(t, "curated")
 	h100 := committed(t).Families[2]
@@ -682,10 +669,7 @@ func TestReplaceLayerRefusesBadRunsAndKeys(t *testing.T) {
 	}
 }
 
-// The effective catalog's import runs are the runs of its core rows and of
-// their values, in the layer each object is taken from: not just the latest
-// run, not the runs of overridden rows, and not the overlay's, which Generate
-// does not read.
+// Lists the runs of effective core rows and values: not only the latest, not overridden rows, not the overlay's.
 func TestEffectiveWithRunsListsRunsOfEffectiveValues(t *testing.T) {
 	s, db := newStore(t, "runs")
 	replace := func(layer string, run uuid.UUID, in store.Inputs) {
@@ -735,8 +719,7 @@ func TestEffectiveWithRunsListsRunsOfEffectiveValues(t *testing.T) {
 	runsOf(all, added, updated)
 }
 
-// Runs left running past olderThan by a worker that exited are failed; fresh
-// and finished runs are left alone.
+// Fresh and finished runs are left alone.
 func TestFailAbandonedRuns(t *testing.T) {
 	s, db := newStore(t, "store_abandoned")
 	oldImport, err := s.StartImport(ctx, uuid.New(), "test", model.LayerUpstream, "test", "")

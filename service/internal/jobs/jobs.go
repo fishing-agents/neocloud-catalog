@@ -1,5 +1,4 @@
-// Package jobs runs import and generator runs as River jobs on the catalog
-// queue.
+// Package jobs runs import and generator runs as River jobs on the catalog queue.
 package jobs
 
 import (
@@ -21,11 +20,10 @@ import (
 	"github.com/fishman/neocloud-catalog/service/internal/store"
 )
 
-// Queue is the queue of the catalog's jobs.
+// Queue is the catalog's job queue.
 const Queue = "catalog"
 
-// Migrate applies River's own schema; its migrator is idempotent and
-// versioned.
+// Migrate applies River's own schema; idempotent.
 func Migrate(ctx context.Context, db *sql.DB) error {
 	m, err := rivermigrate.New(riverdatabasesql.New(db), nil)
 	if err != nil {
@@ -35,13 +33,11 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	return err
 }
 
-// insertOpts makes a job one attempt: its run is recorded, a failed one too,
-// and run again on request rather than retried; a retry would leave the
-// first attempt's run row behind.
+// insertOpts allows one attempt: a retry would leave the first attempt's run
+// row behind, so a failed run is run again on request instead.
 func insertOpts() river.InsertOpts { return river.InsertOpts{Queue: Queue, MaxAttempts: 1} }
 
-// ImportArgs runs the registered importer Importer as the import run Run, so
-// whoever enqueues it knows the run before it starts.
+// ImportArgs runs Importer as import run Run, so the enqueuer knows the run up front.
 type ImportArgs struct {
 	Importer string    `json:"importer"`
 	Run      uuid.UUID `json:"run"`
@@ -50,7 +46,7 @@ type ImportArgs struct {
 func (ImportArgs) Kind() string                 { return "import" }
 func (ImportArgs) InsertOpts() river.InsertOpts { return insertOpts() }
 
-// GenerateArgs runs the generator as the generator run Run.
+// GenerateArgs runs the generator as generator run Run.
 type GenerateArgs struct {
 	Run uuid.UUID `json:"run"`
 }
@@ -58,7 +54,7 @@ type GenerateArgs struct {
 func (GenerateArgs) Kind() string                 { return "generate" }
 func (GenerateArgs) InsertOpts() river.InsertOpts { return insertOpts() }
 
-// FailAbandonedArgs fails the runs workers that exited left running.
+// FailAbandonedArgs fails runs left running by exited workers.
 type FailAbandonedArgs struct{}
 
 func (FailAbandonedArgs) Kind() string                 { return "fail_abandoned_runs" }
@@ -71,8 +67,7 @@ type ImportOutput struct {
 	Summary      json.RawMessage `json:"summary"`
 }
 
-// GenerateOutput is what a completed generate job records; Digest is the
-// stored snapshot's, whose version a release sets.
+// GenerateOutput is what a completed generate job records.
 type GenerateOutput struct {
 	Run             uuid.UUID   `json:"run"`
 	InputDigest     string      `json:"input_digest"`
@@ -124,10 +119,8 @@ func (w *failAbandonedWorker) Work(ctx context.Context, _ *river.Job[FailAbandon
 	return err
 }
 
-// Config bounds the runs: JobTimeout cancels a job that runs longer (the run
-// is recorded as failed); RescueAfter (> JobTimeout) is when River rescues a
-// job left running by a worker that exited, and when its run, still running,
-// is failed.
+// Config: JobTimeout cancels a job (its run recorded failed); after RescueAfter
+// (> JobTimeout) River rescues a job left by an exited worker and its run is failed.
 type Config struct {
 	JobTimeout, RescueAfter time.Duration
 }
@@ -139,9 +132,8 @@ type Client struct {
 	rescueAfter time.Duration
 }
 
-// New returns a client working the catalog queue: import jobs run the
-// importers of reg, generate jobs the generator, both on s, and a periodic
-// job fails abandoned runs.
+// New returns a client running import and generate jobs plus a periodic sweep
+// of abandoned runs.
 func New(db *sql.DB, s *store.Store, reg importers.Registry, cfg Config) (*Client, error) {
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &importWorker{s: s, reg: reg})
@@ -161,8 +153,7 @@ func New(db *sql.DB, s *store.Store, reg importers.Registry, cfg Config) (*Clien
 	return &Client{Client: c, s: s, rescueAfter: cfg.RescueAfter}, nil
 }
 
-// Start fails the runs workers that exited left running, then works the
-// queue.
+// Start fails abandoned runs, then works the queue.
 func (c *Client) Start(ctx context.Context) error {
 	if _, err := c.s.FailAbandonedRuns(ctx, c.rescueAfter); err != nil {
 		return fmt.Errorf("fail abandoned runs: %w", err)
@@ -170,9 +161,8 @@ func (c *Client) Start(ctx context.Context) error {
 	return c.Client.Start(ctx)
 }
 
-// Shutdown stops working the queue: it lets running jobs finish within
-// grace, then cancels them, so a long import does not hold the process; a
-// cancelled run is recorded as failed.
+// Shutdown lets running jobs finish within grace, then cancels them; a
+// cancelled run is recorded failed.
 func (c *Client) Shutdown(grace time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), grace)
 	defer cancel()
@@ -203,8 +193,8 @@ func (c *Client) Queued(ctx context.Context, kind string) ([]*rivertype.JobRow, 
 	return res.Jobs, nil
 }
 
-// Wait polls job id until it finished, since any client may work it, and
-// returns the output it recorded or the error of its last attempt.
+// Wait polls job id until it finishes (any client may work it) and returns its
+// recorded output or its last attempt's error.
 func Wait(ctx context.Context, c *Client, id int64) ([]byte, error) {
 	tick := time.NewTicker(100 * time.Millisecond)
 	defer tick.Stop()

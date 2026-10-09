@@ -1,6 +1,5 @@
-// Package migrations holds the versioned Atlas migrations. ReleasesImmutable
-// is the hand-written trigger migrations, which the dev schema (GORM
-// AutoMigrate) applies too, as GORM cannot express triggers.
+// Package migrations holds the versioned Atlas migrations. The dev schema
+// (GORM AutoMigrate) applies the trigger migrations too: GORM cannot express triggers.
 package migrations
 
 import _ "embed"

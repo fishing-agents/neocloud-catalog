@@ -3,17 +3,11 @@ info:
   title: neocloud catalog service API
   version: 0.1.0
   description: |
-    The catalog service's operator API. internal/httpapi is generated from this
-    file (make generate); catalog objects bind to the core types of
-    github.com/fishman/neocloud-catalog, so they have the shapes of the schema 4
-    export.
+    The catalog service's operator API; catalog objects have the schema 4 export shapes.
 
-    Every /v1 operation needs a bearer token: an API key
-    (neocatalog_<prefix>_<secret>, minted with `catalog-service auth issue`) or,
-    when auth.issuer_url is set, an OIDC JWT from ICP whose aud contains
-    auth.audience. Reads (GET) take any authenticated principal; every other
-    method writes and takes an API key or a JWT whose roles claim contains
-    admin.
+    Every /v1 operation needs a bearer token: an API key (neocatalog_<prefix>_<secret>)
+    or, when auth.issuer_url is set, an OIDC JWT whose aud contains auth.audience.
+    GET takes any principal; other methods need an API key or the admin role.
 
     Prices and cost estimates are internal: no release carries them.
 servers:
@@ -25,7 +19,7 @@ paths:
     get:
       operationId: getCatalog
       summary: The effective catalog
-      description: Per object key the local object, else the upstream one, in curated order, in the export's shapes but without what generator runs derive (version, generated_at, fits, deployment; kv_bytes_per_token is 0) and without extension payloads, which the overlay carries. With provenance, where each object's rows came from.
+      description: Per key the local object, else the upstream one, in curated order, without generator-derived fields (version, generated_at, fits, deployment; kv_bytes_per_token is 0) or extension payloads.
       parameters:
         - name: provenance
           in: query
@@ -71,7 +65,7 @@ paths:
     put:
       operationId: putLocalModel
       summary: Curate the local model of slug
-      description: Replaces the local model of slug with the body, its quantizations, sources and presets included; the local model overrides the upstream one of its slug as a whole. Derived fields are not stored. Extension payloads are refused, the overlay alone carries them.
+      description: Replaces the local model of slug as a whole (quantizations, sources and presets included), overriding the upstream one; derived fields are not stored and extension payloads are refused.
       requestBody:
         required: true
         content:
@@ -138,7 +132,7 @@ paths:
     put:
       operationId: putLocalPreset
       summary: Curate a preset of the local model of slug
-      description: Replaces or appends the preset in the local model of slug, which must exist (PUT the model first to override an upstream one). Extension payloads are refused.
+      description: Replaces or appends the preset in the existing local model of slug (PUT the model first to override an upstream one); extension payloads are refused.
       requestBody:
         required: true
         content:
@@ -331,7 +325,7 @@ paths:
     post:
       operationId: startImport
       summary: Queue a run of an importer
-      description: Enqueues the importer on the catalog queue; the response is the queued run, which GET /v1/imports/{id} follows. An operator deployment (upstream.ref set) refuses the importers that write its upstream layer (bootstrap-from-json, epoch, huggingface) with 409.
+      description: Enqueues the importer and returns the queued run; an operator deployment (upstream.ref set) refuses bootstrap-from-json, epoch and huggingface with 409.
       requestBody:
         required: true
         content:
@@ -457,7 +451,7 @@ paths:
     post:
       operationId: createRelease
       summary: Freeze a succeeded generator run as a release
-      description: The release's version is the run's generation time; the overlay layer's payloads now are pinned to its digest.
+      description: The release is versioned by the run's generation time and pins the current overlay to its digest.
       requestBody:
         required: true
         content:
@@ -487,7 +481,7 @@ paths:
     post:
       operationId: publishRelease
       summary: Publish a release to release.ref, signed with release.key
-      description: Pushes the release's snapshot as the signed catalog artifact and points release.ref's tag at it, and with release.overlay_ref its overlay, pinned to the release digest, as the signed overlay artifact under that tag; once, again with identical content changes nothing. A release older than a published one is refused, so neither tag moves back.
+      description: Pushes the signed snapshot to release.ref (and with release.overlay_ref the overlay pinned to it); republishing identical content is a no-op and a release older than a published one is refused.
       parameters:
         - name: version
           in: path
@@ -583,7 +577,7 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     ServiceUnavailable:
-      description: authentication is unavailable (the database or the OIDC issuer failed); retry after Retry-After
+      description: authentication is unavailable (database or OIDC issuer failed); retry after Retry-After
       headers:
         Retry-After:
           description: seconds
@@ -766,13 +760,9 @@ components:
     ImportSummary:
       type: object
       description: >-
-        the importer's result; changes counts the rows it changed per table,
-        conflicts lists the imported values curated ones were kept over (for
-        the kaito cross-check, which writes nothing, the catalog's values
-        KAITO's model catalog disagrees with), errors
-        the parts of its input the run could not read and sources counts the
-        sources read in full and those with errors. A succeeded run may list
-        errors and failed sources: it imported what it could read.
+        the importer's result: rows changed per table, imported values kept
+        behind curated ones (for kaito, catalog values KAITO disagrees with),
+        unreadable input, and source counts. A succeeded run may list errors.
       required: [changes]
       properties:
         changes:
@@ -803,10 +793,9 @@ components:
         path: github.com/fishman/neocloud-catalog/service/internal/store
       type: object
       description: >-
-        a curated value kept over an imported one; field is a column, or
-        files/<path> of a curated manifest, where a file one side lacks is
-        null. The kaito cross-check lists the effective catalog's value as
-        curated and KAITO's as imported.
+        a curated value kept over an imported one; field is a column or
+        files/<path> (null where a side lacks the file). For kaito, curated is
+        the catalog's value and imported KAITO's.
       required: [kind, key, field, curated, imported]
       properties:
         kind:
@@ -847,10 +836,10 @@ components:
           format: date-time
         input_digest:
           type: string
-          description: sha256 of the curated inputs of its snapshot; prices feed only its cost estimates, whose rows carry their own price_source, price_source_url and price_as_of
+          description: sha256 of its snapshot's curated inputs, excluding prices (cost estimates carry their own price_source)
         input_import_runs:
           type: array
-          description: the import runs that wrote the inputs of its snapshot; prices feed only its cost estimates, whose rows carry their own price_source, price_source_url and price_as_of
+          description: the import runs that wrote its snapshot's inputs, excluding prices (cost estimates carry their own price_source)
           items:
             type: string
             format: uuid
@@ -869,7 +858,7 @@ components:
       properties:
         importer:
           type: string
-          description: the importer's name (bootstrap-from-json, epoch, huggingface, azure-prices, kaito; an operator deployment, with upstream.ref set, runs upstream, azure-prices and kaito)
+          description: bootstrap-from-json, epoch, huggingface, azure-prices or kaito; with upstream.ref set, upstream, azure-prices or kaito
     ReleaseCreate:
       type: object
       required: [generator_run]
@@ -902,7 +891,7 @@ components:
         overlay_ref:
           x-go-type-skip-optional-pointer: true
           type: string
-          description: repository@digest its overlay was published as (release.overlay_ref), at publish or on a later publish
+          description: repository@digest its overlay was published as (release.overlay_ref), possibly by a later publish
         published_at:
           type: string
           format: date-time
@@ -948,14 +937,14 @@ components:
           format: uuid
         cheapest:
           type: boolean
-          description: the cheapest estimate of its guidance setup (minimum or optimal) at its billing type, across node types and regions; false for fits
+          description: cheapest estimate of its guidance setup at its billing type across node types and regions; false for fits
     Extensions:
       x-go-type: catalog.Extensions
       x-go-type-import:
         name: catalog
         path: github.com/fishman/neocloud-catalog
       type: object
-      description: Extension payloads keyed by namespace. The API never takes them on local writes; the signed overlay alone carries them.
+      description: Extension payloads keyed by namespace; only the signed overlay carries them, local writes refuse them.
       additionalProperties: true
     Family:
       x-go-type: catalog.Family
@@ -1396,7 +1385,7 @@ components:
         path: github.com/fishman/neocloud-catalog
       type: object
       required: [context]
-      description: The backend version's flags for the engine-neutral preset fields; the maps translate neutral names to the engine's.
+      description: Maps the engine-neutral preset fields to the backend version's flags.
       properties:
         context:
           type: string

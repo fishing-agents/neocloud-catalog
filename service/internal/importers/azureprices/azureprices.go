@@ -1,15 +1,6 @@
-// Package azureprices imports Azure Retail Prices into the upstream layer: for
-// each Azure node type of the effective catalog (azure/<ARM SKU name>), in
-// each configured region, the Linux virtual machine's on-demand, spot and
-// 1-year reserved price in USD per hour.
-//
-// A run replaces the upstream prices of Azure node types, in every region,
-// with what it read; other providers' prices and the local layer stay. A node
-// type whose prices cannot be read is listed in the run's errors and keeps
-// its prices; one read without a price in any configured region is listed
-// too and loses its prices (R23). The run fails when it reads no priced node
-// type, when its write fails or when it is cancelled, which writes nothing.
-// Its input version hashes the prices it read and its errors.
+// Package azureprices imports Azure Retail Prices (Linux VM on-demand, spot and
+// 1-year reserved, USD/hour) for Azure node types into the upstream layer.
+// A node type with no price in any configured region loses its prices.
 package azureprices
 
 import (
@@ -35,27 +26,20 @@ import (
 )
 
 const (
-	// Endpoint is the Azure Retail Prices API.
 	Endpoint = "https://prices.azure.com/api/retail/prices"
-	// Prefix starts the id of an Azure node type, followed by its ARM SKU
-	// name.
+	// Prefix plus the ARM SKU name is an Azure node type id.
 	Prefix = "azure/"
-	// maxBody bounds a response; a page holds at most 1000 rows of about
-	// 600 bytes.
-	maxBody = 4 << 20
-	// maxPages bounds the pages of one node type's prices, a few rows.
+	// A page holds at most 1000 rows of about 600 bytes.
+	maxBody  = 4 << 20
 	maxPages = 20
-	// maxRetryAfter bounds a Retry-After the importer waits out; the API
-	// asking for longer fails the node type rather than spending
-	// jobs.job_timeout.
+	// A longer Retry-After fails the node type rather than spend jobs.job_timeout.
 	maxRetryAfter = 5 * time.Minute
-	// hoursPerYear converts a 1-year reservation's price to a price per
-	// hour: the API gives the price of the whole term although its
-	// unitOfMeasure says "1 Hour", and Azure's year is 365 x 24 hours.
+	// The API gives a 1-year reservation's price for the whole term although
+	// unitOfMeasure says "1 Hour".
 	hoursPerYear = 365 * 24
 )
 
-// sku is the form of an ARM SKU name; it keeps the OData filter well formed.
+// sku keeps the OData filter well formed.
 var sku = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
 
 // Importer reads the Retail Prices API at endpoint in regions.
@@ -65,8 +49,7 @@ type Importer struct {
 	getter   fetch.Getter
 }
 
-// New returns the importer of the API at endpoint in regions, ARM region
-// names (the config validates them).
+// New returns the importer of the API at endpoint in regions.
 func New(endpoint string, regions []string) *Importer {
 	return &Importer{endpoint: endpoint, regions: regions,
 		getter: fetch.Getter{Client: &http.Client{Timeout: time.Minute}, Backoff: time.Second, Retries: 3, MaxBody: maxBody, MaxRetryAfter: maxRetryAfter}}
@@ -127,8 +110,6 @@ func (i *Importer) Run(ctx context.Context, s *store.Store, run uuid.UUID) (impo
 	return sum, err
 }
 
-// read returns the prices of the Azure node type id, sorted by region and
-// billing.
 func (i *Importer) read(ctx context.Context, id string) ([]model.NodeTypePrice, error) {
 	name := strings.TrimPrefix(id, Prefix)
 	if !sku.MatchString(name) {
@@ -147,7 +128,6 @@ func (i *Importer) read(ctx context.Context, id string) ([]model.NodeTypePrice, 
 	return i.prices(id, items)
 }
 
-// item is the part of a Retail Prices API row the importer reads.
 type item struct {
 	ArmSkuName, ArmRegionName, SkuName, ProductName    string
 	Type, ReservationTerm, UnitOfMeasure, CurrencyCode string
@@ -155,11 +135,8 @@ type item struct {
 	IsPrimaryMeterRegion                               bool
 }
 
-// prices takes the prices of node type id from its nonzero rows: a Linux
-// primary meter's consumption price is on demand, or spot when its SKU is a
-// Spot one (Low Priority is not priced); a 1-year reservation's is
-// reserved_1y. Two prices of one region and billing, or a price not in USD
-// per hour, fail it.
+// Low Priority is not priced. Two prices of one region and billing, or a
+// price not in USD per hour, fail the node type.
 func (i *Importer) prices(id string, items []item) ([]model.NodeTypePrice, error) {
 	usd := map[[2]string]float64{}
 	for _, it := range items {
@@ -177,7 +154,6 @@ func (i *Importer) prices(id string, items []item) ([]model.NodeTypePrice, error
 		case it.Type == "Consumption":
 			billing = model.BillingOnDemand
 		case it.Type == "Reservation" && it.ReservationTerm == "1 Year":
-			// To the micro-dollar, as the API prices hours.
 			billing, price = model.BillingReserved1Y, math.Round(price/hoursPerYear*1e6)/1e6
 		default:
 			continue
@@ -201,8 +177,7 @@ func (i *Importer) prices(id string, items []item) ([]model.NodeTypePrice, error
 	return rows, nil
 }
 
-// items reads the rows of the query rawURL, following each page's
-// NextPageLink on the endpoint's origin only.
+// items follows NextPageLink on the endpoint's origin only.
 func (i *Importer) items(ctx context.Context, rawURL string) ([]item, error) {
 	base, err := url.Parse(i.endpoint)
 	if err != nil {
@@ -241,7 +216,6 @@ func (i *Importer) items(ctx context.Context, rawURL string) ([]item, error) {
 	return nil, fmt.Errorf("GET %s: more than %d pages", rawURL, maxPages)
 }
 
-// port is u's port, its scheme's default if it names none.
 func port(u *url.URL) string {
 	if p := u.Port(); p != "" {
 		return p

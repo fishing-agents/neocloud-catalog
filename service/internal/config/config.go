@@ -1,7 +1,5 @@
-// Package config loads the service configuration: embedded TOML defaults, an
-// optional overlay directory of *.toml merged in lexical order (later wins),
-// then NEOCLOUD_CATALOG_<KEY> env overrides matched to known keys
-// (NEOCLOUD_CATALOG_DATABASE_MAX_CONNS -> database.max_conns).
+// Package config loads embedded TOML defaults, then an optional directory of
+// *.toml in lexical order, then NEOCLOUD_CATALOG_<KEY> env overrides.
 package config
 
 import (
@@ -54,50 +52,39 @@ type TelemetryConfig struct {
 	MetricsAddr string `koanf:"metrics_addr"`
 }
 
-// BootstrapConfig locates the core repository's data/*.json the bootstrap
-// importer reads; relative to the working directory.
+// BootstrapConfig locates the core repository's data/; relative to the working directory.
 type BootstrapConfig struct {
 	DataDir string `koanf:"data_dir"`
 }
 
-// HuggingFaceConfig: TokenFile holds the Hugging Face token (a mounted
-// secret) the huggingface importer reads gated repositories with, read once
-// at startup (rotation needs a restart); empty reads public metadata only.
+// HuggingFaceConfig: TokenFile is read once at startup; rotation needs a restart.
 type HuggingFaceConfig struct {
 	TokenFile string `koanf:"token_file"`
 }
 
-// AzurePricesConfig: Regions are the Azure regions (ARM names) the
-// azure-prices importer reads prices in.
+// AzurePricesConfig: Regions are ARM region names.
 type AzurePricesConfig struct {
 	Regions []string `koanf:"regions"`
 }
 
-// armRegion is the form of an ARM region name; it keeps the importer's OData
-// filter well formed.
+// armRegion keeps the importer's OData filter well formed.
 var armRegion = regexp.MustCompile(`^[a-z][a-z0-9]*$`)
 
-// AuthConfig: API keys always work; an issuer_url (ICP) also enables OIDC
-// JWTs whose aud must contain audience.
+// AuthConfig: an issuer_url enables OIDC JWTs whose aud contains audience.
 type AuthConfig struct {
 	IssuerURL string `koanf:"issuer_url"`
 	Audience  string `koanf:"audience"`
 }
 
-// JobsConfig bounds runs on the catalog queue: JobTimeout cancels a run that
-// takes longer; RescueAfter (> JobTimeout) is when a run left running by a
-// worker that exited is failed and its job rescued.
+// JobsConfig: a run still running after RescueAfter (> JobTimeout) was left by
+// an exited worker and is failed.
 type JobsConfig struct {
 	JobTimeout  time.Duration `koanf:"job_timeout"`
 	RescueAfter time.Duration `koanf:"rescue_after"`
 }
 
-// ReleaseConfig is where the API publishes releases: Ref names the
-// repository and tag, Key the cosign.key signing them (its password in
-// COSIGN_PASSWORD). Both empty: the API does not publish. OverlayRef, when
-// set, is where each release's overlay is published, signed with Key.
-// PublishTimeout bounds one publish request, which outlasts
-// server.write_timeout.
+// ReleaseConfig is where the API publishes releases; empty Ref and Key disable
+// publishing. PublishTimeout outlasts server.write_timeout.
 type ReleaseConfig struct {
 	Ref            string        `koanf:"ref"`
 	Key            string        `koanf:"key"`
@@ -105,12 +92,8 @@ type ReleaseConfig struct {
 	PublishTimeout time.Duration `koanf:"publish_timeout"`
 }
 
-// UpstreamConfig is the upstream release an operator deployment imports
-// (the upstream importer), trusted as neocloud-api's catalog.* keys trust
-// it: Ref with PublicKey, or with IdentityIssuer and Identity (keyless).
-// OverlayRef, with its own trust, is the overlay pinned to that release.
-// TrustedRoot (offline keyless verification) and PlainHTTP apply to both.
-// Empty Ref: no upstream importer, and no other key may be set.
+// UpstreamConfig is the signed upstream release (and overlay) an operator
+// deployment imports. Empty Ref: no upstream importer, no other key may be set.
 type UpstreamConfig struct {
 	Ref                   string `koanf:"ref"`
 	IdentityIssuer        string `koanf:"identity_issuer"`
@@ -124,10 +107,9 @@ type UpstreamConfig struct {
 	PlainHTTP             bool   `koanf:"plain_http"`
 }
 
-// applyEnv sets NEOCLOUD_CATALOG_<NAME> on the known key whose path, with "."
-// and "_" removed, equals NAME without "_" (case-insensitive). A plain "_" ->
-// "." mapping cannot reach keys that contain underscores. Names matching no
-// known key, or more than one, are ignored rather than guessed.
+// applyEnv matches NEOCLOUD_CATALOG_<NAME> to the known key equal to NAME with
+// "." and "_" ignored (case-insensitive), so keys containing "_" are reachable.
+// Unknown or ambiguous names are ignored.
 func applyEnv(k *koanf.Koanf) error {
 	strip := func(s string) string {
 		return strings.ToLower(strings.NewReplacer(".", "", "_", "").Replace(s))
@@ -159,8 +141,7 @@ func applyEnv(k *koanf.Koanf) error {
 	return nil
 }
 
-// Load builds the merged, validated Config. overlayDir is optional; pass "" to
-// skip.
+// Load returns the merged, validated Config; an empty overlayDir is skipped.
 func Load(overlayDir string) (*Config, error) {
 	k := koanf.New(".")
 

@@ -25,8 +25,7 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | default .Chart.Version }}
 {{- end -}}
 
 {{/*
-The HF token Secret, unless this is an operator deployment (upstream.ref
-set), which refuses the huggingface importer.
+The HF token Secret; empty in an operator deployment (no huggingface importer).
 */}}
 {{- define "catalog-service.hfTokenSecret" -}}
 {{- if not (.Values.config.upstream | default dict).ref }}{{ .Values.huggingface.tokenSecretName }}{{ end -}}
@@ -48,9 +47,8 @@ seccompProfile:
 {{- end -}}
 
 {{/*
-config.toml: .Values.config over the service's embedded defaults, plus the
-keys the chart owns (listen addresses from the ports, the image's data
-directory and the paths it mounts Secrets and trust material at).
+config.toml: .Values.config plus the keys the chart owns (listen addresses,
+data dir, mounted file paths).
 */}}
 {{- define "catalog-service.config" -}}
 {{- $cfg := deepCopy (.Values.config | default dict) -}}

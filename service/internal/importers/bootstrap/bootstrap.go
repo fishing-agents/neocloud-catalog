@@ -1,7 +1,5 @@
-// Package bootstrap imports the core repository's data/*.json, the input
-// catalog-generate reads, into the upstream layer. Its runs' source is the
-// importer's name (R21): later importers replace its values; curation enters
-// through curation writes only.
+// Package bootstrap imports the core repository's data/*.json into the
+// upstream layer as an import, not curation: later importers replace its values.
 package bootstrap
 
 import (
@@ -21,12 +19,10 @@ import (
 	"github.com/fishman/neocloud-catalog/service/internal/store"
 )
 
-// Importer reads the curated files of a data directory.
 type Importer struct {
 	dir, sourceURL string
 }
 
-// New returns the importer of the data directory dir.
 func New(dir string) (*Importer, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
@@ -50,8 +46,7 @@ func (i *Importer) Run(ctx context.Context, s *store.Store, run uuid.UUID) (impo
 	return importers.Summary{InputVersion: version, Changes: changes, Conflicts: conflicts}, err
 }
 
-// Load reads the curated files of dir and their version, the sha256 over
-// their names and contents.
+// Load's version is the sha256 over the files' names and contents.
 func Load(dir string) (store.Inputs, string, error) {
 	var in store.Inputs
 	h := sha256.New()

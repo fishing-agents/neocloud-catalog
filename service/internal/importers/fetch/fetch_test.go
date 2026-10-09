@@ -11,8 +11,8 @@ import (
 	"time"
 )
 
-// A body over MaxBody fails the request without a retry rather than being
-// cut; a refused request is a StatusError carrying its code and body.
+// An oversized body fails without retry; a refusal is a StatusError with code
+// and body.
 func TestGetBoundsBodiesAndTypesRefusals(t *testing.T) {
 	var calls atomic.Int32
 	code := http.StatusOK

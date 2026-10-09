@@ -49,8 +49,7 @@ const coreDir = "../../.."
 
 var ctx = context.Background()
 
-// generated is a store holding the committed data/*.json in upstream and a
-// succeeded generator run over it.
+// generated is a store with the committed data/*.json imported and a succeeded generator run.
 func generated(t *testing.T, suffix string) (*store.Store, *gorm.DB, model.GeneratorRun) {
 	t.Helper()
 	sqlDB, db := dbtest.Fresh(t, suffix)
@@ -79,7 +78,6 @@ func create(t *testing.T, s *store.Store, run model.GeneratorRun) release.Releas
 	return rel
 }
 
-// registryHost starts an in-memory OCI registry and returns its host:port.
 func registryHost(t *testing.T) string {
 	t.Helper()
 	srv := httptest.NewServer(registry.New(registry.Logger(log.New(io.Discard, "", 0))))
@@ -87,8 +85,7 @@ func registryHost(t *testing.T) string {
 	return strings.TrimPrefix(srv.URL, "http://")
 }
 
-// keySigner returns a signer of a fresh cosign.key-format key pair (encrypted
-// with a password, as cosign generate-key-pair writes it) and the public key.
+// keySigner returns a signer of a fresh password-encrypted cosign.key and its public key.
 func keySigner(t *testing.T) (release.Signer, []byte) {
 	t.Helper()
 	password := []byte("test password")
@@ -103,9 +100,8 @@ func keySigner(t *testing.T) (release.Signer, []byte) {
 	return signer, pub
 }
 
-// keyVerifier verifies Sigstore bundles signed by the public key pubPEM the
-// way neocloud-api's catalogsrc trusts a cosign key: no transparency log, no
-// timestamps.
+// keyVerifier verifies bundles as catalogsrc trusts a cosign key: no
+// transparency log, no timestamps.
 func keyVerifier(t *testing.T, pubPEM []byte) *verify.Verifier {
 	t.Helper()
 	pub, err := cryptoutils.UnmarshalPEMToPublicKey(pubPEM)
@@ -126,10 +122,8 @@ func keyVerifier(t *testing.T, pubPEM []byte) *verify.Verifier {
 	return v
 }
 
-// check follows neocloud-api's catalogsrc Check and Pull for ref: a signature
-// on the manifest digest verifies with the key, the manifest is one catalog
-// layer of the catalog artifact type with a version annotation, and the layer
-// is the snapshot at that version. It returns the version and layer.
+// check mirrors catalogsrc Check and Pull: the signature verifies with the key,
+// the manifest is one versioned catalog layer, and the layer is that snapshot.
 func check(t *testing.T, ref string, pubPEM []byte) (string, []byte, error) {
 	t.Helper()
 	r, err := name.ParseReference(ref)
@@ -165,8 +159,7 @@ func check(t *testing.T, ref string, pubPEM []byte) (string, []byte, error) {
 	return version, raw, nil
 }
 
-// verifyManifest accepts digest when a Sigstore bundle attached to it as an
-// OCI referrer verifies with the key, as catalogsrc's verify does.
+// verifyManifest accepts digest when an attached bundle verifies with the key.
 func verifyManifest(t *testing.T, repo name.Repository, digest v1.Hash, pubPEM []byte) error {
 	t.Helper()
 	want, err := hex.DecodeString(digest.Hex)
@@ -206,7 +199,6 @@ func verifyManifest(t *testing.T, repo name.Repository, digest v1.Hash, pubPEM [
 	return fmt.Errorf("signature: %w", errors.Join(errs...))
 }
 
-// bundles lists the Sigstore bundles attached to subject.
 func bundles(t *testing.T, subject name.Digest) []v1.Descriptor {
 	t.Helper()
 	idx, err := remote.Referrers(subject, remote.WithFilter("artifactType", release.BundleType))
@@ -226,7 +218,7 @@ func bundles(t *testing.T, subject name.Digest) []v1.Descriptor {
 	return out
 }
 
-// blob downloads d from repo and checks it against its digest.
+// blob downloads d from repo and checks its digest.
 func blob(t *testing.T, repo name.Repository, d v1.Descriptor) []byte {
 	t.Helper()
 	l, err := remote.Layer(repo.Digest(d.Digest.String()))
@@ -261,9 +253,9 @@ func manifestDigest(t *testing.T, ref string) v1.Hash {
 	return desc.Digest
 }
 
-// A release freezes a generator run; the database refuses to change it, and
-// to change or delete it once published. Publishing it again with identical
-// content changes nothing; with different content, or elsewhere, is refused.
+// The database refuses to change a release, or to change or delete it once
+// published. Republishing identical content is a no-op; differing content or
+// another ref is refused.
 func TestReleaseImmutable(t *testing.T) {
 	s, db, run := generated(t, "release_immutable")
 	rel := create(t, s, run)
@@ -336,9 +328,7 @@ func TestReleaseImmutable(t *testing.T) {
 	}
 }
 
-// Clients refuse a catalog that is not newer than theirs, so a release older
-// than a published one is never published: the tags stay on the newer one
-// and its overlay.
+// A release older than a published one is refused, so the tags never move back.
 func TestPublishRefusesOlderRelease(t *testing.T) {
 	s, db, older := generated(t, "release_older")
 	if err := db.Exec(`UPDATE generator_runs SET snapshot = jsonb_set(snapshot, '{generated_at}', '"2026-01-01T00:00:00Z"') WHERE id = ?`, older.ID).Error; err != nil {
@@ -371,10 +361,9 @@ func TestPublishRefusesOlderRelease(t *testing.T) {
 	}
 }
 
-// A release published without its overlay publishes it on a later publish
-// with an overlay ref, recorded once: again changes nothing, elsewhere is
-// refused, and the database refuses to change it. A late overlay of a release
-// older than a published one is refused, so the overlay tag never moves back.
+// A release published without its overlay publishes it later, once: again is a
+// no-op, elsewhere is refused, the database refuses changes, and an older
+// release's late overlay is refused.
 func TestPublishOverlayLater(t *testing.T) {
 	s, db, older := generated(t, "release_overlay_later")
 	if err := db.Exec(`UPDATE generator_runs SET snapshot = jsonb_set(snapshot, '{generated_at}', '"2026-01-01T00:00:00Z"') WHERE id = ?`, older.ID).Error; err != nil {
@@ -434,8 +423,7 @@ func TestPublishOverlayLater(t *testing.T) {
 	}
 }
 
-// Keyless runs cosign as the release workflow does, and a failing cosign
-// fails the signature with cosign's output.
+// Keyless runs cosign as the release workflow does; a cosign failure carries its output.
 func TestKeylessRunsCosign(t *testing.T) {
 	dir := t.TempDir()
 	argv := filepath.Join(dir, "argv")
@@ -480,7 +468,6 @@ func TestKeylessRunsCosign(t *testing.T) {
 	}
 }
 
-// replaceOverlay makes ov the overlay layer.
 func replaceOverlay(t *testing.T, s *store.Store, ov catalog.Overlay) {
 	t.Helper()
 	run, err := s.StartImport(ctx, uuid.New(), "overlay-test", model.LayerOverlay, "overlay-test", "")
@@ -495,8 +482,7 @@ func replaceOverlay(t *testing.T, s *store.Store, ov catalog.Overlay) {
 	}
 }
 
-// A release pins the overlay layer's payloads as of its creation to its
-// digest; its snapshot stays public, and later overlay changes leave it be.
+// A release pins the overlay as of its creation; later overlay changes do not affect it.
 func TestReleasePinsOverlay(t *testing.T) {
 	s, _, run := generated(t, "release_overlay")
 	slug := run.Snapshot.Models[0].Slug
@@ -533,9 +519,8 @@ func TestReleasePinsOverlay(t *testing.T) {
 	}
 }
 
-// A published release verifies as neocloud-api's catalogsrc verifies a keyed
-// catalog, with the signer's public key only; its exports' SHA256SUMS
-// verifies with the same key.
+// A published release and its SHA256SUMS verify as catalogsrc verifies a keyed
+// catalog, with the signer's public key only.
 func TestPublishedReleaseVerifiesWithCatalogsrcRules(t *testing.T) {
 	s, _, run := generated(t, "release_verify")
 	rel := create(t, s, run)
@@ -581,9 +566,8 @@ func TestPublishedReleaseVerifiesWithCatalogsrcRules(t *testing.T) {
 	}
 }
 
-// Prices and cost estimates stay in the service: neither the published
-// snapshot nor an adapter export carries one, though the run released has
-// cost estimates from an upstream and a local price.
+// Neither the published snapshot nor any export carries a price or cost, though
+// the released run has cost estimates.
 func TestReleaseExportHasNoPricesOrCosts(t *testing.T) {
 	sqlDB, db := dbtest.Fresh(t, "release_no_prices")
 	dbtest.Migrate(t, sqlDB)
@@ -688,9 +672,8 @@ func TestReleaseExportHasNoPricesOrCosts(t *testing.T) {
 	}
 }
 
-// The release of the bootstrap import is what the file-based pipeline
-// publishes: the snapshot encodes as the committed catalog.json at the
-// committed version, and the adapter exports equal the adapters' goldens.
+// The bootstrap release matches the file-based pipeline: committed catalog.json
+// and the adapters' goldens.
 func TestBootstrapReleaseMatchesGoldens(t *testing.T) {
 	s, _, run := generated(t, "release_goldens")
 	rel := create(t, s, run)

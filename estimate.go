@@ -2,42 +2,28 @@ package catalog
 
 import "math"
 
-// Performance estimates (spec section 5) are a memory-bandwidth roofline, as AI
-// Runway's estimator: one decode step for c concurrent sequences reads the
-// active weights once and every sequence's KV cache.
+// Estimates are a memory-bandwidth roofline: a decode step for c sequences reads
+// the active weights (scaled by active/total params) once plus every KV cache.
 //
-//	step(c) = (active weights + c x KV at the context) /
-//	    (BandwidthEfficiency x bandwidth x gpus x tpEfficiency(tensor parallel)
-//	    x CrossNodeEfficiency^(pipeline stages - 1)) seconds
-//	per-sequence decode(c) = 1 / step(c) tokens/s
-//	aggregate(c) = c / step(c) tokens/s
-//	capacity = floor((EstimateMemoryUtilization x memory x gpus - weights) /
-//	    KV at the context)
+//	step(c) = (active + c x KV) / (BandwidthEfficiency x bandwidth x gpus
+//	    x tpEfficiency(gpus per stage) x CrossNodeEfficiency^(stages-1))
+//	decode(c) = 1/step(c); aggregate(c) = c/step(c)
+//	capacity = floor((EstimateMemoryUtilization x memory x gpus - weights) / KV)
 //
-// A multi-node fit runs tensor parallel within a node and pipeline parallel
-// across nodes; a single-node fit is one stage of tensor parallel gpus.
-// DecodeTokensPerSec is decode(1). ConcurrentSequences is the largest c within
-// capacity whose decode(c) is at least DecentDecodeTokensPerSec (0 when decode(1)
-// is below it), AggregateTokensPerSec aggregate at that c. Active weights are
-// the quantization's weights scaled by active over total parameters
-// (mixture-of-experts); capacity counts all weights. Tokens/s are rounded to
-// 0.1.
+// ConcurrentSequences is the largest c within capacity with decode(c) >=
+// DecentDecodeTokensPerSec, or 0.
 const (
 	// BandwidthEfficiency is the share of peak memory bandwidth decode reaches.
 	BandwidthEfficiency = 0.8
-	// EstimateMemoryUtilization is the share of memory for weights and KV when
-	// counting concurrent sequences.
+	// EstimateMemoryUtilization is the memory share for weights and KV when counting sequences.
 	EstimateMemoryUtilization = 0.92
-	// DecentDecodeTokensPerSec is the per-sequence decode rate deployment
-	// guidance and concurrent sequences require, comfortably above reading
-	// speed.
+	// DecentDecodeTokensPerSec is the per-sequence rate guidance requires, above reading speed.
 	DecentDecodeTokensPerSec = 20
-	// CrossNodeEfficiency is the share of throughput kept per pipeline stage
-	// boundary, where activations cross nodes.
+	// CrossNodeEfficiency is the throughput kept per pipeline stage boundary.
 	CrossNodeEfficiency = 0.85
 )
 
-// tpEfficiency is the share of the summed bandwidth tensor parallelism keeps.
+// tpEfficiency is the share of summed bandwidth tensor parallelism keeps.
 func tpEfficiency(gpus int) float64 {
 	switch {
 	case gpus <= 1:
@@ -48,14 +34,12 @@ func tpEfficiency(gpus int) float64 {
 	return 0.75
 }
 
-// Estimate is the performance of model m at quantization q on gpus GPUs of
-// family f, at context tokens per sequence with a KV cache of kvDType.
+// Estimate is m's performance at q on gpus GPUs of f, at context tokens per sequence.
 func Estimate(m ModelTemplate, q Quantization, f Family, gpus int, context int, kvDType string) Performance {
 	return estimate(m, q, f, gpus, 1, context, kvDType)
 }
 
-// estimate is Estimate with gpus split into stages pipeline stages of
-// gpus/stages tensor-parallel GPUs each.
+// estimate is Estimate across stages pipeline stages of gpus/stages GPUs each.
 func estimate(m ModelTemplate, q Quantization, f Family, gpus, stages int, context int, kvDType string) Performance {
 	kv := kvGB(m, kvDType, context)
 	active := q.WeightsGB
@@ -82,7 +66,7 @@ func estimate(m ModelTemplate, q Quantization, f Family, gpus, stages int, conte
 
 func round1(x float64) float64 { return math.Round(x*10) / 10 }
 
-// kvBytes is the KV cache per token at kvDType: fp8 halves the 16-bit default.
+// kvBytes is the KV cache per token: fp8 halves the 16-bit default.
 func kvBytes(m ModelTemplate, kvDType string) float64 {
 	if kvDType == "fp8" {
 		return m.kvBytesPerToken() / 2

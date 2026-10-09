@@ -19,9 +19,7 @@ import (
 	"github.com/fishman/neocloud-catalog/service/internal/store"
 )
 
-// Import and generate jobs on the catalog queue run the importer and the
-// generator as the runs their arguments name and record them; a job that
-// fails reports its error.
+// Import and generate jobs run as the named runs and record them; a failing job reports its error.
 func TestImportAndGenerateJobs(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -100,7 +98,7 @@ func TestImportAndGenerateJobs(t *testing.T) {
 
 var config = jobs.Config{JobTimeout: time.Minute, RescueAfter: time.Hour}
 
-// abandon records a running import run that started past config.RescueAfter.
+// abandon records a running import run started before config.RescueAfter.
 func abandon(t *testing.T, s *store.Store, db *gorm.DB) uuid.UUID {
 	t.Helper()
 	run, err := s.StartImport(context.Background(), uuid.New(), "test", model.LayerUpstream, "test", "")
@@ -122,8 +120,7 @@ func statusOf(t *testing.T, db *gorm.DB, id uuid.UUID) model.ImportRun {
 	return r
 }
 
-// A worker fails the runs a worker that exited left running, when it starts
-// and in its periodic sweep job.
+// Abandoned runs are failed when a worker starts and by the periodic sweep.
 func TestWorkersFailAbandonedRuns(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -174,8 +171,7 @@ func (blocking) Run(ctx context.Context, _ *store.Store, _ uuid.UUID) (importers
 	return importers.Summary{}, ctx.Err()
 }
 
-// A job running past Config.JobTimeout is cancelled and its run recorded as
-// failed, not retried.
+// A job past Config.JobTimeout is cancelled, its run failed, not retried.
 func TestJobTimeoutFailsTheRun(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -205,8 +201,7 @@ func TestJobTimeoutFailsTheRun(t *testing.T) {
 	}
 }
 
-// Shutdown cancels a run still going after the grace period and the run is
-// recorded as failed, instead of waiting for its job timeout.
+// Shutdown cancels a run still going after grace and records it failed.
 func TestShutdownCancelsRunningRuns(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()

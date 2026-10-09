@@ -69,12 +69,10 @@ func TestGolden(t *testing.T) {
 	}
 }
 
-// key names a preset.
 func key(model, preset string) adapters.PresetKey {
 	return adapters.PresetKey{Model: model, Preset: preset}
 }
 
-// specs returns the specs of a preset, in document order.
 func specs(doc document, r adapters.Ref) []spec {
 	var out []spec
 	for _, set := range doc.ModelSets {
@@ -89,9 +87,7 @@ func specs(doc document, r adapters.Ref) []spec {
 	return out
 }
 
-// Every preset GPUStack can run is one spec per GPU vendor it has an image
-// for, carrying Render's arguments without a GPU count (GPUStack's scheduler
-// sizes it) and the compute capability its backend version and fit mode need.
+// One spec per GPU vendor, with Render's args minus the GPU count and the needed compute capability.
 func TestCommittedPresets(t *testing.T) {
 	snap := committed(t)
 	e, doc := export(t, snap)
@@ -139,8 +135,7 @@ func TestCommittedPresets(t *testing.T) {
 			}
 		}
 	}
-	// GPUStack takes a repository's defaults from its last spec; that must be
-	// a vLLM one, its default backend, without speculative decoding.
+	// GPUStack defaults a repo from its last spec: it must be plain vLLM.
 	speculative := map[string]bool{}
 	for _, r := range adapters.Presets(snap) {
 		speculative[r.Preset.Name] = r.Preset.Speculative != nil
@@ -161,9 +156,7 @@ func TestCommittedPresets(t *testing.T) {
 	}
 }
 
-// llama.cpp has no GPUStack backend, so it runs as Custom: the pinned image's
-// entrypoint is llama-server, run_command its arguments with GPUStack's
-// placeholders, and the GGUF file the source's filename.
+// llama.cpp runs as Custom: run_command holds llama-server's args, the GGUF file is the filename.
 func TestLlamaCpp(t *testing.T) {
 	snap := committed(t)
 	_, doc := export(t, snap)
@@ -187,9 +180,7 @@ func TestLlamaCpp(t *testing.T) {
 	}
 }
 
-// A safetensors manifest lists the revision's files, which GPUStack downloads
-// whole anyway: only a gguf quantization names its file (R10), and a gguf
-// source of several files has no one file to name.
+// Only a single-file gguf names its file; a multi-file gguf source is skipped.
 func TestOnlyGGUFNamesItsFile(t *testing.T) {
 	snap := committed(t)
 	m := &snap.Models[slices.IndexFunc(snap.Models, func(m catalog.ModelTemplate) bool { return m.Slug == "llama-3.1-8b" })]
@@ -215,9 +206,7 @@ func TestOnlyGGUFNamesItsFile(t *testing.T) {
 	}
 }
 
-// A model set carries the model's metadata in GPUStack's vocabulary: task as a
-// category, the context and capabilities GPUStack names (long-context is its
-// context/<N>K), the active size of a mixture of experts.
+// Model metadata maps to GPUStack's vocabulary (long-context is context/<N>K).
 func TestModelSets(t *testing.T) {
 	snap := committed(t)
 	_, doc := export(t, snap)
@@ -289,9 +278,7 @@ func TestComputeCapability(t *testing.T) {
 		}},
 	}
 	_, doc := export(t, snap)
-	// Emulated FP8 from the backend version's floor, native FP8 from the
-	// families with the dtype, bf16 from its families above the backend's
-	// minimum; AMD gfx targets are not compute capabilities.
+	// AMD gfx targets are not compute capabilities, so only NVIDIA specs get a floor.
 	want := map[string]string{"vllm-fp8": ">=7.5", "sglang-fp8": ">=8.9", "vllm-bf16": ">=8.0"}
 	for _, s := range doc.ModelSets[0].Specs {
 		cc := want[s.Mode]
@@ -365,7 +352,7 @@ func TestParameters(t *testing.T) {
 		// GPUStack would shlex-split "--chat-template=a b.jinja" into two tokens.
 		{[]string{"--chat-template", "a b.jinja"}, []string{"--chat-template", "a b.jinja"}},
 		{[]string{"--hf-overrides", `{"a":1}`}, []string{"--hf-overrides", `{"a":1}`}},
-		// and drop the quotes of a JSON value written "--flag=value".
+		// shlex would also drop the quotes of a joined JSON value.
 		{[]string{`--speculative-config={"method":"eagle3"}`}, []string{"--speculative-config", `{"method":"eagle3"}`}},
 		// A flag with several values keeps them as separate items.
 		{[]string{"--lora-modules", "a", "b", "--trust-remote-code"}, []string{"--lora-modules", "a", "b", "--trust-remote-code"}},

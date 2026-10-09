@@ -1,5 +1,5 @@
-// Package gpustack exports the catalog as a GPUStack model catalog: the YAML
-// document GPUStack reads from --model-catalog-file or a catalog source.
+// Package gpustack exports the catalog as a GPUStack model catalog
+// (--model-catalog-file).
 package gpustack
 
 import (
@@ -18,25 +18,20 @@ import (
 // Format is the GPUStack model catalog, one model-catalog.yaml.
 const Format = "gpustack"
 
-// Reasons the gpustack format skips a preset.
+// Skip reasons.
 const (
-	// SkipNoSource also covers a gguf source of several files, as GPUStack's
-	// source names at most one.
+	// SkipNoSource also covers multi-file gguf: a GPUStack source names at most one file.
 	SkipNoSource = "no Hugging Face or ModelScope source"
 	SkipBackend  = "backend GPUStack cannot run"
-	// SkipTopology covers multi-node, which GPUStack's scheduler decides on
-	// itself, and disaggregated presets, whose GPUStack prefill/decode roles
-	// are not mapped.
+	// SkipTopology: GPUStack's scheduler decides multi-node itself; prefill/decode roles are unmapped.
 	SkipTopology = "topology GPUStack catalog cannot express"
 )
 
-// backends maps catalog backends to GPUStack's BackendEnum values. It has no
-// llama.cpp value (schemas/models.py), so llama.cpp runs as a Custom image.
+// GPUStack's BackendEnum has no llama.cpp (schemas/models.py), so it runs as Custom.
 var backends = map[string]string{"vllm": "vLLM", "sglang": "SGLang", "llamacpp": "Custom"}
 
-// GPUStack's model-set vocabulary: CategoryEnum (schemas/models.py) for the
-// task, and the capabilities its own catalog (assets/model-catalog.yaml) uses
-// besides context/<N>K, which stands for long-context. json-schema has none.
+// GPUStack's CategoryEnum and its catalog's capabilities; context/<N>K stands for
+// long-context and json-schema has no equivalent.
 var (
 	categories   = map[string]string{"chat": "llm", "completion": "llm", "vision-chat": "llm", "embedding": "embedding", "rerank": "reranker"}
 	capabilities = map[string]string{"tools": "tools", "reasoning": "reasoning", "vision": "vision"}
@@ -64,8 +59,7 @@ func (adapter) SkipReasons(format string) []string {
 	return []string{SkipNoSource, SkipBackend, SkipTopology}
 }
 
-// The document is JSON, which GPUStack's yaml.safe_load reads as YAML. Field
-// names are GPUStack's (schemas/model_sets.py, schemas/models.py).
+// The document is JSON, which GPUStack's yaml.safe_load reads as YAML.
 type document struct {
 	ModelSets   []modelSet `json:"model_sets"`
 	DraftModels []struct{} `json:"draft_models"`
@@ -132,10 +126,8 @@ func (a adapter) Export(snap catalog.CatalogSnapshot, format string, _ adapters.
 		if m.License != "" {
 			set.Licenses = []string{m.License}
 		}
-		// GPUStack fills backend_parameters of a deployment made outside the
-		// catalog from the last spec with the same repository, whatever its
-		// backend (scheduler/evaluator.py set_default_spec); its default backend
-		// is vLLM, so vLLM specs go last, plain ones after speculative ones.
+		// GPUStack defaults non-catalog deployments from the last spec of the same repo
+		// (evaluator.py set_default_spec) on vLLM, so plain vLLM specs go last.
 		var groups [3][]spec
 		for _, p := range m.Presets {
 			r := adapters.Ref{Model: m, Preset: p}
@@ -176,8 +168,7 @@ func (a adapter) Export(snap catalog.CatalogSnapshot, format string, _ adapters.
 	return e, nil
 }
 
-// specs maps one preset to a spec per GPU vendor it has an image for, or names
-// the reason it cannot be expressed.
+// specs maps a preset to one spec per GPU vendor, or returns a skip reason.
 func (a adapter) specs(snap catalog.CatalogSnapshot, r adapters.Ref) ([]spec, string, error) {
 	p := r.Preset
 	backend, ok := backends[p.Backend]
@@ -192,8 +183,7 @@ func (a adapter) specs(snap catalog.CatalogSnapshot, r adapters.Ref) ([]spec, st
 		return nil, SkipNoSource, nil
 	}
 	q, _ := r.Quantization()
-	// GPUStack downloads the whole repository unless it names one GGUF file;
-	// other manifests list the revision's files (R10).
+	// GPUStack downloads the whole repository unless it names one GGUF file.
 	var file string
 	if q.Kind == "gguf" {
 		if len(src.Files) > 1 {
@@ -208,8 +198,7 @@ func (a adapter) specs(snap catalog.CatalogSnapshot, r adapters.Ref) ([]spec, st
 		return nil, "", fmt.Errorf("gpustack: %s/%s: backend %s %s not in the snapshot", r.Model.Slug, p.Name, p.Backend, p.BackendVersion)
 	}
 	base := spec{
-		// GPUStack offers one spec per mode (routes/model_sets.py
-		// filter_specs_by_gpu), so every preset needs its own.
+		// GPUStack offers one spec per mode (filter_specs_by_gpu), so each preset needs its own.
 		Mode:         p.Name,
 		Quantization: strings.ToUpper(p.Quantization),
 		Backend:      backend,
@@ -227,8 +216,7 @@ func (a adapter) specs(snap catalog.CatalogSnapshot, r adapters.Ref) ([]spec, st
 		if v == "cpu" {
 			continue
 		}
-		// GPUStack's scheduler sizes the GPU count, so no fit sets tensor
-		// parallelism.
+		// GPUStack's scheduler sizes the GPU count.
 		args, err := catalog.Render(r.Model, p, bv, catalog.ModelFit{}, adapters.Draft(snap, p), v)
 		if err != nil {
 			return nil, "", fmt.Errorf("gpustack: %w", err)
@@ -239,12 +227,9 @@ func (a adapter) specs(snap catalog.CatalogSnapshot, r adapters.Ref) ([]spec, st
 		} else {
 			s.BackendParameters = parameters(args)
 		}
-		// GPUStack rejects image_name together with backend_version
-		// (routes/models.py validate_model_in), and the pinned image is the pin.
+		// GPUStack rejects image_name with backend_version (validate_model_in); the image is the pin.
 		s.ImageName = bv.Images[v]
-		// Catalog vendor names are GPUStack's (gpustack_runtime
-		// ManufacturerEnum). Its compute capability check fails a GPU without
-		// an NVIDIA one, so only NVIDIA specs carry it.
+		// GPUStack's compute capability check fails non-NVIDIA GPUs, so only NVIDIA specs carry it.
 		s.GPUFilters = &gpuFilters{Vendor: []string{v}}
 		if v == "nvidia" && cc != "" {
 			s.GPUFilters.ComputeCapability = ">=" + cc
@@ -257,10 +242,8 @@ func (a adapter) specs(snap catalog.CatalogSnapshot, r adapters.Ref) ([]spec, st
 	return out, "", nil
 }
 
-// minComputeCapability is the lowest NVIDIA compute capability a quantization
-// kind runs on with bv: emulated from the kind's emulated_from where bv
-// emulates it, else on the lowest family with its native dtype, never below
-// bv's minimum; "" when nothing bounds it.
+// minComputeCapability is the lowest NVIDIA compute capability kind runs on with
+// bv (emulated, else lowest native family, at least bv's minimum), or "".
 func minComputeCapability(snap catalog.CatalogSnapshot, kind string, bv catalog.BackendVersion) string {
 	qs := bv.Quantizations[kind]
 	floor := qs.EmulatedFrom
@@ -300,10 +283,9 @@ func home(s spec) string {
 // shlexSpecial are the characters GPUStack's shlex.split acts on.
 const shlexSpecial = " \t\n\v\f\r'\"\\"
 
-// parameters writes argv the way GPUStack's catalog does, "--flag=value" for a
-// flag with exactly one value. GPUStack re-splits an item that starts with a
-// flag through shlex (utils/command.py flatten_to_argv), so a value shlex would
-// change becomes an item of its own, which GPUStack passes through verbatim.
+// parameters joins single-valued flags as "--flag=value" like GPUStack's catalog.
+// GPUStack shlex-splits items starting with a flag (flatten_to_argv), so a value
+// shlex would change stays a separate item, which passes through verbatim.
 func parameters(args []string) []string {
 	var out []string
 	for i := 0; i < len(args); i++ {
@@ -332,10 +314,8 @@ func isKey(t string) bool {
 	return err != nil
 }
 
-// runCommand is a Custom spec's run_command: GPUStack starts the image's own
-// entrypoint (worker/backends/custom.py), which in the pinned images is the
-// command's binary, with the rest of the command and the rendered arguments,
-// and fills {{model_path}}, {{port}} and {{model_name}} (the served name).
+// runCommand drops the command's binary: GPUStack runs the image entrypoint, which
+// is that binary in the pinned images, and fills {{model_name}} for {{model}}.
 func runCommand(command, args []string) string {
 	var tokens []string
 	for _, t := range command[min(1, len(command)):] {

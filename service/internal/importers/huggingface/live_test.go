@@ -10,9 +10,7 @@ import (
 	"github.com/fishman/neocloud-catalog/service/internal/store"
 )
 
-// The recordings under testdata/hf still say what the Hub says: every source
-// of the committed catalog, and the missing revision, read the same live as
-// recorded. It reads without a token, as they were recorded. Opt in with
+// Live Hub matches testdata/hf, read without a token. Opt in with
 // NEOCLOUD_CATALOG_LIVE=1.
 func TestLiveHubMatchesRecordings(t *testing.T) {
 	if os.Getenv("NEOCLOUD_CATALOG_LIVE") != "1" {

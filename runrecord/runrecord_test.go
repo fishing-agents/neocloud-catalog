@@ -107,9 +107,8 @@ func TestFilterArgs(t *testing.T) {
 	}
 }
 
-// The JSON Schema and the Go types describe the same fields: every object's
-// properties are the struct's json names, and its required list is exactly
-// the fields without omitempty.
+// Every schema object's properties are the struct's json names and its required
+// list is exactly the fields without omitempty.
 func TestSchemaMatchesTypes(t *testing.T) {
 	var schema map[string]any
 	if err := json.Unmarshal(JSONSchema, &schema); err != nil {

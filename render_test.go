@@ -21,9 +21,8 @@ var (
 	localEagle3 = &DraftModel{Slug: "eagle3-local", Method: "eagle3", Source: ModelSource{Type: SourceLocal, Repo: "/models/eagle3"}}
 )
 
-// curatedBackends returns the pinned version of each backend from
-// data/backends.json, so the tests pin the curated flag tables rather than
-// fixtures.
+// curatedBackends returns each backend's pinned version from data/backends.json,
+// so tests exercise the real flag tables.
 func curatedBackends(t *testing.T) map[string]BackendVersion {
 	t.Helper()
 	b, err := os.ReadFile("data/backends.json")
@@ -109,8 +108,7 @@ func TestRender(t *testing.T) {
 			want: []string{"--tensor-parallel-size=2", `--kv-transfer-config={"kv_connector":"NixlConnector","kv_role":"kv_producer"}`}},
 		{name: "vllm decode runs on the decode gpus", backend: "vllm", gpus: 1, role: "decode", preset: Preset{TensorParallel: 8, Topology: pd},
 			want: []string{"--tensor-parallel-size=4", `--kv-transfer-config={"kv_connector":"NixlConnector","kv_role":"kv_consumer"}`}},
-		// A 2-node fit of llama-3.1-70b on H100 (16 GPUs): tensor parallel
-		// within a node, pipeline parallel across nodes, as the fit is sized.
+		// 2-node llama-3.1-70b on H100: TP within a node, PP across nodes.
 		{name: "vllm multi-node head", backend: "vllm", gpus: 16, nodes: 2, preset: Preset{Topology: twoNodes},
 			want: []string{"--tensor-parallel-size=8", "--pipeline-parallel-size=2", "--nnodes=2", "--node-rank=0", "--master-addr={{master_addr}}", "--master-port={{master_port}}"}},
 		{name: "vllm multi-node worker", backend: "vllm", gpus: 16, nodes: 2, rank: 1, preset: Preset{Topology: twoNodes},
@@ -155,8 +153,7 @@ func TestRender(t *testing.T) {
 	}
 }
 
-// Every refusal names the preset and the backend version, so a generation
-// error points at the flag table that cannot express the preset.
+// Every refusal names the preset and backend version.
 func TestRenderRefusesWhatTheBackendCannotExpress(t *testing.T) {
 	bvs := curatedBackends(t)
 	on := true

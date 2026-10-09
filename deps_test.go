@@ -6,8 +6,7 @@ import (
 	"testing"
 )
 
-// The public core must stay stdlib-only: enterprise code plugs in through
-// extensions, never through imports.
+// Enterprise code plugs in through extensions, never through core imports.
 func TestCoreImportsOnlyStdlib(t *testing.T) {
 	out, err := exec.Command("go", "list", "-deps", "-f", "{{if not .Standard}}{{.ImportPath}}{{end}}", ".", "./runrecord", "./cmd/...").Output()
 	if err != nil {

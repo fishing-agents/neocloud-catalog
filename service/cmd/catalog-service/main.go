@@ -168,9 +168,8 @@ func cmdServe() {
 	}
 }
 
-// runServe works the catalog queue on c while serve runs until ctx ends. Runs
-// still going then get grace to finish, and are then cancelled and recorded
-// as failed rather than holding the shutdown for up to jobs.job_timeout.
+// runServe works the queue while serve runs; on shutdown, runs still going get
+// grace, then are cancelled and recorded failed instead of holding shutdown.
 func runServe(ctx context.Context, c *jobs.Client, grace time.Duration, serve func() error) error {
 	// Detached: cancelling River's start context would cancel the jobs at once.
 	if err := c.Start(context.WithoutCancel(ctx)); err != nil {
@@ -188,7 +187,7 @@ func cmdMigrate() {
 	if err := gormDB.AutoMigrate(model.All()...); err != nil {
 		log.Fatalf("migrate: %v", err)
 	}
-	// One statement batch, so one transaction: re-running replaces the trigger.
+	// One batch, so one transaction: re-running replaces the trigger.
 	trigger := `DROP TRIGGER IF EXISTS "releases_immutable" ON "releases"; DROP FUNCTION IF EXISTS "releases_immutable"();` +
 		migrations.ReleasesImmutable
 	if _, err := sqlDB.Exec(trigger); err != nil {
@@ -219,10 +218,8 @@ func mustRegistry(cfg *config.Config) importers.Registry {
 	return reg
 }
 
-// registry is the deployment's importers. An operator deployment
-// (upstream.ref set) takes its upstream layer from the upstream release
-// only, which the import replaces whole, so it refuses the importers that
-// write that layer (R26); prices are internal and kaito writes nothing.
+// registry refuses, in an operator deployment (upstream.ref set), the importers
+// writing the upstream layer: there it comes from the upstream release only.
 func registry(cfg *config.Config) (importers.Registry, error) {
 	prices, cross := azureprices.New(azureprices.Endpoint, cfg.AzurePrices.Regions), kaito.New(kaito.Catalog)
 	u := cfg.Upstream
@@ -262,13 +259,11 @@ func registry(cfg *config.Config) (importers.Registry, error) {
 	return importers.NewRegistry(boot, hardware, huggingface.New(huggingface.Endpoint, token), prices, cross), nil
 }
 
-// runJob enqueues args and works the catalog queue until the job finished,
-// then prints the output it recorded.
+// runJob runs args to completion and prints its recorded output.
 func runJob(cfg *config.Config, sqlDB *sql.DB, s *store.Store, reg importers.Registry, args river.JobArgs) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	// A second signal exits at once, leaving a job still running to be
-	// rescued after jobs.rescue_after.
+	// A second signal exits at once; the running job is rescued after jobs.rescue_after.
 	context.AfterFunc(ctx, stop)
 	out, err := work(ctx, cfg, sqlDB, s, reg, args)
 	if err != nil {
@@ -281,10 +276,8 @@ func runJob(cfg *config.Config, sqlDB *sql.DB, s *store.Store, reg importers.Reg
 	fmt.Println(b.String())
 }
 
-// work runs args as a job on the catalog queue, which serve's worker shares:
-// either may take either's jobs. A job of another process this worker took
-// is neither cancelled by ctx nor by stopping, which waits for it; ctx
-// cancels args' job only.
+// work runs args on the queue it shares with serve's worker. A job of another
+// process taken here is not cancelled by ctx, and Stop waits for it.
 func work(ctx context.Context, cfg *config.Config, sqlDB *sql.DB, s *store.Store, reg importers.Registry, args river.JobArgs) ([]byte, error) {
 	if err := jobs.Migrate(ctx, sqlDB); err != nil {
 		return nil, fmt.Errorf("river migrate: %w", err)

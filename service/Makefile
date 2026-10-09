@@ -28,21 +28,20 @@ test: test-unit test-integration
 test-unit:
 	$(GO) test ./...
 
-# helm template and helm lint of the chart; skipped without helm.
+# Skipped without helm.
 chart-test:
 	$(GO) test ./charts/catalog-service/tests/ -count=1
 
-# Each DB test creates and drops its own <database>_<suffix> next to TEST_DSN's.
+# Each DB test creates and drops its own database next to TEST_DSN's.
 test-integration:
 	NEOCLOUD_CATALOG_TEST_DSN="$(TEST_DSN)" $(GO) test ./... -count=1
 
-# Dev/test schema: GORM AutoMigrate, runnable without the atlas binary.
+# Dev/test schema; no atlas binary needed.
 migrate:
 	$(GO) run ./cmd/catalog-service migrate
 
-# Production schema: Atlas versioned migrations (migrations/). The GORM models
-# are the schema authority; migrate-diff writes the next file from them against
-# a docker postgres:16 dev database (see atlas.hcl).
+# Production schema: Atlas diffs the GORM models into the next migration
+# against a docker postgres:16 dev database (atlas.hcl).
 migrate-diff:
 	$(ATLAS) migrate diff $(NAME) --env gorm
 
@@ -52,7 +51,6 @@ migrate-apply:
 serve:
 	$(GO) run ./cmd/catalog-service serve
 
-# The build context is the repository root (the module replaces ../ and
-# ../adapters).
+# Build context is the repository root (go.mod replaces ../ and ../adapters).
 image:
 	docker build -f Dockerfile -t catalog-service ..

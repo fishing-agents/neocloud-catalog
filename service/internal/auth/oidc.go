@@ -10,8 +10,8 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 )
 
-// oidcTimeout bounds each discovery and JWKS request to the issuer: discovery
-// holds the backend's lock, so a hanging issuer would queue every token.
+// oidcTimeout bounds issuer requests: discovery holds the backend's lock, so a
+// hanging issuer would queue every token.
 const oidcTimeout = 10 * time.Second
 
 type oidcBackend struct {
@@ -22,10 +22,8 @@ type oidcBackend struct {
 	verifier *oidc.IDTokenVerifier
 }
 
-// verifierFor discovers the issuer on first use and caches the result. A failed
-// discovery is not cached, so the service starts while the IdP is down and
-// recovers on a later request. go-oidc caches the JWKS and refetches it on
-// unknown keys.
+// verifierFor discovers the issuer on first use. Failures are not cached, so
+// the service starts while the IdP is down and recovers later.
 func (o *oidcBackend) verifierFor(ctx context.Context) (*oidc.IDTokenVerifier, error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()

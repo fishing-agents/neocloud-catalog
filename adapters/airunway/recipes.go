@@ -11,8 +11,7 @@ import (
 	"github.com/fishman/neocloud-catalog/adapters"
 )
 
-// The recipe fields AI Runway reads (backend/src/services/vllmRecipeResolver.ts,
-// vllmRecipesClient.ts), in the layout of recipes.vllm.ai.
+// Recipe fields AI Runway reads (vllmRecipeResolver.ts), in recipes.vllm.ai's layout.
 type recipe struct {
 	HFID               string             `json:"hf_id"`
 	Meta               recipeMeta         `json:"meta"`
@@ -63,14 +62,12 @@ type indexEntry struct {
 	DerivedFrom string `json:"derived_from,omitempty"`
 }
 
-// fitStatus marks a family the fit matrix covers in meta.hardware. Upstream
-// reserves "verified" for GPUs tested end to end; a fit is computed.
+// fitStatus marks fit-matrix families in meta.hardware; upstream reserves
+// "verified" for GPUs tested end to end.
 const fitStatus = "supported"
 
-// exportRecipes writes one recipe per Hugging Face repo, because AI Runway
-// fetches <hf_id>.json and its UI matches a recipe by hf_id: a model's first
-// vLLM preset is its base recipe, every other one a recipe derived from it
-// (meta.derived_from) and listed among the base's variants.
+// exportRecipes writes one recipe per HF repo, as AI Runway fetches <hf_id>.json.
+// A model's first vLLM preset is the base; others derive from it (meta.derived_from).
 func exportRecipes(snap catalog.CatalogSnapshot, opts adapters.Options) (adapters.Export, error) {
 	var e adapters.Export
 	var models [][]target // per model, its recipes; the first is the base
@@ -140,8 +137,7 @@ func exportRecipes(snap catalog.CatalogSnapshot, opts adapters.Options) (adapter
 func newRecipe(snap catalog.CatalogSnapshot, t target, group []target) (recipe, error) {
 	base := group[0]
 	org, _, _ := strings.Cut(base.source.Repo, "/")
-	// The Direct vLLM provider a recipe resolves to derives tensor parallelism
-	// from the GPU count, so no fit sets it.
+	// The Direct vLLM provider derives tensor parallelism from the GPU count.
 	args, err := catalog.Render(t.Model, t.Preset, t.release, catalog.ModelFit{}, t.draft, gpuVendor)
 	if err != nil {
 		return recipe{}, err
@@ -185,19 +181,16 @@ func newRecipe(snap catalog.CatalogSnapshot, t target, group []target) (recipe, 
 	return rc, nil
 }
 
-// newVariant sizes a checkpoint at the context its command serves, rounded up
-// to 0.01 GB like the fit matrix.
+// newVariant sizes a checkpoint at its served context, rounded up to 0.01 GB.
 func newVariant(t target) variant {
 	vram, _ := catalog.VRAMRequired(t.Model, t.Preset.Quantization, cmp.Or(t.Preset.Context, t.Model.DefaultContext))
 	return variant{Precision: t.Preset.Quantization, VRAMMinimumGB: math.Ceil(vram*100) / 100}
 }
 
-// recipePath is where the recipes client fetches a repo's recipe:
-// <base>/<org>/<model>.json.
+// recipePath is <org>/<model>.json, where the recipes client fetches it.
 func recipePath(t target) string { return t.source.Repo + ".json" }
 
-// hardwareID spells a device family the way recipes name hardware (h100,
-// rtx_4090).
+// hardwareID spells a family as recipes name hardware (h100, rtx_4090).
 func hardwareID(family string) string {
 	return strings.ToLower(strings.ReplaceAll(family, "-", "_"))
 }

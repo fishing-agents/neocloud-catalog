@@ -1,8 +1,7 @@
 //go:build atlas
 
-// Command atlas dumps the GORM models as DDL for atlas-provider-gorm: the
-// external schema atlas.hcl feeds `atlas migrate diff`. Built only with the
-// atlas tag, never into catalog-service.
+// Command atlas dumps the GORM models as DDL, the schema atlas.hcl diffs
+// against. Built only with the atlas tag.
 package main
 
 import (

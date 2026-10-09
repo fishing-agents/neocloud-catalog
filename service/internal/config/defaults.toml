@@ -14,57 +14,42 @@ metrics_addr = "0.0.0.0:8081"
 data_dir = "../data"
 
 [huggingface]
-# token_file holds the Hugging Face token gated repositories need (a mounted
-# secret, never the token itself). It is read once at startup: a rotated
-# token takes effect after a restart. Empty: the huggingface importer reports
-# gated sources as "gated: token missing".
+# Path to the token (a mounted secret), read once at startup. Empty: gated
+# sources are reported as "gated: token missing".
 token_file = ""
 
 [azure_prices]
-# regions are the Azure regions (ARM names) the azure-prices importer reads
-# Linux on-demand, spot and 1-year reserved prices in, for every azure/ node
-# type. ND MI300X v5 is not offered in eastus, hence eastus2; a node type
-# priced in none of them is listed as an error of the run.
+# ARM regions for azure/ node type prices. eastus2 because ND MI300X v5 is not
+# offered in eastus; a node type priced in none is a run error.
 regions = ["eastus", "eastus2"]
 
 [auth]
-# API keys (catalog-service auth issue) always work. An issuer_url (ICP) also
-# accepts its OIDC JWTs whose aud contains audience; their roles claim must
-# contain admin to write.
+# API keys always work. issuer_url also accepts OIDC JWTs whose aud contains
+# audience; writing needs the admin role.
 issuer_url = ""
 audience = ""
 
 [jobs]
-# job_timeout cancels a run on the catalog queue that takes longer (jobs are
-# never retried); a run still running after rescue_after (> job_timeout) was
-# left by a worker that exited and is failed. The huggingface import of the
-# committed catalog takes under a minute.
+# job_timeout cancels a run (jobs are never retried); a run still running after
+# rescue_after (> job_timeout) was left by an exited worker and is failed.
 job_timeout = "30m"
 rescue_after = "1h"
 
 [release]
 # POST /v1/releases/{version}/publish pushes to ref (repository:tag), signed
-# with the cosign.key at key (its password in COSIGN_PASSWORD), within
-# publish_timeout. Empty: the API does not publish. overlay_ref
-# (repository:tag) also publishes each release's overlay, re-pinned to the
-# release digest and signed with the same key.
+# with key (password in COSIGN_PASSWORD). Empty: the API does not publish.
+# overlay_ref also publishes the release's overlay, signed with the same key.
 ref = ""
 key = ""
 overlay_ref = ""
 publish_timeout = "2m"
 
 [upstream]
-# An operator deployment imports our release from ref with the upstream
-# importer, verified as neocloud-api verifies it: public_key (a cosign public
-# key file) or identity_issuer and identity (keyless, an anchored regexp over
-# the release workflow). overlay_ref imports our overlay pinned to that
-# release, trusted by its own overlay_public_key or overlay_identity_issuer
-# and overlay_identity. trusted_root is a Sigstore trusted_root.json for
-# offline (air-gapped) keyless verification (empty: the public-good root via
-# TUF); plain_http talks HTTP to a registry mirror without TLS; both apply to
-# the release and the overlay. Registry auth comes from the default keychain
-# (docker config). Empty ref: no upstream importer. With ref set the
-# deployment's upstream layer is the release's only: bootstrap-from-json,
+# Operator deployments: import our signed release from ref, verified by
+# public_key or by identity_issuer + identity (keyless regexp). overlay_ref
+# imports the pinned overlay with its own overlay_* trust. trusted_root enables
+# offline keyless verification; plain_http allows a registry without TLS.
+# Registry auth comes from the docker keychain. With ref set, bootstrap-from-json,
 # epoch and huggingface are refused.
 ref = ""
 identity_issuer = ""

@@ -34,8 +34,6 @@ func newStore(t *testing.T, suffix string) (*store.Store, *gorm.DB) {
 	return store.New(db), db
 }
 
-// ourDeployment is the upstream deployment: the committed data/*.json in its
-// upstream layer.
 func ourDeployment(t *testing.T, suffix string) (*store.Store, *gorm.DB) {
 	t.Helper()
 	s, db := newStore(t, suffix)
@@ -49,8 +47,8 @@ func ourDeployment(t *testing.T, suffix string) (*store.Store, *gorm.DB) {
 	return s, db
 }
 
-// releaseAt generates s's effective catalog and releases it as generated at
-// version, so that later generations are newer.
+// releaseAt releases s's catalog as generated at version, so later generations
+// are newer.
 func releaseAt(t *testing.T, s *store.Store, db *gorm.DB, version string) release.Release {
 	t.Helper()
 	run, err := generator.Run(ctx, s, uuid.New())
@@ -78,7 +76,6 @@ func publish(t *testing.T, rel release.Release, target release.Target) {
 	}
 }
 
-// writeLayer makes layer hold in, written by a finished test run.
 func writeLayer(t *testing.T, s *store.Store, layer string, in store.Inputs) {
 	t.Helper()
 	run, err := s.StartImport(ctx, uuid.New(), "test", layer, "test", "")
@@ -102,7 +99,6 @@ func effective(t *testing.T, s *store.Store) store.Inputs {
 	return in
 }
 
-// sameCore compares the core objects of two inputs.
 func sameCore(t *testing.T, got, want store.Inputs) {
 	t.Helper()
 	enc := func(in store.Inputs) string {
@@ -130,7 +126,6 @@ func clone[T any](t *testing.T, v T) T {
 	return c
 }
 
-// runImport runs imp as a new import run that must succeed.
 func runImport(t *testing.T, s *store.Store, imp importers.Importer) (model.ImportRun, importers.Summary) {
 	t.Helper()
 	run, err := importers.Execute(ctx, s, imp, uuid.New())
@@ -144,8 +139,7 @@ func runImport(t *testing.T, s *store.Store, imp importers.Importer) (model.Impo
 	return run, sum
 }
 
-// retag points tag at the manifest artifact (repository@digest), as a
-// registry replaying an older signed release does.
+// retag points tag at artifact, as a registry replaying an older release does.
 func retag(t *testing.T, tag, artifact string) {
 	t.Helper()
 	d, err := name.NewDigest(artifact)
@@ -169,8 +163,7 @@ func payload(tier string) catalog.Extensions {
 	return catalog.Extensions{"example.com/tier": json.RawMessage(`{"tier":"` + tier + `"}`)}
 }
 
-// tier is the tier of ext's example.com/tier payload; jsonb and encoding/json
-// each re-space a payload.
+// tier decodes the payload; jsonb and encoding/json each re-space it.
 func tier(t *testing.T, ext catalog.Extensions) string {
 	t.Helper()
 	var p struct {
@@ -184,8 +177,7 @@ func tier(t *testing.T, ext catalog.Extensions) string {
 	return p.Tier
 }
 
-// newModel is m as slug without its speculative presets, whose draft models
-// target m only.
+// newModel is m as slug without its speculative presets.
 func newModel(t *testing.T, m catalog.ModelTemplate, slug string) catalog.ModelTemplate {
 	t.Helper()
 	c := clone(t, m)
@@ -194,11 +186,8 @@ func newModel(t *testing.T, m catalog.ModelTemplate, slug string) catalog.ModelT
 	return c
 }
 
-// The upstream import verifies our release with our key and replaces the
-// upstream layer with its curated objects, stamped as this importer's (R21),
-// so the operator generates what we released. The local layer stays, last
-// (R24); without an overlay configured the overlay layer is emptied; a second
-// run of the same release changes nothing.
+// The import verifies our release and replaces the upstream layer; local stays;
+// no overlay empties the overlay layer.
 func TestUpstreamImportReplacesUpstreamLayer(t *testing.T) {
 	ours, ourDB := ourDeployment(t, "upstream_replace_ours")
 	rel := releaseAt(t, ours, ourDB, "2026-01-01T00:00:00Z")
@@ -265,9 +254,7 @@ func TestUpstreamImportReplacesUpstreamLayer(t *testing.T) {
 	}
 }
 
-// The release version is signed, so a registry replaying an older signed
-// release cannot roll the upstream layer back: the run fails and the layer
-// stays. The release imported last imports again.
+// A replayed older signed release fails the run and leaves the layer.
 func TestUpstreamImportRefusesOlderRelease(t *testing.T) {
 	ours, ourDB := ourDeployment(t, "upstream_older_ours")
 	older := releaseAt(t, ours, ourDB, "2026-01-01T00:00:00Z")
@@ -310,9 +297,7 @@ func TestUpstreamImportRefusesOlderRelease(t *testing.T) {
 	}
 }
 
-// Our overlay imports with the release it is pinned to, verified with its own
-// trust, into the overlay layer. One pinned to another release, or signed by
-// another key, fails the run and leaves both layers as they were.
+// An overlay imports only pinned to the release and signed with its own key.
 func TestOverlayImportRequiresPin(t *testing.T) {
 	ours, ourDB := ourDeployment(t, "upstream_pin_ours")
 	m := effective(t, ours).Models[0]
@@ -362,8 +347,7 @@ func TestOverlayImportRequiresPin(t *testing.T) {
 			t.Errorf("%s changed the overlay layer", what)
 		}
 	}
-	// Our next release is published without its overlay: the tag still names
-	// the overlay pinned to the previous release.
+	// The next release ships without an overlay; the tag still names the previous one.
 	extra := newModel(t, m, "newer-model")
 	if err := ours.Upsert(ctx, extra); err != nil {
 		t.Fatal(err)
@@ -385,7 +369,6 @@ func TestOverlayImportRequiresPin(t *testing.T) {
 	}
 }
 
-// extensions counts the extension payloads of snap's objects.
 func extensions(snap catalog.CatalogSnapshot) int {
 	n := 0
 	for _, f := range snap.Families {
@@ -408,13 +391,8 @@ func extensions(snap catalog.CatalogSnapshot) int {
 	return n
 }
 
-// An operator deployment imports our release and our overlay, adds a local
-// model and re-exports: a release, and the overlay re-pinned to its digest,
-// both signed with the operator's key. neocloud-api configured with that key
-// (catalog.public_key, catalog.overlay_public_key) verifies and syncs both as
-// its refresh does: the operator's version is newer than ours, the overlay
-// pins the operator's export and merges, and the export carries no
-// extensions.
+// An operator's re-exported release and re-pinned overlay verify and sync in
+// neocloud-api.
 func TestOperatorReexportSyncsInAPI(t *testing.T) {
 	ours, ourDB := ourDeployment(t, "reexport_ours")
 	m := effective(t, ours).Models[0]
@@ -446,8 +424,6 @@ func TestOperatorReexportSyncsInAPI(t *testing.T) {
 	opRef, opOverlayRef := host+"/operator/catalog:v4", host+"/operator/overlay:v4"
 	publish(t, theirs, release.Target{Ref: opRef, OverlayRef: opOverlayRef, Signer: opSigner})
 
-	// neocloud-api's refresh with catalog.public_key and
-	// catalog.overlay_public_key holding the operator's key.
 	api := newSource(t, upstream.Config{Ref: opRef, PublicKey: opPub})
 	apiOverlay := newSource(t, upstream.Config{Ref: opOverlayRef, PublicKey: opPub, Overlay: true})
 	rel, err := api.Check(ctx)

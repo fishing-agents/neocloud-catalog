@@ -11,44 +11,29 @@ import (
 	"strings"
 )
 
-// GPUMemoryUtilization is the share of each GPU's memory a fit may use for
-// weights and KV cache: a conservative budget below vLLM's 0.92 default,
-// leaving the rest for activations.
+// GPUMemoryUtilization is the share of GPU memory a fit may use for weights and KV
+// cache: below vLLM's 0.92 default to leave room for activations.
 const GPUMemoryUtilization = 0.9
 
-// tpSizes are the tensor-parallel GPU counts per node considered, smallest
-// first.
+// tpSizes are the tensor-parallel GPU counts per node considered, smallest first.
 var tpSizes = []int{1, 2, 4, 8}
 
-// kvDTypes are the KV cache dtypes fits are derived for.
 var kvDTypes = []string{"auto", "fp8"}
 
-// guidanceKinds are the quantization kinds whose fits drive deployment
-// guidance; other kinds (gguf, int4) keep their per-fit estimates only.
+// guidanceKinds are the quantization kinds whose fits drive deployment guidance.
 var guidanceKinds = []string{"float", "fp8"}
 
-// The closed vocabularies of preset purposes, model tasks and capabilities.
 var (
 	purposes     = []string{"standard", "throughput", "latency", "long-context"}
 	tasks        = []string{"chat", "completion", "embedding", "rerank", "vision-chat"}
 	capabilities = []string{"tools", "reasoning", "vision", "long-context", "json-schema"}
 )
 
-// Generate validates the curated input and assembles the snapshot: families,
-// the node-type vocabulary of the cloud node types plus generated fallbacks,
-// models with their deployment guidance, draft models, backends and the fit
-// matrix, then runs the registered extensions. A fit exists for a model,
-// quantization, KV cache dtype, family and node count where some preset with
-// that quantization, KV cache dtype and node count runs on the family
-// (presetMode). It is the smallest layout (GPUs) such a preset needs to hold
-// the weights plus the KV cache of its context in the memory budget, with the
-// largest context that layout holds, capped at the model's ceiling, and the
-// estimate at that preset's context. A multi-node preset spans whole nodes of
-// the family's largest node type. A preset whose quantization fits families its
-// backend version runs on none of, or an unparsable NVIDIA compute capability,
-// fails generation. The report lists the models without a deployment minimum
-// and the presets whose quantization fits no family. Pure and deterministic, so
-// the snapshot digest is stable for identical input.
+// Generate validates the curated input, assembles the snapshot with its fit matrix
+// and deployment guidance, and runs the registered extensions. Each fit is the
+// smallest layout on which some preset holds weights plus its context's KV cache
+// in the memory budget. The report lists models without a deployment minimum and
+// presets that fit no family. Deterministic, so the digest is stable.
 func Generate(families []Family, nodeTypes []NodeType, templates []ModelTemplate, drafts []DraftModel, backends []Backend) (CatalogSnapshot, []string, error) {
 	vocab, err := NodeTypeVocabulary(families, nodeTypes)
 	if err != nil {
@@ -104,7 +89,7 @@ func Generate(families []Family, nodeTypes []NodeType, templates []ModelTemplate
 		return cmp.Or(strings.Compare(a.ModelSlug, b.ModelSlug), strings.Compare(a.DeviceFamily, b.DeviceFamily),
 			strings.Compare(a.Quantization, b.Quantization), strings.Compare(a.KVCacheDType, b.KVCacheDType), cmp.Compare(a.Nodes, b.Nodes))
 	})
-	// The core alone first: extensions validate once they generated payloads.
+	// Core first: extensions validate after they have generated payloads.
 	if err := snap.validate(newRegistry()); err != nil {
 		return CatalogSnapshot{}, nil, err
 	}
@@ -114,8 +99,8 @@ func Generate(families []Family, nodeTypes []NodeType, templates []ModelTemplate
 	return snap, report, nil
 }
 
-// checkComputeCapabilities refuses NVIDIA compute capabilities that do not
-// parse as numbers, which would fail every comparison and drop fits silently.
+// checkComputeCapabilities rejects non-numeric NVIDIA compute capabilities, which
+// would fail every comparison and silently drop fits.
 func checkComputeCapabilities(families []Family, backends []Backend) error {
 	bad := func(cc string) bool { _, err := versionNumbers(cc); return err != nil }
 	var errs []error
@@ -139,20 +124,17 @@ func checkComputeCapabilities(families []Family, backends []Backend) error {
 	return errors.Join(errs...)
 }
 
-// candidate is a fit with what deployment guidance ranks it by.
 type candidate struct {
 	fit    ModelFit
-	preset string  // the preset it was sized for
+	preset string
 	memory float64 // total GPU memory
 	rank   int     // quantization order, then auto KV before fp8
-	guides bool    // a single-node fit of a quantization kind that may drive guidance
+	guides bool    // single-node fit of a guidance kind
 }
 
-// modelFits derives t's fits and names the presets whose quantization fits no
-// family. perNode is the GPU count of each family's largest node type. It
-// fails on a preset whose quantization fits families its backend version runs
-// on none of; presets of unknown backend versions or quantization kinds are
-// left to Validate.
+// modelFits derives t's fits and names the presets that fit no family. It fails on
+// a preset whose fitting families its backend version runs on none of; unknown
+// backend versions and quantization kinds are left to Validate.
 func modelFits(t ModelTemplate, families []Family, perNode map[string]int, versions map[[2]string]BackendVersion) ([]candidate, []string, error) {
 	type choice struct {
 		preset *Preset
@@ -228,18 +210,13 @@ func modelFits(t ModelTemplate, families []Family, perNode map[string]int, versi
 	return out, unfit, errors.Join(errs...)
 }
 
-// sizing is a preset's GPU count on a family, the nodes it spans and its
-// pipeline stages, each of gpus/stages tensor-parallel GPUs.
+// sizing is a preset's GPU count, the nodes it spans and its pipeline stages.
 type sizing struct{ gpus, nodes, stages int }
 
-// layout is the smallest sizing on which preset p holds q's weights plus the
-// KV cache of its context within fam's memory budget. A multi-node preset
-// spans its nodes of perNode GPUs each (none without a node type of fam), in
-// its pipeline stages (default a stage per node) whose tensor-parallel degree
-// divides the attention heads and matches its explicit one. A single-node
-// preset takes the tensor-parallel degrees dividing the attention heads, else
-// its explicit tensor times pipeline parallel as one stage; a disaggregated one
-// needs the model on each side, so its smaller side.
+// layout is the smallest sizing on which p holds q's weights plus its context's KV
+// cache within fam's memory budget. Tensor-parallel degrees must divide the
+// attention heads; a disaggregated preset needs the model on each side, so its
+// smaller side counts.
 func layout(t ModelTemplate, q Quantization, fam Family, p Preset, kvd string, perNode int) (sizing, bool) {
 	heads, top := t.Architecture.AttentionHeads, p.Topology
 	var sizes []sizing
@@ -273,26 +250,20 @@ func layout(t ModelTemplate, q Quantization, fam Family, p Preset, kvd string, p
 	return sizing{}, false
 }
 
-// contextHeld is the context, in tokens, gpus GPUs of fam hold next to q's
-// weights within the memory budget.
+// contextHeld is the tokens of KV cache gpus GPUs of fam hold next to q's weights.
 func contextHeld(t ModelTemplate, q Quantization, fam Family, gpus int, kvd string) float64 {
 	return (fam.MemoryGB*GPUMemoryUtilization*float64(gpus) - q.WeightsGB) * 1e9 / kvBytes(t, kvd)
 }
 
-// presetContext is the context a preset deploys with: its own, else the
-// model's default, within the model's ceiling.
+// presetContext is p's context, else the model default, capped at ContextMax.
 func presetContext(t ModelTemplate, p Preset) int {
 	return min(cmp.Or(p.Context, t.DefaultContext), t.ContextMax)
 }
 
 func kvDType(p Preset) string { return cmp.Or(p.KVCacheDType, "auto") }
 
-// presetMode is how preset p on backend version bv runs a quantization of kind
-// on fam: native when the kind needs no dtype or one fam has, emulated on
-// NVIDIA from the kind's EmulatedFrom compute capability, and not at all ("")
-// when p excludes fam's vendor, bv has no image for it or fam is below bv's
-// minimum compute capability. Compute capabilities apply to NVIDIA only: AMD gfx
-// targets are not ordered against them.
+// presetMode is how p on bv runs a quantization kind on fam, or "" if it cannot.
+// Compute capabilities apply to NVIDIA only: AMD gfx targets are not ordered.
 func presetMode(fam Family, p Preset, kind string, bv BackendVersion) FitMode {
 	qs, ok := bv.Quantizations[kind]
 	nvidia := fam.Vendor == "nvidia"
@@ -308,17 +279,14 @@ func presetMode(fam Family, p Preset, kind string, bv BackendVersion) FitMode {
 	return ""
 }
 
-// atLeast compares NVIDIA compute capabilities ("8.9") numerically.
 func atLeast(cc, floor string) bool {
 	c, err := compareVersions(cc, floor)
 	return err == nil && c >= 0
 }
 
-// deployment picks a model's minimum and optimal setups among its single-node
-// fits of a guidance kind (spec section 5) whose estimate serves at least one
-// sequence at DecentDecodeTokensPerSec: the minimum is the least total GPU
-// memory (then fewest GPUs, family name, quantization order, auto KV first),
-// the optimal the highest aggregate per GPU at its decent concurrency.
+// deployment picks the minimum (least total GPU memory) and optimal (highest
+// aggregate per GPU) among single-node guidance fits decoding at least one
+// sequence at DecentDecodeTokensPerSec.
 func deployment(cands []candidate, vocab []NodeType) Deployment {
 	smaller := func(a, b *candidate) bool {
 		return cmp.Or(cmp.Compare(a.memory, b.memory), cmp.Compare(a.fit.GPUCount, b.fit.GPUCount),
@@ -352,8 +320,8 @@ func recommend(c *candidate, vocab []NodeType) *Recommendation {
 		Source: "estimate", Confidence: "estimate", FitKeys: []string{FitKey(f)}}
 }
 
-// exampleNodeTypes lists up to three node types of family with at least gpus
-// GPUs each: cloud instances, fewest GPUs first, then the smallest fallback.
+// exampleNodeTypes lists up to three node types of family with at least gpus GPUs:
+// cloud instances fewest GPUs first, then the smallest fallback.
 func exampleNodeTypes(vocab []NodeType, family string, gpus int) []string {
 	var cloud []NodeType
 	var fallback *NodeType
@@ -377,20 +345,9 @@ func exampleNodeTypes(vocab []NodeType, family string, gpus int) []string {
 	return out
 }
 
-// Validate checks that every model source has a known type, is pinned and
-// lists each manifest file with a size and a sha256 or git-oid digest, that
-// every draft model is pinned on a repository and targets known models, that
-// model tasks, capabilities and preset purposes are in their closed
-// vocabularies, and that every preset names a quantization of its model whose
-// kind its backend version runs (natively in the quantization's requires_dtype,
-// when set), an existing backend version, and a draft model for its backend,
-// model and method that fits next to the model on every fit the preset deploys
-// on, stays within the model's context, spans at least two nodes when
-// multi-node and renders on its backend version for every vendor it runs on, of
-// which it has at least one; and that no two fits share a FitKey.
-// It then runs Validate of every registered extension. Payloads of namespaces
-// no registered extension owns are preserved and ignored. Embedders can run it
-// on a snapshot fetched from an upstream.
+// Validate checks the snapshot's sources, vocabularies, presets, draft models and
+// fit keys, then runs every registered extension's Validate. Payloads of
+// unregistered namespaces are preserved and ignored.
 func (s CatalogSnapshot) Validate() error { return s.validate(extensions) }
 
 func (s CatalogSnapshot) validate(reg *registry) error {
@@ -425,8 +382,7 @@ func (s CatalogSnapshot) validate(reg *registry) error {
 			errs = append(errs, fmt.Errorf("draft model %q: duplicate", d.Slug))
 		}
 		drafts[d.Slug] = &s.DraftModels[i]
-		// Engines take a draft as a repository id and revision; an OCI
-		// reference or a node path would be passed as one.
+		// Engines take a draft as repo id and revision; OCI refs and paths would not load.
 		if d.Source.Type != SourceHuggingFace && d.Source.Type != SourceModelScope {
 			errs = append(errs, fmt.Errorf("draft model %q: source type %q, want huggingface or modelscope", d.Slug, d.Source.Type))
 		} else if err := d.Source.validate(); err != nil {
@@ -488,9 +444,8 @@ func (s CatalogSnapshot) validate(reg *registry) error {
 	return errors.Join(errs...)
 }
 
-// validatePreset checks what the renderer relies on but cannot see, then
-// renders the preset on a representative fit for every vendor it runs on so a
-// field its flag table cannot express fails generation instead of a deployment.
+// validatePreset renders p for every vendor it runs on, so a field its flag table
+// cannot express fails generation instead of a deployment.
 func validatePreset(m ModelTemplate, p Preset, q Quantization, bv BackendVersion, drafts map[string]*DraftModel) error {
 	id := presetID(m, p)
 	var errs []error
@@ -502,7 +457,7 @@ func validatePreset(m ModelTemplate, p Preset, q Quantization, bv BackendVersion
 	if p.Context > m.ContextMax {
 		errs = append(errs, fmt.Errorf("%s: context %d above context_max %d", id, p.Context, m.ContextMax))
 	}
-	// Each side's tensor parallel is its GPU count; a preset-wide one is ignored.
+	// Each side's tensor parallel is its GPU count.
 	if t := p.Topology; t.Kind == "disaggregated" && (t.Prefill < 1 || t.Decode < 1 || p.TensorParallel != 0) {
 		errs = append(errs, fmt.Errorf("%s: disaggregated topology needs prefill_gpus and decode_gpus >= 1 and no tensor_parallel", id))
 	}
@@ -547,7 +502,7 @@ func validatePreset(m ModelTemplate, p Preset, q Quantization, bv BackendVersion
 	}
 	fit := ModelFit{ModelSlug: m.Slug, Quantization: p.Quantization, GPUCount: cmp.Or(p.TensorParallel, 1), Nodes: 1}
 	if t := p.Topology; t.Kind == "multi-node" {
-		// Across its nodes, so its pipeline parallel renders as deployed.
+		// Span all nodes so pipeline parallel renders as deployed.
 		fit.GPUCount, fit.Nodes = fit.GPUCount*cmp.Or(t.Pipeline, t.Nodes), t.Nodes
 	}
 	for _, vendor := range vendors {
@@ -560,10 +515,8 @@ func validatePreset(m ModelTemplate, p Preset, q Quantization, bv BackendVersion
 	return nil
 }
 
-// draftFits checks that a speculative preset holds its draft's weights next to
-// the model's and the KV cache of its context on every fit it deploys on: same
-// quantization, KV cache dtype and node count, a family it runs on, and its
-// context within the fit's.
+// draftFits checks that a speculative preset holds draft and model weights plus
+// its context's KV cache on every fit it deploys on.
 func draftFits(m ModelTemplate, p Preset, q Quantization, bv BackendVersion, draft *DraftModel, fits []ModelFit, families map[string]Family) error {
 	ctx, nodes := presetContext(m, p), 1
 	if p.Topology.Kind == "multi-node" {
@@ -585,9 +538,8 @@ func presetID(m ModelTemplate, p Preset) string {
 	return fmt.Sprintf("%s/%s on %s %s", m.Slug, p.Name, p.Backend, p.BackendVersion)
 }
 
-// compareVersions orders versions of dot-separated numbers, with an optional
-// "v" prefix, numerically: v0.9.0 is older than v0.31.0, and v0.31 equals
-// v0.31.0.
+// compareVersions compares dot-separated numeric versions with optional "v":
+// v0.9.0 < v0.31.0 and v0.31 == v0.31.0.
 func compareVersions(a, b string) (int, error) {
 	na, err := versionNumbers(a)
 	if err != nil {
@@ -647,8 +599,7 @@ func (src ModelSource) validate() error {
 	return errors.Join(errs...)
 }
 
-// digestHexLen is the hex length of each digest algorithm: git-oid is SHA-1 or,
-// in SHA-256 repositories, SHA-256.
+// git-oid is SHA-1, or SHA-256 in SHA-256 repositories.
 var digestHexLen = map[string][]int{"sha256": {64}, "git-oid": {40, 64}}
 
 func (f ModelFile) validate() error {

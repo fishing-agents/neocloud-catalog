@@ -1,8 +1,5 @@
-// Command catalog-export renders the catalog snapshot in the formats of the
-// registered platform adapters: <out>/<format>/... per format, and
-// <out>/SHA256SUMS over every file for the release to sign. Registered export
-// extensions then render their payloads into their adapter's formats. An export
-// whose presets are not all exported or skipped with a documented reason fails.
+// Command catalog-export writes the snapshot in every adapter format to
+// <out>/<format>/ plus <out>/SHA256SUMS for the release to sign.
 package main
 
 import (

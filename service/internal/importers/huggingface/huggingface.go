@@ -1,21 +1,7 @@
-// Package huggingface imports what the Hugging Face Hub says about the
-// effective catalog's huggingface sources at their pinned revisions into the
-// upstream layer. Per source it reads the model info and the file tree: the
-// tree gives the source's manifest and its quantization's or draft model's
-// weight size; for a model's reference source, the first huggingface source
-// of a non-gguf quantization, the info and config.json give its parameters,
-// active parameters, licence, gating, architecture and maximum context.
-// Curated values win (R12) and the run lists where they differ. Objects a
-// local override hides are not read: the operator curates those whole.
-//
-// A source the Hub refuses (a missing revision, a gated repository without
-// an accepted token, errors after retries) is listed in the run's errors and
-// keeps its rows; the summary counts the sources read in full and those with
-// errors. The run fails only when it could read no source, when its write
-// fails, or when it is cancelled, which writes nothing. Its input version
-// hashes what the Hub returned that the run used, so it changes with the
-// imported facts (a token making gated files readable, a licence change)
-// and not with download counts.
+// Package huggingface imports Hub model info, file trees and config.json at
+// pinned revisions into the upstream layer. Curated values win and differences
+// are listed. A refused source (missing revision, gated 401/403) is listed, not
+// fatal.
 package huggingface
 
 import (
@@ -41,16 +27,12 @@ import (
 	"github.com/fishman/neocloud-catalog/service/internal/store"
 )
 
-// Endpoint is the Hugging Face Hub.
 const Endpoint = "https://huggingface.co"
 
-// Importer reads the Hub at endpoint, with token for gated repositories.
 type Importer struct {
 	endpoint, token string
 	getter          fetch.Getter
-	// interval spaces requests: the Hub allows 500 API requests per five
-	// minutes to an anonymous client. A run over the committed catalog makes
-	// 33, so it takes well under a minute of jobs.job_timeout.
+	// The Hub allows anonymous clients 500 API requests per five minutes.
 	interval time.Duration
 }
 
@@ -66,7 +48,6 @@ func (i *Importer) Origin() importers.Origin {
 	return importers.Origin{Layer: model.LayerUpstream, Source: "huggingface", SourceURL: i.endpoint}
 }
 
-// info is the part of a revision's model info the importer reads.
 type info struct {
 	SHA      string `json:"sha"`
 	Gated    any    `json:"gated"` // false, "auto" or "manual"
@@ -78,8 +59,8 @@ type info struct {
 	} `json:"safetensors"`
 }
 
-// entry is a tree entry; LFS holds the content's sha256 of a file stored in
-// Git LFS, OID is the Git blob id.
+// entry is a tree entry; LFS holds the sha256 of a Git LFS file, OID the Git
+// blob id.
 type entry struct {
 	Type string `json:"type"`
 	Path string `json:"path"`
@@ -90,8 +71,6 @@ type entry struct {
 	} `json:"lfs"`
 }
 
-// config is the part of config.json that sizes the model. MoE lists its keys
-// and architectures naming experts or MoE; a dense model has none.
 type config struct {
 	Layers        int      `json:"num_hidden_layers"`
 	Heads         int      `json:"num_attention_heads"`
@@ -147,15 +126,12 @@ func (c config) architecture() catalog.Architecture {
 	return a
 }
 
-// mixtral are the expert keys of a Mixtral-style mixture: every layer routes
-// each token to num_experts_per_tok of num_local_experts gated MLPs, with no
-// shared experts.
+// mixtral are the expert keys of a Mixtral-style mixture, which has no shared
+// experts.
 var mixtral = []string{"num_experts_per_tok", "num_local_experts"}
 
-// active is the parameters one token runs through: all of a dense model's;
-// a Mixtral-style mixture skips the gated MLPs (three hidden x intermediate
-// matrices per layer) of the experts it does not route to. Other mixtures
-// are not recognised.
+// active skips the unrouted experts' gated MLPs (three hidden x intermediate
+// matrices per layer). Only Mixtral-style mixtures are recognised.
 func (c config) active(total int64) (int64, error) {
 	switch {
 	case len(c.MoE) == 0:
@@ -166,9 +142,6 @@ func (c config) active(total int64) (int64, error) {
 	return 0, fmt.Errorf("config.json: mixture of experts %v not recognised, active parameters not imported", c.MoE)
 }
 
-// job is a source to read: its owner (a quantization or a draft model),
-// whether it is a gguf quantization's and whether it is its model's
-// reference source.
 type job struct {
 	owner     store.Manifest
 	src       catalog.ModelSource
@@ -179,8 +152,8 @@ func (j job) String() string {
 	return strings.Trim(j.owner.ModelSlug+"/"+j.owner.Quantization+"/"+j.owner.DraftSlug, "/") + " " + j.src.Repo + "@" + j.src.Revision
 }
 
-// plan lists the huggingface sources of the objects in, of models and draft
-// models effective in the upstream layer only, in catalog order.
+// plan lists sources of models and drafts effective in the upstream layer, in
+// catalog order.
 func plan(in store.Inputs, upstream func(kind, key string) bool) []job {
 	var jobs []job
 	for _, m := range in.Models {
@@ -207,9 +180,6 @@ func plan(in store.Inputs, upstream func(kind, key string) bool) []job {
 	return jobs
 }
 
-// source is what a source's revision says; a part that could not be read is
-// zero and its error listed. active is the parameters per token a reference
-// source's config gives, 0 when unknown.
 type source struct {
 	info    *info
 	files   []catalog.ModelFile
@@ -219,7 +189,7 @@ type source struct {
 	errs    []error
 }
 
-// record is what a read gave, the input a run's input version hashes.
+// record is what a run's input version hashes.
 type record struct {
 	Info    *info
 	Files   []catalog.ModelFile
@@ -240,8 +210,6 @@ func (r source) record() record {
 	return rec
 }
 
-// read reads j's source: its info, then its tree, and config.json for a
-// reference source.
 func (c *client) read(ctx context.Context, j job) source {
 	var r source
 	api := c.endpoint + "/api/models/" + j.src.Repo
@@ -288,17 +256,12 @@ func (c *client) read(ctx context.Context, j job) source {
 
 var errDigestHidden = errors.New("LFS digest hidden")
 
-// weightFormats are the weight file formats, in the order vLLM looks for
-// them: it loads only the first one a revision has.
+// weightFormats are in vLLM's lookup order; it loads only the first present.
 var weightFormats = []string{".safetensors", ".bin", ".pt", ".pth"}
 
-// manifest is the files of tree a server fetches: all but empty files and the
-// weights in formats other than the first present (Meta's original/*.pth,
-// Mistral's consolidated *.pt). A gguf quantization's manifest is its curated
-// selection as the tree has it, since the repository holds every
-// quantization. weights is the size of the manifest's weight files; it is
-// known even when a digest is not (a gated repository read without a token),
-// the manifest then is not.
+// manifest drops empty files and weights in later formats (Meta's original/*.pth,
+// Mistral's *.pt). A gguf manifest is the curated selection. weights is known
+// even when digests are not (gated without a token); the manifest then is not.
 func manifest(tree []entry, gguf bool, selection []catalog.ModelFile) ([]catalog.ModelFile, int64, error) {
 	var keep []entry
 	var weights int64
@@ -350,11 +313,10 @@ func manifest(tree []entry, gguf bool, selection []catalog.ModelFile) ([]catalog
 	return files, weights, nil
 }
 
-// tenths rounds n to tenths of a billion, the catalog's unit of parameters
-// (B) and weights (GB).
+// tenths rounds to tenths of a billion, the unit of parameters (B) and weights
+// (GB).
 func tenths(n int64) float64 { return math.Round(float64(n)/1e8) / 10 }
 
-// modelValues are the model columns a reference source's read gives.
 func modelValues(r source) map[string]any {
 	cols := map[string]any{"gated": r.info.Gated != nil && r.info.Gated != false}
 	if license, ok := r.info.CardData.License.(string); ok && license != "" {
@@ -422,7 +384,6 @@ func (i *Importer) Run(ctx context.Context, s *store.Store, run uuid.UUID) (impo
 		if j.owner.DraftSlug != "" {
 			kind, key = store.KindDraft, j.owner.DraftSlug
 		}
-		// A quantization weighs what its first readable source holds.
 		if r.weights > 0 && !weighed[key] {
 			weighed[key] = true
 			p.Values = append(p.Values, store.Values{Kind: kind, Key: key, Columns: map[string]any{"weights_gb": tenths(r.weights)}})

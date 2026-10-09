@@ -1,8 +1,6 @@
-// Package runrecord is the run-record contract: one serving configuration of a
-// model on some hardware, observed over one window, with its outcome. Platform
-// adapters produce records; the collection service ingests them. Records carry
-// no tenant, host or request data: unknown fields are rejected on decode and
-// launch arguments are limited to an allowlist of flags with plain values.
+// Package runrecord is the run-record contract: one serving configuration observed
+// over one window, with its outcome. Records carry no tenant, host or request data:
+// unknown fields are refused and launch args are limited to an allowlist.
 package runrecord
 
 import (
@@ -17,7 +15,7 @@ import (
 	"time"
 )
 
-// SchemaID is the value of Record.Schema for this version of the contract.
+// SchemaID is Record.Schema for this contract version.
 const SchemaID = "run-record/v1"
 
 // JSONSchema is the JSON Schema (draft 2020-12) of a Record.
@@ -40,8 +38,7 @@ type Record struct {
 	Workload        Workload  `json:"workload"`
 }
 
-// Model identifies the weights: a catalog model and preset when the deployment
-// matched one, and always the public source repository and quantization.
+// Model identifies the weights; Catalog is set only when the deployment matched a preset.
 type Model struct {
 	Catalog      *CatalogRef `json:"catalog,omitempty"`
 	Source       string      `json:"source"`
@@ -75,8 +72,7 @@ type Config struct {
 	Nodes            int      `json:"nodes"`
 }
 
-// Outcome is what happened. Measurements are nil when the platform does not
-// expose them; a failed run carries a failure class and a short reason.
+// Outcome is what happened. Measurements are nil when the platform does not expose them.
 type Outcome struct {
 	Status             string   `json:"status"`
 	Failure            string   `json:"failure,omitempty"`
@@ -94,8 +90,7 @@ type Outcome struct {
 	RequestsFailed     *int64   `json:"requests_failed,omitempty"`
 }
 
-// Workload is the load the outcome was measured under: a benchmark level, or a
-// window of live traffic (mean token lengths, request count).
+// Workload is a benchmark level, or a live traffic window (mean token lengths).
 type Workload struct {
 	Source       string `json:"source"`
 	InputTokens  int    `json:"input_tokens"`
@@ -104,7 +99,6 @@ type Workload struct {
 	Requests     int64  `json:"requests,omitempty"`
 }
 
-// Enumerations.
 const (
 	StatusRan    = "ran"
 	StatusFailed = "failed"
@@ -121,10 +115,8 @@ var (
 	sources      = []string{SourceBenchmarkStandard, SourceBenchmarkOperator, SourceLive}
 )
 
-// ValueArgs and SwitchArgs are the launch flags a record may carry:
-// parallelism, context, batching, memory, quantization, caching and decoding
-// knobs of vLLM and SGLang. Anything else (paths, served names, API keys,
-// hosts) is dropped by FilterArgs and refused by Validate. Switches never take
+// ValueArgs and SwitchArgs are the launch flags a record may carry; anything else
+// (paths, served names, API keys, hosts) is dropped or refused. Switches never take
 // a value, so a following positional token is not mistaken for one.
 var (
 	ValueArgs = []string{
@@ -150,10 +142,8 @@ var (
 
 const maxReason = 200
 
-// FilterArgs keeps the allowlisted flags of a launch command: switches as
-// "--flag", value flags as "--flag=value" whether the value was a separate token
-// or joined with "=". A value flag whose value is not plain (a path, JSON) is
-// dropped with its value.
+// FilterArgs keeps allowlisted flags, normalizing values to "--flag=value". A value
+// that is not plain (a path, JSON) is dropped with its flag.
 func FilterArgs(args []string) []string {
 	var out []string
 	for i := 0; i < len(args); i++ {
@@ -176,7 +166,7 @@ func FilterArgs(args []string) []string {
 	return out
 }
 
-// Decode reads one record, refusing fields the contract does not define.
+// Decode reads and validates one record, refusing unknown fields.
 func Decode(r io.Reader) (Record, error) {
 	var rec Record
 	dec := json.NewDecoder(r)

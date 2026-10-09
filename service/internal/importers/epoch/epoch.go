@@ -1,25 +1,6 @@
-// Package epoch imports the curated families' hardware facts into the upstream
-// layer: Epoch AI's ML hardware data (vendor, memory, memory bandwidth, dense
-// tensor TFLOPS, NVLink-class bandwidth) merged with the curated overlay,
-// data/families.overlay.json until the cutover, which maps each family to its
-// Epoch row and supplies architecture, compute capability or gfx target,
-// native dtypes, interconnect and any Epoch gap or correction, every value
-// with its source URL.
-//
-// The overlay's values are curation: a column holding one is recorded as
-// curation from the overlay file and replaces a curated value. Epoch's
-// figures keep the curated values they contradict, listed as conflicts
-// (R12), except curation from the overlay file itself, which the overlay
-// withdrew. Families the upstream layer lacks are added in name order, as
-// families-import wrote them; one the overlay no longer lists is left alone.
-//
-// A family whose Epoch row is missing or unreadable, or whose values are
-// incomplete, is listed in the run's errors and keeps its row; the summary
-// counts the families imported and those with errors. The run fails when the
-// CSV or the overlay cannot be read, when it imports no family, when its write
-// fails or when it is cancelled, which writes nothing. Its input version
-// hashes the values it imported and its errors, so Epoch rows no family uses
-// leave it unchanged.
+// Package epoch imports family hardware facts from Epoch AI's CSV merged with
+// the curated overlay into the upstream layer. Overlay values are curation;
+// Epoch figures never replace curated values, they are listed as conflicts.
 package epoch
 
 import (
@@ -52,26 +33,22 @@ import (
 )
 
 const (
-	// CSV is Epoch AI's ML hardware data.
 	CSV = "https://epoch.ai/data/ml_hardware.csv"
 	// datasetURL is the page a family cites for Epoch's figures.
 	datasetURL = "https://epoch.ai/data/machine-learning-hardware"
-	// maxBody bounds the CSV; Epoch's is about 100 kB.
+	// Epoch's CSV is about 100 kB.
 	maxBody = 16 << 20
-	// maxRetryAfter bounds a Retry-After the importer waits out; Epoch asking
-	// for longer fails the run rather than spending jobs.job_timeout.
+	// A longer Retry-After fails the run rather than spend jobs.job_timeout.
 	maxRetryAfter = 5 * time.Minute
 )
 
 var dtypeVocabulary = []string{"fp16", "bf16", "fp8", "fp4", "int8"}
 
-// Importer reads Epoch's CSV at csvURL and the overlay file overlay.
 type Importer struct {
 	csvURL, overlay, overlayURL string
 	getter                      fetch.Getter
 }
 
-// New returns the importer of the CSV at csvURL and the overlay file overlay.
 func New(csvURL, overlay string) (*Importer, error) {
 	abs, err := filepath.Abs(overlay)
 	if err != nil {
@@ -92,8 +69,7 @@ type sourced[T any] struct {
 	Source string `json:"source"`
 }
 
-// overlayFamily is one curated family. SKU (the product the name stands for)
-// and Note (reasoning behind a value) document the curation and are not
+// overlayFamily is one curated family; SKU and Note are documentation, not
 // imported.
 type overlayFamily struct {
 	Name               string                      `json:"name"`
@@ -174,7 +150,6 @@ func readOverlay(path string) ([]overlayFamily, error) {
 	return overlay, nil
 }
 
-// fetch reads the CSV.
 func (i *Importer) fetch(ctx context.Context) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, i.csvURL, nil)
 	if err != nil {
@@ -187,8 +162,8 @@ func (i *Importer) fetch(ctx context.Context) ([]byte, error) {
 	return body, err
 }
 
-// epochRow holds the figures taken from one CSV row, already in catalog units;
-// zero means the CSV cell was blank. err is why the row is unusable.
+// epochRow is one CSV row in catalog units; zero means blank, err why it is
+// unusable.
 type epochRow struct {
 	vendor                               string
 	memoryGB, bandwidthGBs, intranodeGBs float64
@@ -196,8 +171,8 @@ type epochRow struct {
 	err                                  error
 }
 
-// readEpoch indexes the CSV by "Hardware name". Tensor-FP16/BF16 is the dense
-// rate of both 16-bit types.
+// readEpoch indexes the CSV by "Hardware name"; Tensor-FP16/BF16 is the dense
+// 16-bit rate.
 func readEpoch(b []byte) (map[string]epochRow, error) {
 	records, err := csv.NewReader(bytes.NewReader(b)).ReadAll()
 	if err != nil {
@@ -266,8 +241,6 @@ func readEpoch(b []byte) (map[string]epochRow, error) {
 	return rows, nil
 }
 
-// merge is the values of the family o curates, Epoch's figures from its row
-// in rows overridden by o's, and which of them are curated.
 func merge(o overlayFamily, rows map[string]epochRow) (store.Values, error) {
 	f := catalog.Family{Name: o.Name, TFLOPS: map[string]float64{}}
 	if o.EpochName != "" {
@@ -296,8 +269,7 @@ func merge(o overlayFamily, rows map[string]epochRow) (store.Values, error) {
 	if err != nil {
 		return store.Values{}, err
 	}
-	// Epoch figures exist for dtypes a family may lack natively (FP8 on
-	// Ampere); only native dtypes keep a TFLOPS entry.
+	// Epoch gives figures for non-native dtypes (FP8 on Ampere).
 	maps.DeleteFunc(f.TFLOPS, func(d string, _ float64) bool { return !slices.Contains(f.DTypes, d) })
 	for _, d := range slices.Sorted(maps.Keys(o.TFLOPS)) {
 		if !slices.Contains(f.DTypes, d) {
@@ -327,8 +299,6 @@ func merge(o overlayFamily, rows map[string]epochRow) (store.Values, error) {
 	}}, nil
 }
 
-// apply sets dst to the curated value s of field, if any, citing its source
-// and marking field's column curated.
 func apply[T any](field string, s *sourced[T], dst *T, sources, curated *[]string) error {
 	if s == nil {
 		return nil

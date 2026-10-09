@@ -1,23 +1,7 @@
-// Package upstream imports an upstream catalog service's release, as an
-// operator deployment runs on top of ours: the signed public snapshot under
-// upstream.ref replaces the upstream layer with its curated objects and, when
-// upstream.overlay_ref is set, the signed overlay pinned to that snapshot
-// replaces the overlay layer, in one transaction; without one the overlay
-// layer is emptied, as it mirrors what the import verified. The local layer
-// stays.
-//
-// Verification is neocloud-api's catalog sync's (Source mirrors its
-// catalogsrc): a signature by the configured identity or key on the manifest
-// digest, the layer checked against the signed manifest, a version not older
-// than any release an upstream run wrote (the version is signed, so a
-// replayed older release cannot roll the layers back; checked again under the
-// store's write lock, where the run records its version), the schema major,
-// the overlay merged with catalog.Merge (its pin to the snapshot digest, its
-// ids, its namespaces) and the merged snapshot validated. Any failure fails
-// the run and changes neither layer.
-//
-// The input version is "<release version> <snapshot digest>", plus
-// " overlay <overlay manifest digest>" with an overlay.
+// Package upstream imports an upstream service's signed snapshot into the upstream
+// layer and its pinned overlay into the overlay layer, in one transaction.
+// A release older than the last imported one is refused, so a replay cannot
+// roll back.
 package upstream
 
 import (
@@ -33,14 +17,12 @@ import (
 	"github.com/fishman/neocloud-catalog/service/internal/store"
 )
 
-// Importer imports the release of an upstream Source and, when it has one,
-// the overlay of another.
 type Importer struct{ release, overlay *Source }
 
-// New returns the importer of release and of overlay, which may be nil.
+// New returns the importer of release and overlay; overlay may be nil.
 func New(release, overlay *Source) *Importer { return &Importer{release, overlay} }
 
-// Name is also its runs' source: an import, never curation (R21).
+// Name is also its runs' source: an import, never curation.
 func (*Importer) Name() string { return "upstream" }
 
 func (i *Importer) Origin() importers.Origin {
@@ -92,9 +74,8 @@ func (i *Importer) Run(ctx context.Context, s *store.Store, run uuid.UUID) (impo
 	return sum, err
 }
 
-// inputs are the curated objects of snap, which Generate reproduces it from:
-// its node types without the generated fallbacks. The derived model fields
-// are not stored.
+// inputs are snap's curated objects, without generated fallback node types or
+// derived model fields.
 func inputs(snap catalog.CatalogSnapshot) store.Inputs {
 	in := store.Inputs{Families: snap.Families, Models: snap.Models, Drafts: snap.DraftModels, Backends: snap.Backends}
 	for _, nt := range snap.NodeTypes {

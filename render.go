@@ -9,22 +9,15 @@ import (
 	"strings"
 )
 
-// Render is RenderRole for a single server: no disaggregation role, node 0.
+// Render is RenderRole for a single server.
 func Render(m ModelTemplate, p Preset, bv BackendVersion, fit ModelFit, draft *DraftModel, vendor string) ([]string, error) {
 	return RenderRole(m, p, bv, fit, draft, vendor, "", 0)
 }
 
-// RenderRole renders a preset into the arguments that follow its backend
-// version's command, in a stable order: context, parallelism, KV cache dtype,
-// prefix caching, parsers, chat template, speculative decoding, topology, extra
-// args. Tensor parallel is the role's GPU count on a disaggregated side, else
-// the preset's, else the fit's GPU count per pipeline stage. A fit across nodes
-// runs pipeline parallel across them: the preset's stages, else one per node.
-// vendor is the GPU vendor (or cpu) of the image the arguments are for. role is
-// "prefill" or "decode" for one side of a disaggregated preset and empty
-// otherwise; nodeRank is the node of a multi-node preset, whose arguments carry
-// the placeholders {{master_addr}} and {{master_port}} for the caller to fill.
-// A field the flag table cannot express is an error naming the backend version.
+// RenderRole renders a preset into the arguments after its backend version's
+// command, in a stable order. role is "prefill", "decode" or empty; a multi-node
+// preset's arguments carry {{master_addr}} and {{master_port}} for the caller.
+// A field the flag table cannot express is an error.
 func RenderRole(m ModelTemplate, p Preset, bv BackendVersion, fit ModelFit, draft *DraftModel, vendor, role string, nodeRank int) ([]string, error) {
 	args, err := render(p, bv.Flags, fit, draft, vendor, role, nodeRank)
 	if err != nil {
@@ -51,8 +44,7 @@ func render(p Preset, f FlagTable, fit ModelFit, draft *DraftModel, vendor, role
 			tp = fit.GPUCount / pp
 		}
 	case pp > 1 && p.TensorParallel == 0:
-		// The world size is tensor times pipeline parallel, so a single-node
-		// fit's GPU count does not say how to split it.
+		// World size is TP x PP, so a single-node GPU count does not say how to split it.
 		return nil, errors.New("pipeline parallel needs an explicit tensor_parallel")
 	}
 	switch role {
@@ -61,8 +53,7 @@ func render(p Preset, f FlagTable, fit ModelFit, draft *DraftModel, vendor, role
 	case "decode":
 		tp = p.Topology.Decode
 	}
-	// Without a tensor-parallel flag (llama.cpp) the engine splits layers over
-	// the GPUs it is given, so only an explicit preset value is refused.
+	// Without a TP flag (llama.cpp) the engine splits layers itself, so only an explicit value fails.
 	switch {
 	case tp <= 1:
 	case f.TensorParallel != "":
@@ -173,8 +164,7 @@ func (a *argv) speculative(f FlagTable, s Speculative, draft *DraftModel) error 
 	if !ok {
 		return fmt.Errorf("has no speculative method %q", s.Method)
 	}
-	// Every mapped method loads draft weights; vLLM refuses to start without
-	// them (config/speculative.py).
+	// vLLM refuses to start a mapped method without draft weights (config/speculative.py).
 	if s.DraftModel == "" {
 		return fmt.Errorf("speculative method %q needs a draft model", s.Method)
 	}

@@ -1,8 +1,6 @@
-// Package auth authenticates bearer tokens as neocloud-api does. Tokens with
-// the API-key prefix go to the apikey backend (opaque random keys, SHA-256 at
-// rest, minted by `catalog-service auth issue`); any other token is an OIDC
-// JWT from the configured issuer (ICP), or unauthorized without one. Tokens
-// are never logged.
+// Package auth authenticates bearer tokens as neocloud-api does: API keys
+// (neocatalog_ prefix, SHA-256 at rest) or OIDC JWTs from the configured
+// issuer. Tokens are never logged.
 package auth
 
 import (
@@ -96,9 +94,8 @@ func (a *apikeyBackend) Authenticate(ctx context.Context, token string) (Princip
 
 var prefixRE = regexp.MustCompile(`^[a-z0-9-]+$`)
 
-// GenerateKey mints neocatalog_<prefix>_<secret> with 32 random bytes of
-// secret and returns it with its SHA-256, the only part stored. The prefix
-// labels the key; it holds no underscore, so the format stays parseable.
+// GenerateKey mints neocatalog_<prefix>_<secret> and its SHA-256, the only part
+// stored. The prefix holds no underscore so the format stays parseable.
 func GenerateKey(prefix string) (plaintext, hashHex string, err error) {
 	if !prefixRE.MatchString(prefix) {
 		return "", "", fmt.Errorf("key prefix %q: want lower-case letters, digits and dashes", prefix)
@@ -112,8 +109,8 @@ func GenerateKey(prefix string) (plaintext, hashHex string, err error) {
 	return plaintext, hex.EncodeToString(h[:]), nil
 }
 
-// Issue mints an API key named name, stores its hash and returns the key,
-// which exists nowhere else, and its row. A nil expiresAt never expires.
+// Issue stores a new key's hash and returns the key, shown nowhere else. A nil
+// expiresAt never expires.
 func Issue(ctx context.Context, db *gorm.DB, name, prefix string, expiresAt *time.Time) (string, model.APIKey, error) {
 	plaintext, hashHex, err := GenerateKey(prefix)
 	if err != nil {

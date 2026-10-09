@@ -64,8 +64,7 @@ spec:
         - name: atlas
           configMap:
             name: {{ include "catalog-service.fullname" . }}-migrate
-        # The service image itself, read-only: its /migrations are the ones
-        # this release's binary was built with.
+        # The service image, so the migrations match this release's binary.
         - name: catalog
           image:
             reference: {{ $image | quote }}

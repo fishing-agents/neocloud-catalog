@@ -112,8 +112,7 @@ func TestDispatch(t *testing.T) {
 	}
 }
 
-// A key is neocatalog_<prefix>_<secret> with 32 random bytes of secret; only
-// its SHA-256 is kept.
+// A key is neocatalog_<prefix>_<32 random bytes>; only its SHA-256 is kept.
 func TestGenerateKey(t *testing.T) {
 	seen := map[string]bool{}
 	for range 3 {
@@ -135,8 +134,7 @@ func TestGenerateKey(t *testing.T) {
 	}
 }
 
-// A hanging issuer fails discovery after the client's timeout instead of
-// holding every OIDC request.
+// A hanging issuer fails discovery after the client timeout.
 func TestOIDCDiscoveryTimesOut(t *testing.T) {
 	hang := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-hang }))

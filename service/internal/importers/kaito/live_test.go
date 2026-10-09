@@ -8,8 +8,8 @@ import (
 	"testing"
 )
 
-// KAITO's catalog at the pinned revision is byte for byte the recorded
-// fixture. Opt in with NEOCLOUD_CATALOG_LIVE=1.
+// The pinned catalog is byte for byte the fixture. Opt in with
+// NEOCLOUD_CATALOG_LIVE=1.
 func TestLiveCatalogMatchesRecording(t *testing.T) {
 	if os.Getenv("NEOCLOUD_CATALOG_LIVE") != "1" {
 		t.Skip("NEOCLOUD_CATALOG_LIVE unset; skipping the live KAITO test")

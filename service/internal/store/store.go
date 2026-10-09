@@ -1,9 +1,6 @@
-// Package store reads and writes the catalog's curated layers. Per natural key
-// a local object overrides the upstream one as a whole: a model comes with the
-// quantizations, sources, files and presets of its own layer only, a draft
-// model with its source and files, a backend with its versions and flag
-// tables; layers never mix inside one object. The overlay layer holds
-// extension payloads only. Every write takes one lock, so writers serialize.
+// Package store reads and writes the catalog's curated layers. A local object overrides the upstream
+// object of its key whole, children included; layers never mix inside one object. The overlay layer
+// holds extension payloads only.
 package store
 
 import (
@@ -30,16 +27,14 @@ import (
 // ErrNotFound reports an object no layer holds.
 var ErrNotFound = errors.New("not found")
 
-// ErrInvalid reports objects a write refuses; ErrConflict a change the
-// current state refuses.
+// ErrInvalid reports objects a write refuses; ErrConflict a change the current state refuses.
 var (
 	ErrInvalid  = errors.New("invalid")
 	ErrConflict = errors.New("conflict")
 )
 
-// Object kinds of Delete and of EffectiveProvenance, keyed by name, id or
-// slug. A quantization is keyed "<model slug>/<name>"; only provenance has
-// it, as it is curated with its model.
+// Object kinds, keyed by name, id or slug. A quantization is keyed "<model slug>/<name>" and appears
+// only in provenance, as it is curated with its model.
 const (
 	KindFamily       = "family"
 	KindNodeType     = "node_type"
@@ -54,9 +49,8 @@ type Store struct{ db *gorm.DB }
 
 func New(db *gorm.DB) *Store { return &Store{db: db} }
 
-// Inputs are the curated objects catalog.Generate reads plus the overlay's
-// extension payloads. The derived model fields KVBytesPerToken and Deployment
-// are not stored: Generate recomputes them.
+// Inputs are the curated objects catalog.Generate reads plus the overlay payloads. Derived model
+// fields (KVBytesPerToken, Deployment) are not stored; Generate recomputes them.
 type Inputs struct {
 	Families   []catalog.Family
 	NodeTypes  []catalog.NodeType
@@ -66,9 +60,8 @@ type Inputs struct {
 	Extensions catalog.Overlay
 }
 
-// ProvenanceEntry is where one layer's row of an object came from. Effective
-// marks the row the effective catalog uses; Fields is the provenance per
-// column of the mixed-source tables (nil for backends).
+// ProvenanceEntry is where one layer's row of an object came from. Fields is per-column provenance
+// of mixed-source tables (nil for backends).
 type ProvenanceEntry struct {
 	Layer       string
 	Source      string
@@ -81,9 +74,7 @@ type ProvenanceEntry struct {
 
 type tableKey struct{ table, key string }
 
-// objectTables lists, per curated object kind, the tables of its rows and the
-// column holding the object's key, its own table first. Files follow their
-// source.
+// objectTables lists each kind's tables and key column, own table first. Files follow their source.
 var objectTables = map[string][]tableKey{
 	KindFamily:   {{"families", "name"}},
 	KindNodeType: {{"node_types", "node_type_id"}},
@@ -104,8 +95,7 @@ func (sc scope) column(table string) (string, bool) {
 	return "", false
 }
 
-// stamp is the provenance a write gives the rows it changes; the value
-// columns curated take curation from curationURL instead.
+// stamp is the provenance a write gives the rows it changes; curated columns take curation from curationURL.
 type stamp struct {
 	layer, source, sourceURL string
 	asOf                     time.Time
@@ -114,7 +104,6 @@ type stamp struct {
 	curationURL              string
 }
 
-// of is the stamp of the value column col.
 func (st stamp) of(col string) stamp {
 	if slices.Contains(st.curated, col) {
 		st.source, st.sourceURL = model.SourceCuration, st.curationURL
@@ -136,16 +125,9 @@ type Change struct {
 // Changes are a write's changes by table; a table it left alone is absent.
 type Changes map[string]Change
 
-// ReplaceLayer makes layer hold exactly in, in one transaction, written by the
-// running import run of that layer; positions follow input order. A row whose
-// content is unchanged keeps its provenance, so re-running the same input
-// changes nothing. A changed row takes the run's source, source URL and start
-// time; per column too, except that an unchanged value keeps its provenance
-// and an importer run (source other than curation) keeps a curated value
-// (R12). The overlay layer takes only in.Extensions, whose ids must exist in
-// the effective catalog; the other layers take no payloads. It returns the
-// changes and, as Patch does, the kept curated values that differ from the
-// run's.
+// ReplaceLayer makes layer hold exactly in, in one transaction, as the running import run run;
+// positions follow input order and unchanged rows keep their provenance (see fieldProvenance). The
+// overlay layer takes only in.Extensions, whose ids must exist in the effective catalog.
 func (s *Store) ReplaceLayer(ctx context.Context, layer string, run uuid.UUID, in Inputs) (Changes, []Conflict, error) {
 	want, err := toRows(layer, in)
 	if err != nil {
@@ -172,20 +154,10 @@ func (s *Store) ReplaceLayer(ctx context.Context, layer string, run uuid.UUID, i
 	return changes, conflicts, nil
 }
 
-// ReplaceUpstream makes the upstream layer hold in's core objects and the
-// overlay layer exactly in.Extensions, in one transaction, written by the
-// running upstream import run run as ReplaceLayer writes each. An operator
-// deployment imports a release with the overlay pinned to it this way: the
-// overlay layer never holds another release's payloads, and an overlay that
-// does not apply changes neither layer. The payload rows take the run's
-// provenance with overlayURL as their source URL, although the run writes the
-// upstream layer: R13's layer match is relaxed here only.
-//
-// version is the release's; under the write lock, a version older than one
-// another run of the importer wrote is ErrConflict, so concurrent imports
-// cannot roll the layers back. The run records its version in the same
-// transaction, so a recorded version was written whatever the run's final
-// status.
+// ReplaceUpstream writes in's core objects to the upstream layer and exactly in.Extensions to the overlay
+// layer in one transaction, so the overlay never holds another release's payloads. Payload rows take
+// overlayURL as source URL: the only write outside the run's own layer. A version older than one
+// another run of the importer wrote is ErrConflict; the version is recorded with the write.
 func (s *Store) ReplaceUpstream(ctx context.Context, run uuid.UUID, version time.Time, in Inputs, overlayURL string) (Changes, []Conflict, error) {
 	ov := Inputs{Extensions: in.Extensions}
 	in.Extensions = catalog.Overlay{}
@@ -233,13 +205,12 @@ func (s *Store) ReplaceUpstream(ctx context.Context, run uuid.UUID, version time
 	return changes, conflicts, nil
 }
 
-// ImportedVersion is the newest upstream release version a run of importer
-// wrote, and that run; the zero time when none did.
+// ImportedVersion is the newest upstream release version a run of importer wrote, and that run; zero if none.
 func (s *Store) ImportedVersion(ctx context.Context, importer string) (time.Time, uuid.UUID, error) {
 	return importedVersion(s.db.WithContext(ctx), importer, uuid.Nil)
 }
 
-// importedVersion is ImportedVersion over the runs other than except.
+// importedVersion is ImportedVersion ignoring run except.
 func importedVersion(tx *gorm.DB, importer string, except uuid.UUID) (time.Time, uuid.UUID, error) {
 	var r model.ImportRun
 	err := tx.Where("importer = ? AND id <> ? AND release_version IS NOT NULL", importer, except).Order("release_version DESC").Take(&r).Error
@@ -252,7 +223,7 @@ func importedVersion(tx *gorm.DB, importer string, except uuid.UUID) (time.Time,
 	return *r.ReleaseVersion, r.ID, nil
 }
 
-// runningRun is the running import run run of layer.
+// runningRun loads run, refusing it unless it is running in layer.
 func runningRun(tx *gorm.DB, run uuid.UUID, layer string) (model.ImportRun, error) {
 	var r model.ImportRun
 	if err := tx.Take(&r, "id = ?", run).Error; err != nil {
@@ -264,12 +235,10 @@ func runningRun(tx *gorm.DB, run uuid.UUID, layer string) (model.ImportRun, erro
 	return r, nil
 }
 
-// runStamp is the provenance import run r gives the rows it writes.
 func runStamp(r model.ImportRun) stamp {
 	return stamp{layer: r.Layer, source: r.Source, sourceURL: r.SourceURL, asOf: r.StartedAt, run: &r.ID}
 }
 
-// replace makes st's layer hold want.
 func replace(tx *gorm.DB, st stamp, want rowSet) (Changes, []Conflict, error) {
 	have, err := load(tx, st.layer, scope{})
 	if err != nil {
@@ -278,15 +247,12 @@ func replace(tx *gorm.DB, st stamp, want rowSet) (Changes, []Conflict, error) {
 	return apply(tx, st, have, want)
 }
 
-// Upsert curates object in the local layer, replacing the local object of its
-// key with its children. object is a catalog.Family, NodeType, ModelTemplate,
-// DraftModel or Backend. It keeps the position of its key's local or upstream
-// row; a new key goes last.
+// Upsert replaces the local object of object's key, children included. object is a catalog.Family,
+// NodeType, ModelTemplate, DraftModel or Backend; it keeps its key's position, or goes last.
 func (s *Store) Upsert(ctx context.Context, object any) error {
 	return s.write(ctx, func(tx *gorm.DB) error { return upsert(tx, object) })
 }
 
-// upsert is Upsert in tx.
 func upsert(tx *gorm.DB, object any) error {
 	var in Inputs
 	var sc scope
@@ -335,8 +301,7 @@ func upsert(tx *gorm.DB, object any) error {
 	return err
 }
 
-// Delete removes the local object kind/key with its children, which restores
-// the upstream object of that key if there is one.
+// Delete removes the local object kind/key with its children, restoring any upstream object of that key.
 func (s *Store) Delete(ctx context.Context, kind, key string) error {
 	if _, ok := objectTables[kind]; !ok {
 		return fmt.Errorf("store: cannot delete a %s", kind)
@@ -354,8 +319,8 @@ func (s *Store) Delete(ctx context.Context, kind, key string) error {
 	})
 }
 
-// provenanceKinds are the tables provenance reads per kind, with the key
-// columns a "/"-separated key joins and whether field provenance is kept.
+// provenanceKinds are the tables provenance reads per kind, the key columns a "/"-key joins, and
+// whether field provenance is kept.
 var provenanceKinds = map[string]struct {
 	table  string
 	keys   []string
@@ -379,8 +344,7 @@ type provenanceRow struct {
 // Provenances are the provenance entries of objects by kind and key.
 type Provenances map[string]map[string][]ProvenanceEntry
 
-// EffectiveProvenance is Effective plus the provenance of every object, read
-// on one snapshot.
+// EffectiveProvenance is Effective plus every object's provenance, read on one snapshot.
 func (s *Store) EffectiveProvenance(ctx context.Context) (Inputs, Provenances, error) {
 	var in Inputs
 	all := Provenances{}
@@ -399,8 +363,8 @@ func (s *Store) EffectiveProvenance(ctx context.Context) (Inputs, Provenances, e
 	return in, all, err
 }
 
-// provenance reads the local and upstream rows of kind by key, local first. A
-// quantization's effective row is the one in its effective model's layer.
+// provenance reads local then upstream rows of kind by key. A quantization's effective row is the one
+// in its effective model's layer.
 func provenance(tx *gorm.DB, kind string) (map[string][]ProvenanceEntry, error) {
 	k := provenanceKinds[kind]
 	top := objectTables[kind]
@@ -429,7 +393,7 @@ func provenance(tx *gorm.DB, kind string) (map[string][]ProvenanceEntry, error) 
 	return byKey, nil
 }
 
-// write runs fn in a transaction holding the catalog's write lock.
+// write runs fn in a transaction holding the catalog's write lock, so writers serialize.
 func (s *Store) write(ctx context.Context, fn func(tx *gorm.DB) error) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext('neocloud-catalog-store'))`).Error; err != nil {
@@ -439,9 +403,8 @@ func (s *Store) write(ctx context.Context, fn func(tx *gorm.DB) error) error {
 	})
 }
 
-// toRows maps in to rows of layer with positions in input order. It refuses
-// empty and duplicate keys, payloads outside the overlay layer (including
-// inside objects) and core objects in it.
+// toRows maps in to rows of layer in input order. It refuses empty and duplicate keys, payloads
+// outside the overlay layer and core objects inside it.
 func toRows(layer string, in Inputs) (rowSet, error) {
 	var rs rowSet
 	var errs []error
@@ -552,10 +515,8 @@ func toRows(layer string, in Inputs) (rowSet, error) {
 	return rs, nil
 }
 
-// checkPayloadIDs refuses payloads of objects the effective catalog lacks,
-// naming the local model or backend whose override drops the object. Fits
-// are derived, so a fit id is checked as far as curation decides it: its
-// family and its model's quantization; catalog.Merge checks the rest.
+// checkPayloadIDs refuses payloads of objects the effective catalog lacks, naming the overriding local
+// object. Fits are derived: only a fit id's family and quantization are checked; catalog.Merge checks the rest.
 func checkPayloadIDs(tx *gorm.DB, o catalog.Overlay) error {
 	eff, err := effective(tx)
 	if err != nil {
@@ -614,16 +575,13 @@ type payloadKind struct {
 	ids  *map[string]catalog.Extensions
 }
 
-// payloadKinds pairs each extension_payloads object kind with its map in o.
 func payloadKinds(o *catalog.Overlay) []payloadKind {
 	return []payloadKind{{"families", &o.Families}, {"models", &o.Models}, {"presets", &o.Presets}, {"fits", &o.Fits}, {"backends", &o.Backends}}
 }
 
 func keyOf(parts ...string) string { return strings.Join(parts, "\x00") }
 
-// apply turns the rows have into want table by table (see syncTable) and
-// returns what it changed and the curated values it kept over differing ones
-// of want. Files follow their source by its id.
+// apply syncs have into want table by table (see syncTable); files follow their source by its id.
 func apply(tx *gorm.DB, st stamp, have, want rowSet) (Changes, []Conflict, error) {
 	files := func() (Change, []Conflict, error) {
 		var old, fresh []model.ModelFile
@@ -702,11 +660,9 @@ func apply(tx *gorm.DB, st stamp, have, want rowSet) (Changes, []Conflict, error
 	return changes, conflicts, nil
 }
 
-// syncTable turns the rows have of one table into want by key: an unchanged
-// row stays as it is, a changed one is updated in place with st's provenance,
-// a new one is inserted and a row want lacks is deleted. Every want row ends
-// with its id. It returns the curated values kept over differing ones of want,
-// keyed by the row's key parts joined with "/", without their kind.
+// syncTable turns have into want by key: unchanged rows stay, changed ones update in place with st's
+// provenance, new ones insert, missing ones delete. Every want row ends with its id. Conflicts are
+// keyed by the row's key parts joined with "/".
 func syncTable[T any](tx *gorm.DB, st stamp, have, want []T, key func(*T) string) (Change, []Conflict, error) {
 	old := make(map[string]*T, len(have))
 	for i := range have {
@@ -766,8 +722,7 @@ func syncTable[T any](tx *gorm.DB, st stamp, have, want []T, key func(*T) string
 	return c, conflicts, nil
 }
 
-// rowMeta points at the identity, audit and provenance parts of a curated
-// row; fields is nil for tables without field provenance.
+// rowMeta points at a curated row's identity, audit and provenance; fields is nil without field provenance.
 type rowMeta struct {
 	base   *model.Base
 	ts     *model.Timestamps
@@ -788,9 +743,8 @@ func meta(row any) rowMeta {
 	return m
 }
 
-// stampRow gives the new row w the identity of the layer's row o of its key
-// (nil for a new key) and st's provenance, settles its field provenance, and
-// reports whether w differs from o and the curated values of o it kept.
+// stampRow gives w the identity of o (nil for a new key) and st's provenance, and reports whether w
+// differs from o and the curated values of o it kept.
 func stampRow[T any](tx *gorm.DB, st stamp, w, o *T) (bool, []Conflict, error) {
 	wm := meta(w)
 	*wm.prov = model.Provenance{Layer: st.layer, Source: st.source, SourceURL: st.sourceURL, AsOf: st.asOf, ImportRunID: st.run}
@@ -817,12 +771,9 @@ func stampRow[T any](tx *gorm.DB, st stamp, w, o *T) (bool, []Conflict, error) {
 	return changed || !sameContent(w, o), kept, nil
 }
 
-// fieldProvenance is the provenance per value column of w: a value equal to
-// the one in o keeps its provenance, a curated value of o survives an
-// importer run's value that is not curated (and is copied back into w) unless
-// it was curated from st's own curation URL (a withdrawn correction), any
-// other value is st's. It lists each curated value it kept as a Conflict with
-// its field, curated and imported value only, by field.
+// fieldProvenance is w's per-column provenance. An unchanged value keeps o's. An importer run never
+// overwrites a curated value of o (it is copied back into w and reported as a Conflict) unless the new
+// value is curated too or o's came from st's own curation URL (a withdrawn correction). Else st's.
 func fieldProvenance[T any](tx *gorm.DB, st stamp, w, o *T) (model.FieldProvenance, []Conflict, error) {
 	cols, err := valueColumns(tx, w)
 	if err != nil {
@@ -859,8 +810,7 @@ type column struct{ name, db string }
 
 var schemas, columns sync.Map
 
-// valueColumns are the columns of a mixed-source table that field provenance
-// covers: all but identity, audit, provenance, position and the natural key.
+// valueColumns are the columns field provenance covers: all but identity, audit, provenance, position and natural key.
 func valueColumns(tx *gorm.DB, row any) ([]column, error) {
 	t := reflect.TypeOf(row)
 	if cols, ok := columns.Load(t); ok {
@@ -889,9 +839,8 @@ func valueColumns(tx *gorm.DB, row any) ([]column, error) {
 	return cols, nil
 }
 
-// sameContent compares the curated fields of two rows of one table: all but
-// identity, audit, provenance and associations. Payloads compare as JSON
-// values, since jsonb keeps neither their key order nor their spacing.
+// sameContent compares two rows' curated fields. Payloads compare as JSON values: jsonb keeps neither
+// key order nor spacing.
 func sameContent(a, b any) bool {
 	va, vb := reflect.ValueOf(a).Elem(), reflect.ValueOf(b).Elem()
 	for i := range va.NumField() {

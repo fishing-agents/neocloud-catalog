@@ -12,8 +12,7 @@ import (
 	"github.com/fishman/neocloud-catalog/service/internal/model"
 )
 
-// LocalModel returns the local model slug with its quantizations, sources and
-// presets.
+// LocalModel returns the local model slug with its children.
 func (s *Store) LocalModel(ctx context.Context, slug string) (catalog.ModelTemplate, error) {
 	var m catalog.ModelTemplate
 	err := s.read(ctx, func(tx *gorm.DB) error {
@@ -60,9 +59,8 @@ func local(tx *gorm.DB, sc scope) (objects, error) {
 	return assemble(rs)
 }
 
-// EditLocalModel applies edit to the local model slug and stores the result
-// as Upsert does, under one write lock, so concurrent edits do not lose each
-// other's changes. Without a local model it returns ErrNotFound.
+// EditLocalModel applies edit to the local model slug under the write lock, so concurrent edits are not lost.
+// Without a local model it returns ErrNotFound.
 func (s *Store) EditLocalModel(ctx context.Context, slug string, edit func(*catalog.ModelTemplate) error) error {
 	return s.write(ctx, func(tx *gorm.DB) error {
 		m, err := localModel(tx, slug)
@@ -78,16 +76,14 @@ func (s *Store) EditLocalModel(ctx context.Context, slug string, edit func(*cata
 
 var billings = []string{model.BillingOnDemand, model.BillingSpot, model.BillingReserved1Y}
 
-// LocalPrices returns the local layer's node type prices by node type, region
-// and billing.
+// LocalPrices returns the local layer's node type prices.
 func (s *Store) LocalPrices(ctx context.Context) ([]model.NodeTypePrice, error) {
 	prices := []model.NodeTypePrice{}
 	err := s.db.WithContext(ctx).Where("layer = ?", model.LayerLocal).Order("node_type_id, region, billing").Find(&prices).Error
 	return prices, err
 }
 
-// EffectivePrices returns the node type prices the catalog uses by node type,
-// region and billing: a local price overrides the upstream one of its key.
+// EffectivePrices returns the effective node type prices: a local price overrides the upstream one of its key.
 func (s *Store) EffectivePrices(ctx context.Context) ([]model.NodeTypePrice, error) {
 	var prices []model.NodeTypePrice
 	// "local" sorts before "upstream": a key's first row is its effective one.
@@ -96,8 +92,7 @@ func (s *Store) EffectivePrices(ctx context.Context) ([]model.NodeTypePrice, err
 	return slices.CompactFunc(prices, func(a, b model.NodeTypePrice) bool { return priceKey(&a) == priceKey(&b) }), err
 }
 
-// ReplaceLocalPrices makes the local layer hold exactly the node type prices
-// of prices, curated now; an unchanged price keeps its provenance.
+// ReplaceLocalPrices makes the local layer hold exactly prices; an unchanged price keeps its provenance.
 func (s *Store) ReplaceLocalPrices(ctx context.Context, prices []model.NodeTypePrice) error {
 	want, errs := checkPrices(prices)
 	if len(errs) > 0 {
@@ -113,8 +108,7 @@ func (s *Store) ReplaceLocalPrices(ctx context.Context, prices []model.NodeTypeP
 	})
 }
 
-// checkPrices returns the rows to write of prices, their NodeTypeID, Region,
-// Billing and USDPerHour, and why it refuses any of them.
+// checkPrices returns prices reduced to their key and USDPerHour, and why it refuses any of them.
 func checkPrices(prices []model.NodeTypePrice) ([]model.NodeTypePrice, []error) {
 	var errs []error
 	seen := map[string]bool{}

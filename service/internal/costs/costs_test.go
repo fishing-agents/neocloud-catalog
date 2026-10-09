@@ -47,14 +47,8 @@ func line(c model.CostEstimate) string {
 		c.Instances, c.USDPerHour, c.USDPerMonth, c.Cheapest)
 }
 
-// The spec's hand-computed example: llama-3.1-70b's optimal setup is one
-// MI300X GPU (fp8) on one node, so it takes ceil(1 / 8) x 1 = 1
-// ND96isr_MI300X_v5 instance at the eastus2 prices recorded from the Azure
-// Retail Prices API (testdata/azure): on demand 48 USD/h, 48 x 730 = 35040
-// USD/month; spot 8.8704 x 730 = 6475.392; 1-year reserved 269107 / 8760 =
-// 30.719977 (to the micro-dollar) x 730 = 22425.58321. Its 2-node bf16 fit
-// spans 16 GPUs: ceil(8 / 8) x 2 = 2 instances, 2 x 48 = 96 USD/h, 96 x 730
-// = 70080 USD/month.
+// The spec's hand-computed example (eastus2, testdata/azure): one MI300X needs ceil(1/8) x 1 = 1 instance,
+// the 2-node bf16 fit 2; 1-year reserved is 269107 USD / 8760 h = 30.719977/h.
 func TestCostEstimateHandComputed(t *testing.T) {
 	run := uuid.New()
 	prices := []model.NodeTypePrice{
@@ -94,9 +88,7 @@ func TestCostEstimateHandComputed(t *testing.T) {
 	}
 }
 
-// Per model, guidance setup and billing type exactly one estimate is marked
-// cheapest: the lowest price per hour across node types and regions; fits are
-// never marked.
+// Exactly one estimate per model, guidance setup and billing type is cheapest; fits are never marked.
 func TestCheapestGuidanceSetup(t *testing.T) {
 	snap := committed(t)
 	estimates := costs.Estimate(uuid.New(), snap, []model.NodeTypePrice{

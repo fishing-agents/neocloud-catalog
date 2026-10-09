@@ -1,6 +1,5 @@
-// Package dbtest gives integration tests a database of their own on the
-// server NEOCLOUD_CATALOG_TEST_DSN points at; tests skip without it, so unit
-// runs stay DB-free.
+// Package dbtest gives integration tests their own database on NEOCLOUD_CATALOG_TEST_DSN; tests
+// skip without it.
 package dbtest
 
 import (
@@ -21,8 +20,7 @@ import (
 	"github.com/fishman/neocloud-catalog/service/internal/store"
 )
 
-// Provenance is the provenance of the object kind keyed key as the effective
-// catalog reports it, local row first; the test fails without any.
+// Provenance is the effective provenance of kind/key, local row first; the test fails without any.
 func Provenance(t testing.TB, s *store.Store, kind, key string) []store.ProvenanceEntry {
 	t.Helper()
 	_, all, err := s.EffectiveProvenance(context.Background())
@@ -36,9 +34,8 @@ func Provenance(t testing.TB, s *store.Store, kind, key string) []store.Provenan
 	return p
 }
 
-// Fresh creates the empty database <NEOCLOUD_CATALOG_TEST_DSN's database>_<suffix>
-// and drops it when the test ends. The GORM handle logs nothing: tests provoke
-// errors on purpose.
+// Fresh creates the empty database <DSN database>_<suffix>, dropped when the test ends. Its GORM
+// handle logs nothing: tests provoke errors on purpose.
 func Fresh(t testing.TB, suffix string) (*sql.DB, *gorm.DB) {
 	t.Helper()
 	dsn := os.Getenv("NEOCLOUD_CATALOG_TEST_DSN")
@@ -76,8 +73,7 @@ func Fresh(t testing.TB, suffix string) (*sql.DB, *gorm.DB) {
 	return sqlDB, gormDB.Session(&gorm.Session{Logger: logger.Discard})
 }
 
-// Migrate runs every versioned migration in file order, as `atlas migrate
-// apply` would.
+// Migrate applies every versioned migration in file order, as `atlas migrate apply` would.
 func Migrate(t testing.TB, sqlDB *sql.DB) {
 	t.Helper()
 	_, self, _, _ := runtime.Caller(0)

@@ -1,8 +1,6 @@
-// Package model holds the catalog service's GORM models, the schema authority
-// Atlas diffs versioned migrations from. Curated and imported objects refer to
-// each other by natural key (slug, name, version), never by row id, so a local
-// object overrides or extends an upstream one per key; only the parts of one
-// object (a source's files) and derived rows point at rows.
+// Package model holds the GORM models, the schema Atlas diffs migrations from. Objects refer to each
+// other by natural key, never row id, so local overrides upstream per key; only a source's files and
+// derived rows point at rows.
 package model
 
 import (
@@ -14,8 +12,7 @@ import (
 	catalog "github.com/fishman/neocloud-catalog"
 )
 
-// Layers: local overrides upstream per natural key; overlay only adds
-// extension payloads.
+// Layers: local overrides upstream per natural key; overlay only adds extension payloads.
 const (
 	LayerUpstream = "upstream"
 	LayerLocal    = "local"
@@ -42,15 +39,13 @@ type Timestamps struct {
 	UpdatedAt time.Time
 }
 
-// Base is the UUID identity. Rows are deleted for real: a soft-deleted row
-// would keep holding its natural key and block curating that key again.
+// Base is the UUID identity. Deletes are hard: a soft-deleted row would still hold its natural key.
 type Base struct {
 	ID uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 }
 
-// Provenance records where a curated or imported row came from. Layer leads
-// each table's natural key, the unique index idx_<table>_natural. ImportRunID
-// is nil for curation.
+// Provenance records a row's origin; ImportRunID is nil for curation. Layer leads each table's
+// natural key, the unique index idx_<table>_natural.
 type Provenance struct {
 	Layer       string     `gorm:"not null;uniqueIndex:,composite:natural,priority:1;check:layer IN ('upstream', 'local', 'overlay')"`
 	Source      string     `gorm:"not null"`
@@ -60,8 +55,7 @@ type Provenance struct {
 	ImportRun   *ImportRun `gorm:"foreignKey:ImportRunID"`
 }
 
-// Derivation ties a derived row to the generator run that wrote it; deleting
-// the run deletes its rows. The run leads each table's key, idx_<table>_key.
+// Derivation ties a derived row to its generator run (deleted with it); the run leads idx_<table>_key.
 type Derivation struct {
 	GeneratorRunID uuid.UUID     `gorm:"type:uuid;not null;uniqueIndex:,composite:key,priority:1"`
 	GeneratorRun   *GeneratorRun `gorm:"foreignKey:GeneratorRunID;constraint:OnDelete:CASCADE"`
@@ -78,8 +72,7 @@ type FieldSource struct {
 	ImportRunID *uuid.UUID `json:"import_run_id,omitempty"`
 }
 
-// FieldProvenance maps a field name to where that field's value came from;
-// the row's Provenance stays the row's origin.
+// FieldProvenance maps a field name to its value's origin; the row's Provenance stays the row's.
 type FieldProvenance map[string]FieldSource
 
 type Family struct {
@@ -109,8 +102,7 @@ type NodeType struct {
 	FieldProvenance datatypes.JSONType[FieldProvenance] `gorm:"not null;default:'{}'"`
 	Family          string                              `gorm:"not null;index"`
 	GPUs            int                                 `gorm:"column:gpus;not null"`
-	// DocURL is the exported catalog.NodeType.Source, the page documenting
-	// the node type.
+	// DocURL is the exported catalog.NodeType.Source.
 	DocURL string `gorm:"column:doc_url;not null"`
 }
 
@@ -151,8 +143,7 @@ type Model struct {
 	ContextMax      int                                      `gorm:"not null"`
 }
 
-// ModelQuantization is one checkpoint of a model; Position keeps the curated
-// order.
+// ModelQuantization is one checkpoint of a model.
 type ModelQuantization struct {
 	Base
 	Timestamps
@@ -166,9 +157,8 @@ type ModelQuantization struct {
 	WeightsGB       float64                             `gorm:"column:weights_gb;not null"`
 }
 
-// ModelSource locates the weights of a quantization (ModelSlug, Quantization)
-// or of a draft model (DraftSlug); exactly one owner is set. Preference orders
-// an owner's sources.
+// ModelSource locates the weights of a quantization (ModelSlug, Quantization) or a draft model
+// (DraftSlug), exactly one. Preference orders an owner's sources.
 type ModelSource struct {
 	Base
 	Timestamps
@@ -182,8 +172,7 @@ type ModelSource struct {
 	Preference   int    `gorm:"not null"`
 }
 
-// ModelFile is one entry of a source's cache manifest at its revision; Digest
-// is "sha256:<hex>" or "git-oid:<hex>" as in the core.
+// ModelFile is one cache manifest entry; Digest is "sha256:<hex>" or "git-oid:<hex>" as in the core.
 type ModelFile struct {
 	Base
 	Timestamps
@@ -288,8 +277,7 @@ type Fit struct {
 	VRAMRequiredGB float64 `gorm:"column:vram_required_gb;not null"`
 }
 
-// FitEstimate is a fit's performance figure per source ("estimate" from the
-// generator).
+// FitEstimate is a fit's performance figure per source ("estimate" from the generator).
 type FitEstimate struct {
 	Base
 	Timestamps
@@ -326,10 +314,8 @@ type Guidance struct {
 
 func (Guidance) TableName() string { return "guidance" }
 
-// CostEstimate is internal: what a fit (Setup "fit", FitKey set) or a
-// guidance setup ("minimum" or "optimal", FitKey empty) costs on a cloud node
-// type in a region at a billing type, with the price's provenance. Cheapest
-// marks a guidance setup's cheapest estimate per billing type.
+// CostEstimate is internal: what a fit (Setup "fit") or guidance setup costs per node type, region and
+// billing. Cheapest marks a guidance setup's cheapest estimate per billing type.
 type CostEstimate struct {
 	Base
 	Timestamps
@@ -361,13 +347,8 @@ type ExtensionPayload struct {
 	Payload    datatypes.JSON `gorm:"type:jsonb;not null;check:chk_extension_payloads_overlay,layer = 'overlay'"`
 }
 
-// Release freezes a generator run; Version is its generation time in
-// catalog.VersionLayout and Digest the digest of the run's snapshot at that
-// version. Overlay holds the overlay layer's payloads as of the release,
-// pinned to Digest. ArtifactRef and PublishedAt are set on publish, with
-// OverlayRef when its overlay is published too; a published release's
-// overlay may be published once later. A database trigger refuses any other
-// change, and any delete once published.
+// Release freezes a generator run: Version is its time in catalog.VersionLayout, Overlay the payloads
+// pinned to Digest. A trigger refuses changes but publishing (overlay once later) and deletes once published.
 type Release struct {
 	Base
 	Timestamps
@@ -382,11 +363,8 @@ type Release struct {
 	PublishedAt    *time.Time
 }
 
-// ImportRun is one importer run; importers are idempotent per (Importer,
-// InputVersion). Source and SourceURL are the provenance of the rows the run
-// writes (the importer's name), as of StartedAt. Summary holds the result and
-// diff summary. ReleaseVersion is the upstream release an upstream import
-// wrote, recorded in the transaction that wrote it.
+// ImportRun is one importer run; importers are idempotent per (Importer, InputVersion).
+// ReleaseVersion is recorded in the transaction of the upstream write.
 type ImportRun struct {
 	Base
 	Timestamps
@@ -403,10 +381,8 @@ type ImportRun struct {
 	Error          string         `gorm:"not null"`
 }
 
-// GeneratorRun is one generation over the effective catalog; InputDigest
-// identifies the inputs it read, InputImportRuns the import runs that wrote
-// them, and Report lists what it reported. Snapshot is the public snapshot a
-// succeeded run generated, its version left to the release that freezes it.
+// GeneratorRun is one generation over the effective catalog; Snapshot's version is left to the
+// release that freezes it.
 type GeneratorRun struct {
 	Base
 	Timestamps
@@ -421,9 +397,8 @@ type GeneratorRun struct {
 	Error           string                         `gorm:"not null"`
 }
 
-// APIKey is an operator API key, as neocloud-api keeps them: only the SHA-256
-// of the key is stored; Prefix is the label in neocatalog_<prefix>_<secret>.
-// A key past ExpiresAt no longer authenticates.
+// APIKey is an operator API key stored as its SHA-256, as neocloud-api does; Prefix is the label in
+// neocatalog_<prefix>_<secret>.
 type APIKey struct {
 	Base
 	Timestamps
@@ -433,8 +408,7 @@ type APIKey struct {
 	ExpiresAt *time.Time
 }
 
-// All lists every model, referenced tables first, for the schema dump and
-// AutoMigrate.
+// All lists every model, referenced tables first.
 func All() []any {
 	return []any{
 		&ImportRun{},

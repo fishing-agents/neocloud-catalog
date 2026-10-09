@@ -1,8 +1,5 @@
-// Package adapters fits the neocloud catalog to model-serving platforms. Each
-// platform has one adapter, registered by name: it declares what the platform
-// can express, exports the catalog in the platform's own formats, and (in the
-// reporter) collects run records back. Adapters only map formats and read their
-// platform; the helpers here hold everything they share.
+// Package adapters exports the neocloud catalog to model-serving platforms, one
+// registered adapter per platform.
 package adapters
 
 import (
@@ -16,16 +13,14 @@ import (
 	catalog "github.com/fishman/neocloud-catalog"
 )
 
-// DefaultReferenceFamily is the device family whose fit sets the GPU count a
-// platform without a fit matrix gets: the most common data-center GPU.
+// DefaultReferenceFamily sizes presets on platforms without a fit matrix.
 const DefaultReferenceFamily = "H100"
 
-// Capabilities is what a platform can express. The exporter checks every
-// preset against it, so nothing is dropped without a reason.
+// Capabilities is what a platform can express.
 type Capabilities struct {
-	Backends  []string // catalog backend names, e.g. vllm, sglang
-	Sources   []string // catalog source types, e.g. huggingface, modelscope
-	FitMatrix bool     // a GPU count and context per device family
+	Backends  []string
+	Sources   []string
+	FitMatrix bool // a GPU count and context per device family
 }
 
 // Artifact is one exported file, relative to the export root.
@@ -34,7 +29,7 @@ type Artifact struct {
 	Body []byte
 }
 
-// PresetKey names a preset of the catalog.
+// PresetKey names a catalog preset.
 type PresetKey struct {
 	Model, Preset string
 }
@@ -45,8 +40,7 @@ type Skip struct {
 	Reason string
 }
 
-// Export is one format's output: the files, and every preset either exported
-// or skipped.
+// Export is one format's output; every preset is either exported or skipped.
 type Export struct {
 	Artifacts []Artifact
 	Exported  []PresetKey
@@ -55,18 +49,16 @@ type Export struct {
 
 // Options tune an export.
 type Options struct {
-	// ReferenceFamily picks the fit that sets the GPU count on platforms
-	// without a fit matrix; empty means DefaultReferenceFamily.
+	// ReferenceFamily defaults to DefaultReferenceFamily.
 	ReferenceFamily string
 }
 
-// Adapter fits the catalog to one platform.
+// Adapter exports the catalog to one platform.
 type Adapter interface {
 	Name() string
 	Capabilities() Capabilities
 	Formats() []string
-	// SkipReasons are the documented reasons a format skips a preset; any
-	// other reason fails Coverage.
+	// SkipReasons are the documented reasons; any other fails Coverage.
 	SkipReasons(format string) []string
 	Export(snap catalog.CatalogSnapshot, format string, opts Options) (Export, error)
 }
@@ -77,8 +69,7 @@ var (
 	extensions []ExportExtension
 )
 
-// Register makes an adapter available by name; adapters call it from init.
-// It panics on a duplicate name, as two adapters for one platform is a bug.
+// Register makes an adapter available by name; it panics on a duplicate name.
 func Register(a Adapter) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -108,17 +99,15 @@ func Names() []string {
 	return names
 }
 
-// ExportExtension renders one catalog extension's payloads into a platform
-// format after the adapter's own rendering. Public builds register none.
+// ExportExtension renders one catalog extension's payloads into a platform format
+// after the adapter's own rendering. Public builds register none.
 type ExportExtension interface {
 	Namespace() string
-	Adapter() string // adapter name it applies to
+	Adapter() string
 	Apply(format string, snap catalog.CatalogSnapshot, e *Export) error
 }
 
-// RegisterExportExtension makes x run on its adapter's exports; extensions
-// call it from init. It panics on a second extension of one namespace for one
-// adapter.
+// RegisterExportExtension panics on a second extension of one namespace for one adapter.
 func RegisterExportExtension(x ExportExtension) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -133,16 +122,15 @@ func RegisterExportExtension(x ExportExtension) {
 	})
 }
 
-// ExportExtensions lists the registered export extensions by adapter, then
-// namespace.
+// ExportExtensions lists the registered export extensions by adapter, then namespace.
 func ExportExtensions() []ExportExtension {
 	mu.RLock()
 	defer mu.RUnlock()
 	return slices.Clone(extensions)
 }
 
-// Coverage checks an export against the snapshot: every preset is exported or
-// skipped, never both or twice, and every skip has a documented reason.
+// Coverage checks that every preset is exported or skipped exactly once, and every
+// skip has a documented reason.
 func Coverage(a Adapter, snap catalog.CatalogSnapshot, format string, e Export) error {
 	seen := map[PresetKey]string{}
 	var errs []error
@@ -183,7 +171,7 @@ type Ref struct {
 	Preset catalog.Preset
 }
 
-// Presets lists every preset of the snapshot in catalog order.
+// Presets lists every preset in catalog order.
 func Presets(snap catalog.CatalogSnapshot) []Ref {
 	var refs []Ref
 	for _, m := range snap.Models {
@@ -208,8 +196,7 @@ func (r Ref) Quantization() (catalog.Quantization, bool) {
 	return r.Model.Quantizations[i], true
 }
 
-// Source returns the first source of the preset's checkpoint, in the catalog's
-// preference order, whose type is one of types.
+// Source returns the first checkpoint source, in preference order, of one of types.
 func (r Ref) Source(types ...string) (catalog.ModelSource, bool) {
 	q, ok := r.Quantization()
 	if !ok {
@@ -223,7 +210,7 @@ func (r Ref) Source(types ...string) (catalog.ModelSource, bool) {
 	return catalog.ModelSource{}, false
 }
 
-// BackendVersion returns the pinned release a preset runs on.
+// BackendVersion returns the named backend release.
 func BackendVersion(snap catalog.CatalogSnapshot, backend, version string) (catalog.BackendVersion, bool) {
 	for _, b := range snap.Backends {
 		if b.Name != backend {
@@ -238,15 +225,14 @@ func BackendVersion(snap catalog.CatalogSnapshot, backend, version string) (cata
 	return catalog.BackendVersion{}, false
 }
 
-// Vendors lists the GPU vendors (and cpu) a preset runs on: those its backend
-// version has an image for, limited to the preset's vendors, sorted.
+// Vendors lists the vendors with an image for the preset, limited to its Vendors, sorted.
 func Vendors(p catalog.Preset, bv catalog.BackendVersion) []string {
 	return slices.DeleteFunc(slices.Sorted(maps.Keys(bv.Images)), func(v string) bool {
 		return len(p.Vendors) > 0 && !slices.Contains(p.Vendors, v)
 	})
 }
 
-// Draft returns the draft model a preset's speculative decoding loads, or nil.
+// Draft returns the preset's draft model, or nil.
 func Draft(snap catalog.CatalogSnapshot, p catalog.Preset) *catalog.DraftModel {
 	if p.Speculative == nil {
 		return nil
@@ -258,11 +244,9 @@ func Draft(snap catalog.CatalogSnapshot, p catalog.Preset) *catalog.DraftModel {
 	return &snap.DraftModels[i]
 }
 
-// ReferenceFit returns the single-node whole-GPU fit of a preset's checkpoint
-// at its KV cache dtype on a family of one of vendors: the reference family's,
-// else the best of the others, native before emulated, then the fewest GPUs,
-// the largest context and the family name, for a stable choice. Adapters skip
-// multi-node presets, so multi-node fits never size one.
+// ReferenceFit returns the preset's single-node whole-GPU fit on the reference
+// family, else the best on vendors: native first, fewest GPUs, largest context,
+// then family name.
 func ReferenceFit(snap catalog.CatalogSnapshot, r Ref, vendors []string, opts Options) (catalog.ModelFit, bool) {
 	family := cmp.Or(opts.ReferenceFamily, DefaultReferenceFamily)
 	vendor := map[string]string{}

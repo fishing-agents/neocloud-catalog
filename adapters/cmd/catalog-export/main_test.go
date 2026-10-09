@@ -16,9 +16,7 @@ import (
 	"github.com/fishman/neocloud-catalog/adapters"
 )
 
-// The release publishes this command's output and signs SHA256SUMS: the output
-// must equal each adapter's golden files, and the sums must cover exactly the
-// files written, with their hashes.
+// Output equals the goldens and SHA256SUMS covers exactly the files written.
 func TestExportMatchesGoldensAndSums(t *testing.T) {
 	out := t.TempDir()
 	if err := run(config{out: out}, io.Discard); err != nil {
@@ -85,8 +83,7 @@ func TestRunRefusesUnknownSelection(t *testing.T) {
 	}
 }
 
-// annotate adds an annotation to one AI Runway manifest, as an enterprise
-// extension rendering its payload would.
+// annotate stands in for an enterprise extension rendering its payload.
 type annotate struct{}
 
 func (annotate) Namespace() string { return "example.com/test" }
@@ -120,8 +117,7 @@ func (unexport) Apply(_ string, _ catalog.CatalogSnapshot, e *adapters.Export) e
 	return nil
 }
 
-// Extensions run for their adapter after its export: they may change the
-// files, which the sums then cover, but not which presets are exported.
+// Extensions may change files, which the sums cover, but not which presets are exported.
 func TestExportExtensions(t *testing.T) {
 	out := t.TempDir()
 	cfg := config{adapter: "airunway", format: "airunway-deployments", out: out, extensions: []adapters.ExportExtension{annotate{}}}

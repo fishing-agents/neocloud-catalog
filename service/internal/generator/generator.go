@@ -1,5 +1,4 @@
-// Package generator runs the core generator over the effective catalog as a
-// generator run and stores what it derives.
+// Package generator runs the core generator over the effective catalog and stores the result.
 package generator
 
 import (
@@ -18,12 +17,8 @@ import (
 	"github.com/fishman/neocloud-catalog/service/internal/store"
 )
 
-// Run generates the snapshot of the effective catalog as the new generator run
-// id and stores the run: its inputs' digest and import runs, the report, the
-// snapshot generated at the run's start (its version is a release's to set)
-// and the fits, estimates and guidance it derives, plus the internal cost
-// estimates at the effective prices. A failed generation is stored as a
-// failed run and returned with its error, which names the run.
+// Run generates the effective catalog's snapshot as generator run id and stores it with its derived
+// rows and cost estimates. A failed generation is stored as a failed run; the error names the run.
 func Run(ctx context.Context, s *store.Store, id uuid.UUID) (model.GeneratorRun, error) {
 	run, err := s.StartGeneratorRun(ctx, id)
 	if err != nil {
@@ -48,9 +43,8 @@ func Run(ctx context.Context, s *store.Store, id uuid.UUID) (model.GeneratorRun,
 	return run, nil
 }
 
-// generate fills run's inputs, snapshot and report and returns its cost
-// estimates. Prices feed only those internal estimates, never the snapshot,
-// so the input digest and import runs leave them out.
+// generate fills run and returns its cost estimates. Prices feed only those internal estimates, so
+// the input digest and import runs leave them out.
 func generate(ctx context.Context, s *store.Store, run *model.GeneratorRun) ([]model.CostEstimate, error) {
 	in, runs, err := s.EffectiveWithRuns(ctx)
 	if err != nil {
@@ -70,8 +64,8 @@ func generate(ctx context.Context, s *store.Store, run *model.GeneratorRun) ([]m
 	return costs.Estimate(run.ID, &snap, prices), nil
 }
 
-// InputDigest is the sha256 of the curated inputs Generate reads, in order:
-// Generate is deterministic, so equal digests give equal snapshots.
+// InputDigest is the sha256 of the inputs Generate reads; Generate is deterministic, so equal
+// digests give equal snapshots.
 func InputDigest(in store.Inputs) string {
 	h := sha256.New()
 	_ = json.NewEncoder(h).Encode([]any{in.Families, in.NodeTypes, in.Models, in.Drafts, in.Backends})

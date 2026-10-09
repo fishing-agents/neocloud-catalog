@@ -10,10 +10,8 @@ import (
 	"strings"
 )
 
-// Extension adds a feature to the catalog without the core knowing it. Name is
-// its namespace (e.g. neocloud.io/interruption), the only Extensions key it may
-// write. Generate derives payloads during generation; Validate checks them in a
-// generated or merged snapshot.
+// Extension adds a feature the core does not know. Name is its namespace, the only
+// Extensions key it may write.
 type Extension interface {
 	Name() string
 	Validate(snap CatalogSnapshot) error
@@ -35,13 +33,11 @@ func (r *registry) register(e Extension) {
 
 var extensions = newRegistry()
 
-// RegisterExtension adds e to the extensions Validate and RunExtensions run.
-// It panics if an extension of the same name is already registered.
+// RegisterExtension registers e; it panics on a duplicate name.
 func RegisterExtension(e Extension) { extensions.register(e) }
 
-// RunExtensions runs Generate of every registered extension on a generated
-// snapshot, then Validate of every one, failing if an extension writes outside
-// its namespace or changes the public snapshot (a field or an object).
+// RunExtensions runs every registered extension's Generate then Validate, failing
+// if one writes outside its namespace or changes the public snapshot.
 func RunExtensions(snap *CatalogSnapshot) error { return runExtensions(extensions, snap) }
 
 func runExtensions(reg *registry, snap *CatalogSnapshot) error {
@@ -81,7 +77,6 @@ func runExtensions(reg *registry, snap *CatalogSnapshot) error {
 	return nil
 }
 
-// publicDigest is the digest of a copy of snap without extension payloads.
 func publicDigest(snap *CatalogSnapshot) (string, error) {
 	b, err := json.Marshal(snap)
 	if err != nil {
@@ -99,7 +94,6 @@ func publicDigest(snap *CatalogSnapshot) (string, error) {
 
 type payloadKey struct{ object, namespace string }
 
-// payloads copies every extension payload of the snapshot.
 func payloads(snap *CatalogSnapshot) map[payloadKey]string {
 	out := map[payloadKey]string{}
 	for object, ext := range extensionTargets(snap) {
@@ -110,8 +104,7 @@ func payloads(snap *CatalogSnapshot) map[payloadKey]string {
 	return out
 }
 
-// extensionTargets indexes the Extensions of every object an overlay can
-// address by "<kind> <id>", with the ids Overlay documents.
+// extensionTargets indexes every overlay-addressable Extensions by "<kind> <id>".
 func extensionTargets(snap *CatalogSnapshot) map[string]*Extensions {
 	out := map[string]*Extensions{}
 	for i := range snap.Families {
@@ -136,8 +129,7 @@ func extensionTargets(snap *CatalogSnapshot) map[string]*Extensions {
 	return out
 }
 
-// Overlay holds extension payloads for a public snapshot, keyed by the ids of
-// its objects, and pinned to that snapshot's digest.
+// Overlay holds extension payloads keyed by object id, pinned to a public snapshot digest.
 type Overlay struct {
 	SchemaVersion  string                `json:"schema_version"`
 	SnapshotDigest string                `json:"snapshot_digest"`
@@ -149,7 +141,7 @@ type Overlay struct {
 }
 
 // FitKey identifies a fit: "<slug>/<family>/<profile|->/<quant>/<kv dtype>",
-// with "/<n>-node" appended for a fit across n > 1 nodes.
+// plus "/<n>-node" when n > 1.
 func FitKey(f ModelFit) string {
 	profile := "-"
 	if f.Profile != nil {
@@ -162,10 +154,8 @@ func FitKey(f ModelFit) string {
 	return key
 }
 
-// Merge returns a copy of public with the overlay's payloads added. It refuses
-// an overlay of another schema major or for another snapshot digest, an id the
-// snapshot lacks, and a namespace an object already holds: it adds payloads
-// only and never changes a public field.
+// Merge adds the overlay's payloads to a copy of public. It refuses a different
+// schema major or digest, unknown ids, and namespaces an object already holds.
 func Merge(public CatalogSnapshot, o Overlay) (CatalogSnapshot, error) {
 	if major, _, _ := strings.Cut(o.SchemaVersion, "."); major != schemaMajor() {
 		return CatalogSnapshot{}, fmt.Errorf("overlay schema %q, want major %s", o.SchemaVersion, schemaMajor())

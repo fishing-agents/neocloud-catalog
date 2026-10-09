@@ -1,8 +1,5 @@
-// Command catalog-generate is the outsourced generation pipeline: it reads the
-// curated sources in data/, validates them, derives the fit matrix, and emits
-// the versioned snapshot at snapshots/v4/catalog.json that the module embeds and
-// neocloud ingests. Re-run it after any change to data/ to bump the snapshot.
-// Publishing and signing happen in the release workflow, not here.
+// Command catalog-generate validates the curated data/ and writes the snapshot to
+// snapshots/v4/catalog.json. Re-run it after any change to data/.
 package main
 
 import (
@@ -55,8 +52,7 @@ func run() error {
 		fmt.Println(line)
 	}
 
-	// Unchanged content keeps the committed version, so the release workflow
-	// reproduces the committed snapshot byte for byte.
+	// Unchanged content keeps the committed version so releases reproduce it byte for byte.
 	prev, changed, err := previous(snapshotPath)
 	if err != nil {
 		return err
@@ -81,9 +77,8 @@ func run() error {
 	return nil
 }
 
-// previous reads the committed snapshot. One that does not decode or has
-// another schema major.minor is changed content: it returns an empty snapshot
-// and the reason, so a shape change gets a new version instead of failing.
+// previous reads the committed snapshot. One that does not decode or has another
+// schema major.minor counts as changed content, so a shape change gets a new version.
 func previous(path string) (catalog.CatalogSnapshot, string, error) {
 	var prev catalog.CatalogSnapshot
 	b, err := os.ReadFile(path)

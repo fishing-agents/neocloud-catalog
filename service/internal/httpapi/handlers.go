@@ -245,7 +245,7 @@ func (h *handlers) StartImport(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, queuedImport(run, imp))
 }
 
-// queuedImport is the import run id of imp before a worker records it.
+// queuedImport is the import run imp will record, before a worker starts it.
 func queuedImport(id uuid.UUID, imp importers.Importer) ImportRun {
 	o := imp.Origin()
 	return ImportRun{Id: id, Importer: imp.Name(), Layer: Layer(o.Layer), Source: o.Source, SourceUrl: o.SourceURL, Status: Queued,
@@ -337,7 +337,7 @@ func (h *handlers) GetImport(w http.ResponseWriter, r *http.Request, id uuid.UUI
 	writeJSON(w, http.StatusOK, out)
 }
 
-// job returns the job of kind running run, which no row records yet.
+// job returns the job of a run no row records yet.
 func (h *handlers) job(ctx context.Context, kind string, run uuid.UUID) (*rivertype.JobRow, error) {
 	job, err := h.Jobs.Job(ctx, kind, run)
 	if err == nil && job == nil {
@@ -346,8 +346,8 @@ func (h *handlers) job(ctx context.Context, kind string, run uuid.UUID) (*rivert
 	return job, err
 }
 
-// pending is the state of a run no row records yet: queued until a worker
-// starts it, failed if its job ended without starting it.
+// pending is the state of a run with no row yet: queued, or failed if its job
+// ended without starting it.
 func pending(job *rivertype.JobRow) (RunStatus, string, *time.Time) {
 	if job.State != rivertype.JobStateDiscarded && job.State != rivertype.JobStateCancelled {
 		return Queued, "", nil
@@ -359,7 +359,7 @@ func pending(job *rivertype.JobRow) (RunStatus, string, *time.Time) {
 	return Failed, msg, job.FinalizedAt
 }
 
-// importRun is run with its summary's changes {} rather than absent.
+// importRun converts run with summary changes {} rather than absent.
 func importRun(run model.ImportRun) (ImportRun, error) {
 	var sum ImportSummary
 	if len(run.Summary) > 0 {
@@ -447,8 +447,8 @@ func (h *handlers) PublishRelease(w http.ResponseWriter, r *http.Request, versio
 		writeError(w, http.StatusServiceUnavailable, "not_configured", "publishing needs release.ref and release.key")
 		return
 	}
-	// Pushing and signing outlast server.write_timeout; publishing again is a
-	// no-op, so a client that lost the answer may retry.
+	// Publishing outlasts server.write_timeout; a client that lost the answer may
+	// retry, since republishing is a no-op.
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(h.PublishTimeout + publishAnswerTime))
 	ctx, cancel := context.WithTimeout(r.Context(), h.PublishTimeout)
 	defer cancel()

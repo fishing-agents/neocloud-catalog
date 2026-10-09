@@ -42,8 +42,7 @@ const audience = "catalog-service"
 
 var ctx = context.Background()
 
-// env is the API on its own database, working the catalog queue, with a
-// principal of each kind.
+// env is the API on its own database and queue, with a principal of each kind.
 type env struct {
 	t        *testing.T
 	srv      *httptest.Server
@@ -58,8 +57,7 @@ type env struct {
 	header   http.Header // of the last response
 }
 
-// newEnv starts the API; withPublish configures publishing to an in-memory
-// registry with a fresh cosign key.
+// newEnv starts the API; withPublish publishes to an in-memory registry with a fresh cosign key.
 func newEnv(t *testing.T, suffix string, withPublish bool) *env {
 	t.Helper()
 	sqlDB, db := dbtest.Fresh(t, suffix)
@@ -112,8 +110,8 @@ func newEnv(t *testing.T, suffix string, withPublish bool) *env {
 	return e
 }
 
-// call sends method path with token ("" sends none) and body as JSON, checks
-// the response against the OpenAPI contract and returns its status and body.
+// call sends body as JSON with token ("" sends none), checks the response
+// against the OpenAPI contract and returns its status and body.
 func (e *env) call(method, path, token string, body any) (int, []byte) {
 	e.t.Helper()
 	var r io.Reader
@@ -148,8 +146,7 @@ func (e *env) call(method, path, token string, body any) (int, []byte) {
 	return res.StatusCode, b
 }
 
-// must is call expecting status want, decoding the body into out (if not
-// nil).
+// must is call expecting status want, decoding the body into out if non-nil.
 func (e *env) must(want int, method, path, token string, body, out any) {
 	e.t.Helper()
 	got, b := e.call(method, path, token, body)
@@ -175,16 +172,15 @@ var contract = sync.OnceValues(func() (routers.Router, error) {
 	return legacy.NewRouter(doc)
 })
 
-// checkContract fails the test unless the response is one the contract
-// documents for the request's operation, with a body of its schema.
+// checkContract fails unless the contract documents the response and its body schema.
 func checkContract(t *testing.T, req *http.Request, res *http.Response, body []byte) {
 	t.Helper()
 	router, err := contract()
 	if err != nil {
 		t.Fatalf("openapi.yaml: %v", err)
 	}
-	// The router matches the decoded path; an escaped slash (node type ids)
-	// must stay inside its segment.
+	// The router matches the decoded path; an escaped slash (node type ids) must
+	// stay inside its segment.
 	match := req.Clone(req.Context())
 	match.URL.Path, match.URL.RawPath = strings.ReplaceAll(req.URL.EscapedPath(), "%2F", "~"), ""
 	route, params, err := router.FindRoute(match)
@@ -204,7 +200,6 @@ func checkContract(t *testing.T, req *http.Request, res *http.Response, body []b
 	}
 }
 
-// importBootstrap runs the bootstrap importer through the API.
 func (e *env) importBootstrap() httpapi.ImportRun {
 	e.t.Helper()
 	var queued httpapi.ImportRun
@@ -255,8 +250,7 @@ func (e *env) catalog(provenance bool) httpapi.EffectiveCatalog {
 	return c
 }
 
-// Every operation of the contract refuses a request without a valid bearer
-// token, and every write refuses a principal that may only read.
+// Every operation refuses a request without a valid token, and every write a read-only principal.
 func TestEveryOperationNeedsAuthentication(t *testing.T) {
 	e := newEnv(t, "api_authn", false)
 	doc, err := openapi3.NewLoader().LoadFromFile("../../api/openapi.yaml")
@@ -293,8 +287,8 @@ func TestEveryOperationNeedsAuthentication(t *testing.T) {
 	}
 }
 
-// Reads take any authenticated principal; writes take an operator key or an
-// ICP token with the admin role. A refused write changes nothing.
+// Reads take any principal; writes take an operator key or an admin-role token.
+// A refused write changes nothing.
 func TestAuthMatrix(t *testing.T) {
 	e := newEnv(t, "api_authz", false)
 	expired, _, err := auth.Issue(ctx, e.db, "old", "old", new(time.Now().Add(-time.Minute)))
@@ -335,8 +329,7 @@ func TestAuthMatrix(t *testing.T) {
 	}
 }
 
-// Curation through the API shows in the effective catalog as a local
-// override with its provenance, and removing it restores the upstream object.
+// Local curation overrides upstream with provenance; deleting it restores upstream.
 func TestCurationRoundTrip(t *testing.T) {
 	e := newEnv(t, "api_curation", false)
 	imported := e.importBootstrap()
@@ -433,8 +426,7 @@ func TestCurationRoundTrip(t *testing.T) {
 	}
 }
 
-// Prices are internal and curated as a whole: an unchanged price keeps its
-// as_of, invalid ones are refused.
+// Prices are replaced as a whole: an unchanged price keeps its as_of, invalid ones are refused.
 func TestLocalPrices(t *testing.T) {
 	e := newEnv(t, "api_prices", false)
 	var got []httpapi.Price
@@ -484,8 +476,8 @@ func TestLocalPrices(t *testing.T) {
 	}
 }
 
-// Extension payloads come from the signed overlay only (neocloud-api R37):
-// local writes carrying any are refused and store nothing.
+// Extension payloads come from the signed overlay only: local writes carrying
+// any are refused and store nothing.
 func TestLocalWritesRefuseExtensions(t *testing.T) {
 	e := newEnv(t, "api_extensions", false)
 	e.importBootstrap()
@@ -518,9 +510,8 @@ func TestLocalWritesRefuseExtensions(t *testing.T) {
 	}
 }
 
-// Import and generator runs, releases and publishing work end to end through
-// the API; publishing goes through release.Publish, so an older release is
-// refused once a newer one is published (R15).
+// Runs, releases and publishing work end to end; an older release is refused
+// once a newer one is published.
 func TestRunsAndReleases(t *testing.T) {
 	e := newEnv(t, "api_releases", true)
 	imported := e.importBootstrap()
@@ -583,8 +574,7 @@ func TestRunsAndReleases(t *testing.T) {
 	unconfigured.must(http.StatusServiceUnavailable, http.MethodPost, "/v1/releases/"+newRel.Version+"/publish", unconfigured.operator, nil, nil)
 }
 
-// A run its worker abandoned reads as failed, with its empty lists and
-// summary as [] and {} rather than null.
+// An abandoned run reads as failed, with empty lists and summary as [] and {}.
 func TestAbandonedRunsReadFailed(t *testing.T) {
 	e := newEnv(t, "api_abandoned", false)
 	importRun, err := e.s.StartImport(ctx, uuid.New(), "bootstrap-from-json", "upstream", "bootstrap-from-json", "")
@@ -683,8 +673,7 @@ func TestQueuedRuns(t *testing.T) {
 	}
 }
 
-// Cost estimates are those of the newest succeeded generator run, filtered
-// by model, billing and region.
+// Cost estimates come from the newest succeeded generator run, filtered by model, billing and region.
 func TestCostEstimates(t *testing.T) {
 	e := newEnv(t, "api_costs", false)
 	var none []httpapi.CostEstimate
@@ -740,9 +729,8 @@ func TestCostEstimates(t *testing.T) {
 	e.must(http.StatusBadRequest, http.MethodGet, "/v1/cost-estimates?billing=monthly", e.reader, nil, nil)
 }
 
-// A generator run estimates what the guidance setups and fits cost at the
-// prices curated through the API, and GET /v1/cost-estimates serves them
-// with the price's provenance and the cheapest setup marked.
+// Generated cost estimates use API-curated prices, carry the price's
+// provenance and mark the cheapest setup.
 func TestGeneratedCostEstimates(t *testing.T) {
 	e := newEnv(t, "api_generated_costs", false)
 	e.importBootstrap()
@@ -795,8 +783,7 @@ func nodeTypeOf(t *testing.T, c httpapi.EffectiveCatalog, id string) httpapi.Nod
 	return httpapi.NodeType{}
 }
 
-// A token that cannot be checked because the issuer is down is 503 with
-// Retry-After, not 401: the credential may be fine. API keys still work.
+// An unreachable issuer gives 503 with Retry-After, not 401; API keys still work.
 func TestAuthUnavailable(t *testing.T) {
 	e := newEnv(t, "api_auth_down", false)
 	e.issuer.Down.Store(true)

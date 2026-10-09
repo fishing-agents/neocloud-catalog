@@ -61,9 +61,7 @@ var twoFiles = []catalog.ModelFile{
 	{Path: "model.safetensors", Size: 3885154816, Digest: "sha256:b477be7572f0ab3ae3cbba38d508cc33e70600b2045669c4ad848051c3432094"},
 }
 
-// An importer's patch keeps curated values and a curated manifest (R12) and
-// lists where its values differ; it fills a source without files and leaves
-// every other row as it was.
+// An importer's patch keeps curated values and manifests, reports differences, and fills a source without files.
 func TestPatchKeepsCuratedValues(t *testing.T) {
 	s, db := newStore(t, "patch_curated")
 	in := committed(t)
@@ -116,9 +114,7 @@ func TestPatchKeepsCuratedValues(t *testing.T) {
 	}
 }
 
-// Values an importer run imported, or another importer's, it sets: the row
-// keeps its origin, the column records the run. Patching again changes
-// nothing; a new manifest replaces its source's files and no other source's.
+// A patch overwrites imported values with per-column provenance, is idempotent, and replaces only its source's files.
 func TestPatchFillsImportedValues(t *testing.T) {
 	s, db := newStore(t, "patch_fill")
 	in := committed(t)
@@ -215,8 +211,7 @@ func TestPatchRefuses(t *testing.T) {
 	sameCore(t, effective(t, s), in)
 }
 
-// A patch stamps only the columns it sets: a column the row has no field
-// provenance for (one a later migration added) stays without one.
+// A column without field provenance (added by a later migration) stays without one.
 func TestPatchStampsOnlyItsColumns(t *testing.T) {
 	s, db := newStore(t, "patch_untouched")
 	in := committed(t)
@@ -251,8 +246,7 @@ func TestPatchStampsOnlyItsColumns(t *testing.T) {
 	}
 }
 
-// A price patch writes only its provider's prices: rows outside its prefix or
-// of a node type it keeps are refused, and a refused patch writes nothing.
+// Rows outside the prefix or of a kept node type are refused, and a refused patch writes nothing.
 func TestPatchPricesStaysInScope(t *testing.T) {
 	s, db := newStore(t, "patch_prices")
 	run := startRun(t, db, model.LayerUpstream, "azure-prices")

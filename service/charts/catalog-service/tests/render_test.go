@@ -1,7 +1,5 @@
-// Package tests renders the catalog-service chart with helm (skipped without
-// it) and checks what the cluster and the service would see: the rendered
-// config.toml passes the service's own config validation, and every file it
-// names is mounted from the Secret or ConfigMap that holds it.
+// Package tests renders the chart with helm (skipped without it) and checks that
+// the rendered config.toml validates and every file it names is mounted.
 package tests
 
 import (
@@ -141,8 +139,7 @@ func (r rendered) has(kind string) bool {
 	return slices.ContainsFunc(r.objects, func(o object) bool { return o.Kind == kind })
 }
 
-// config loads the rendered config.toml the way the pod does: the service's
-// defaults, the ConfigMap as NEOCLOUD_CATALOG_CONFIG_DIR, the DSN from env.
+// config loads the rendered config.toml as the pod does: defaults, the ConfigMap dir, the DSN from env.
 func (r rendered) config(t *testing.T) *config.Config {
 	t.Helper()
 	dir := t.TempDir()
@@ -158,9 +155,8 @@ func (r rendered) config(t *testing.T) *config.Config {
 	return cfg
 }
 
-// file returns the content source of the file at p in the pod of o: a
-// ConfigMap data key ("configmap <name> <key>") or a Secret item ("secret
-// <name> <key>"). The file must exist in the source the chart renders.
+// file returns where the pod of o gets file p: "configmap <name> <key>" or
+// "secret <name> <key>". The key must exist in the rendered source.
 func (r rendered) file(t *testing.T, o object, p string) string {
 	t.Helper()
 	c := o.Spec.Template.Spec.Containers[0]
@@ -248,8 +244,7 @@ func TestDefaultMode(t *testing.T) {
 	checkMigrate(t, r, c.Image, secretKeyRef{"catalog-service-db", "dsn"})
 }
 
-// checkMigrate: the hook Job applies the migrations of the very image the
-// Deployment runs, with the DSN only in its environment.
+// checkMigrate: the hook Job migrates with the Deployment's image, the DSN only in its env.
 func checkMigrate(t *testing.T, r rendered, image string, dsn secretKeyRef) {
 	t.Helper()
 	j := r.get(t, "Job", "catalog-service-migrate")
@@ -360,8 +355,7 @@ func TestHuggingFaceToken(t *testing.T) {
 	}
 }
 
-// The migrate Job pulls the service image too (its image volume), so both
-// pods carry the pull secrets.
+// Both pods carry the pull secrets: the migrate Job mounts the service image too.
 func TestImagePullSecrets(t *testing.T) {
 	r := render(t, "--set", "imagePullSecrets[0].name=catalog-registry")
 	for _, kind := range [][2]string{{"Deployment", "catalog-service"}, {"Job", "catalog-service-migrate"}} {
@@ -372,8 +366,7 @@ func TestImagePullSecrets(t *testing.T) {
 	}
 }
 
-// The chart owns the listen addresses: they follow the container ports even
-// when config sets them.
+// Listen addresses follow the container ports even when config sets them.
 func TestPortsOwnListenAddresses(t *testing.T) {
 	r := render(t, "--set", "service.port=9090", "--set", "service.metricsPort=9091", "--set", "config.server.addr=0.0.0.0:1")
 	cfg := r.config(t)

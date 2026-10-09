@@ -70,7 +70,6 @@ func sample(t *testing.T) []byte {
 	return b
 }
 
-// epochServer serves csv as Epoch's ML hardware CSV.
 func epochServer(t *testing.T, csv []byte) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -81,8 +80,6 @@ func epochServer(t *testing.T, csv []byte) *httptest.Server {
 	return srv
 }
 
-// testImporter reads csv from a test server and the overlay from a file
-// holding overlay, retrying quickly.
 func testImporter(t *testing.T, csv []byte, overlay string) *Importer {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "families.overlay.json")
@@ -104,7 +101,6 @@ func newStore(t *testing.T, suffix string) (*store.Store, *gorm.DB) {
 	return store.New(gormDB), gormDB
 }
 
-// seed writes in into the upstream layer as a finished run of source.
 func seed(t *testing.T, s *store.Store, source string, in store.Inputs) {
 	t.Helper()
 	run, err := s.StartImport(ctx, uuid.New(), "seed", model.LayerUpstream, source, "")
@@ -128,7 +124,6 @@ func committed(t *testing.T) store.Inputs {
 	return in
 }
 
-// rowTimes maps every families row's id to its update time.
 func rowTimes(t *testing.T, db *gorm.DB) map[uuid.UUID]time.Time {
 	t.Helper()
 	var rs []struct {
@@ -177,9 +172,8 @@ func fields(t *testing.T, s *store.Store, family string) model.FieldProvenance {
 	return dbtest.Provenance(t, s, store.KindFamily, family)[0].Fields
 }
 
-// Epoch's figures and the overlay's curated values merge into new families,
-// Epoch's recorded as the run's, the overlay's as curation. A second run of
-// the same input changes nothing.
+// Epoch and overlay merge, Epoch's as the run's, the overlay's as curation; a
+// rerun changes nothing.
 func TestImportMergesEpochAndOverlay(t *testing.T) {
 	s, db := newStore(t, "epoch_merge")
 	imp := testImporter(t, sample(t), twoFamilies)
@@ -221,8 +215,7 @@ func TestImportMergesEpochAndOverlay(t *testing.T) {
 			t.Errorf("H100 sources %v lack %s", h100.Sources, url)
 		}
 	}
-	// Epoch leaves FP8 blank for L4: dtypes come from the overlay only, and the
-	// overlay fills the missing figure.
+	// Epoch leaves FP8 blank for L4; the overlay fills it.
 	if !slices.Equal(l4.DTypes, []string{"fp16", "bf16", "fp8"}) {
 		t.Errorf("L4 dtypes = %v", l4.DTypes)
 	}
@@ -261,8 +254,8 @@ func TestImportMergesEpochAndOverlay(t *testing.T) {
 	}
 }
 
-// A family without its Epoch row or with a value lacking a source is listed
-// and not imported; a run that imports no family fails.
+// A missing Epoch row or unsourced value is listed; importing no family fails
+// the run.
 func TestImportFailsOnMissingRowOrSource(t *testing.T) {
 	for name, tc := range map[string]struct{ overlay, want string }{
 		"unknown epoch row": {
@@ -301,10 +294,8 @@ func TestImportFailsOnMissingRowOrSource(t *testing.T) {
 	}
 }
 
-// Over the bootstrapped committed catalog the committed overlay imports what
-// data/families.json holds: families whose Epoch row the sample has change
-// nothing, keeping the bootstrap's provenance, the others are listed and keep
-// their rows.
+// Over the committed catalog the import changes nothing for families the sample
+// has.
 func TestImportCommittedFamilies(t *testing.T) {
 	s, db := newStore(t, "epoch_committed")
 	in := committed(t)
@@ -355,8 +346,7 @@ func TestImportCommittedFamilies(t *testing.T) {
 	}
 }
 
-// A fresh store gets the families in name order, the order of
-// data/families.json, whatever the overlay's order (L4 before H100).
+// A fresh store gets families in name order regardless of overlay order.
 func TestFreshImportOrdersByName(t *testing.T) {
 	s, _ := newStore(t, "epoch_order")
 	overlay, err := os.ReadFile(filepath.Join(dataDir, "families.overlay.json"))
@@ -384,9 +374,8 @@ func TestFreshImportOrdersByName(t *testing.T) {
 	}
 }
 
-// Epoch's figures keep curated values they contradict, listed (R12); the
-// overlay's values are curation and replace them. A family the overlay does
-// not list is left alone.
+// Epoch keeps contradicted curated values and lists them; overlay values
+// replace them.
 func TestImportKeepsCuratedValues(t *testing.T) {
 	s, _ := newStore(t, "epoch_keep")
 	in := committed(t)
@@ -424,9 +413,8 @@ func TestImportKeepsCuratedValues(t *testing.T) {
 	}
 }
 
-// Over bootstrapped values (R21) the import writes Epoch's figures whole and
-// the overlay's values: a TFLOPS entry Epoch no longer gives is gone, each
-// column records its origin, nothing is listed as a conflict.
+// Over bootstrapped values Epoch's figures replace whole and nothing is a
+// conflict.
 func TestImportReplacesImportedValues(t *testing.T) {
 	s, _ := newStore(t, "epoch_replace")
 	in := committed(t)
@@ -465,8 +453,7 @@ func TestImportReplacesImportedValues(t *testing.T) {
 	}
 }
 
-// A correction the overlay withdraws gives way to Epoch's figure: curation
-// from the overlay file is the overlay's to take back, no conflict.
+// A correction the overlay withdraws gives way to Epoch's figure.
 func TestImportWithdrawnCorrection(t *testing.T) {
 	s, _ := newStore(t, "epoch_withdraw")
 	corrected := strings.Replace(twoFamilies, `"epoch_name": "NVIDIA H100 SXM5 80GB",`,
@@ -496,8 +483,7 @@ func TestImportWithdrawnCorrection(t *testing.T) {
 	}
 }
 
-// The input version follows the facts a run used: an Epoch row no family uses
-// leaves it, a used figure changes it.
+// The input version changes only with figures a family uses.
 func TestInputVersionFollowsTheData(t *testing.T) {
 	s, _ := newStore(t, "epoch_version")
 	version := func(csv string) string {
@@ -518,7 +504,6 @@ func TestInputVersionFollowsTheData(t *testing.T) {
 	}
 }
 
-// 429 and 5xx are retried; a Retry-After beyond maxRetryAfter fails at once.
 func TestFetchRetries(t *testing.T) {
 	var calls atomic.Int32
 	statuses := []int{}

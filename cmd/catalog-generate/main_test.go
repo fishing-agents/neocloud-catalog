@@ -10,8 +10,7 @@ import (
 	catalog "github.com/fishman/neocloud-catalog"
 )
 
-// inDataDir changes to a temporary directory holding a copy of data/ and an
-// empty snapshots/v4.
+// inDataDir changes to a temp dir with a copy of data/ and an empty snapshots/v4.
 func inDataDir(t *testing.T) {
 	t.Helper()
 	dir := t.TempDir()

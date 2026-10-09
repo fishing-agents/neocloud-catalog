@@ -31,7 +31,6 @@ func newStore(t *testing.T, suffix string) (*store.Store, *gorm.DB) {
 	return store.New(gormDB), gormDB
 }
 
-// curatedRows maps every curated row's id to its update time.
 func curatedRows(t *testing.T, db *gorm.DB) map[uuid.UUID]time.Time {
 	t.Helper()
 	rows := map[uuid.UUID]time.Time{}
@@ -60,8 +59,7 @@ func summaryOf(t *testing.T, run model.ImportRun) importers.Summary {
 	return s
 }
 
-// Running the bootstrap twice records two runs; the second changes no row and
-// says so in its summary.
+// A second run changes no row and says so in its summary.
 func TestImporterIdempotent(t *testing.T) {
 	s, db := newStore(t, "bootstrap_idem")
 	imp, err := bootstrap.New(dataDir)
@@ -127,8 +125,8 @@ func TestImporterIdempotent(t *testing.T) {
 	}
 }
 
-// A family value the overlay curated survives a bootstrap run whose data
-// differs, and the run's summary lists the disagreement (R12).
+// A curated family value survives a differing bootstrap and is listed as a
+// conflict.
 func TestKeptCurationIsListed(t *testing.T) {
 	s, _ := newStore(t, "bootstrap_curated")
 	imp, err := bootstrap.New(dataDir)
@@ -168,7 +166,6 @@ func TestKeptCurationIsListed(t *testing.T) {
 	}
 }
 
-// A run that fails is recorded as failed with its error.
 func TestFailedImportIsRecorded(t *testing.T) {
 	s, db := newStore(t, "bootstrap_fail")
 	imp, err := bootstrap.New(t.TempDir())

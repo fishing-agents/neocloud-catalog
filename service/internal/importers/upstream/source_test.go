@@ -1,7 +1,6 @@
 package upstream_test
 
-// The cases of neocloud-api's internal/catalogsrc tests, run against Source:
-// the upstream importer verifies what neocloud-api's catalog sync verifies.
+// neocloud-api's catalogsrc test cases, run against Source.
 
 import (
 	"bytes"
@@ -49,7 +48,6 @@ const (
 
 var ctx = context.Background()
 
-// registryHost starts an in-memory OCI registry and returns its host:port.
 func registryHost(t *testing.T) string {
 	t.Helper()
 	srv := httptest.NewServer(registry.New(registry.Logger(log.New(io.Discard, "", 0))))
@@ -63,8 +61,8 @@ func (r rawManifest) RawManifest() ([]byte, error) { return r, nil }
 
 func (r rawManifest) MediaType() (types.MediaType, error) { return types.OCIManifestSchema1, nil }
 
-// pushArtifact pushes a single-layer OCI artifact to ref (tag or digest) and
-// returns its manifest descriptor. A non-nil subject makes it a referrer.
+// pushArtifact pushes a single-layer artifact; a non-nil subject makes it a
+// referrer.
 func pushArtifact(t *testing.T, ref, artifactType, layerType string, body []byte, annotations map[string]string, subject *v1.Descriptor) v1.Descriptor {
 	t.Helper()
 	r, err := name.ParseReference(ref)
@@ -122,14 +120,12 @@ func pushOverlay(t *testing.T, ref string, o catalog.Overlay) v1.Descriptor {
 	return pushArtifact(t, ref, catalog.OverlayArtifactType, catalog.OverlayArtifactType, body, nil, nil)
 }
 
-// attach attaches a Sigstore bundle (JSON) to the manifest subject in repo,
-// as cosign v3 does.
+// attach attaches a Sigstore bundle as cosign v3 does.
 func attach(t *testing.T, repo string, subject v1.Descriptor, bundleJSON []byte) {
 	t.Helper()
 	pushArtifact(t, repo+":bundle-"+subject.Digest.Hex[:12], release.BundleType, release.BundleType, bundleJSON, nil, &subject)
 }
 
-// statement is the in-toto statement cosign signs for a manifest digest.
 func statement(t *testing.T, digest v1.Hash) []byte {
 	t.Helper()
 	b, err := json.Marshal(map[string]any{
@@ -144,9 +140,8 @@ func statement(t *testing.T, digest v1.Hash) []byte {
 	return b
 }
 
-// keylessBundle signs digest as san/iss on the virtual Sigstore and
-// serializes it the way cosign attaches it: a v0.3 bundle with the leaf
-// certificate, the DSSE envelope and the Rekor entry.
+// keylessBundle signs digest and serializes it as cosign attaches it: a v0.3
+// bundle.
 func keylessBundle(t *testing.T, vs *ca.VirtualSigstore, san, iss string, digest v1.Hash) []byte {
 	t.Helper()
 	e, err := vs.AttestAtTime(san, iss, statement(t, digest), time.Now(), true)
@@ -174,8 +169,7 @@ func keylessBundle(t *testing.T, vs *ca.VirtualSigstore, san, iss string, digest
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The proto form of a virtual entry lacks the kind and the signed entry
-	// timestamp, which the Entry keeps privately; rebuild both as Rekor does.
+	// A virtual entry's proto form lacks the kind and SET; rebuild both as Rekor does.
 	tles := make([]*protorekor.TransparencyLogEntry, len(entries))
 	for i, en := range entries {
 		tle := en.TransparencyLogEntry()
@@ -211,8 +205,6 @@ func keylessBundle(t *testing.T, vs *ca.VirtualSigstore, san, iss string, digest
 	return raw
 }
 
-// keyPair returns a signer of a fresh cosign.key-format key pair and the
-// file of its public key, as an operator configures it.
 func keyPair(t *testing.T) (release.Signer, string) {
 	t.Helper()
 	password := []byte("test password")
@@ -231,7 +223,6 @@ func keyPair(t *testing.T) (release.Signer, string) {
 	return signer, path
 }
 
-// sign attaches signer's signature over the manifest subject in repo.
 func sign(t *testing.T, signer release.Signer, repo string, subject v1.Descriptor) {
 	t.Helper()
 	r, err := name.NewRepository(repo)
@@ -381,8 +372,8 @@ func TestKeyed(t *testing.T) {
 	}
 }
 
-// An overlay source checks and pulls the overlay artifact only, trusting its
-// own key; a snapshot source refuses the overlay artifact.
+// An overlay source checks and pulls only the overlay; a snapshot source
+// refuses it.
 func TestOverlayCheckAndPull(t *testing.T) {
 	publisher, publisherPub := keyPair(t)
 	enterprise, enterprisePub := keyPair(t)

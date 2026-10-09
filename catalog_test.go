@@ -5,8 +5,7 @@ import (
 	"testing"
 )
 
-// llama8b uses the published Llama 3.1 8B architecture: 32 layers, 32 attention
-// heads, 8 KV heads (GQA), head dim 128.
+// llama8b uses the published Llama 3.1 8B architecture.
 func llama8b() ModelTemplate {
 	return ModelTemplate{
 		Slug:           "llama-3.1-8b",
@@ -54,8 +53,7 @@ func TestFit(t *testing.T) {
 	if Fit(m, row, "fp8", 8192) {
 		t.Fatalf("a bf16 row must not answer for fp8")
 	}
-	// An fp8 KV cache holds 83923 tokens in the same 5.5GB: 60000 tokens need
-	// 16.1 + 3.93GB, within the row, though they would not at 16 bits.
+	// An fp8 KV row holds 60000 tokens that would not fit at 16 bits.
 	fp8KV := ModelFit{ModelSlug: m.Slug, DeviceFamily: "L4", Quantization: "bf16", KVCacheDType: "fp8", GPUCount: 1, MaxContext: 83923, VRAMRequiredGB: 21.6}
 	if !Fit(m, fp8KV, "bf16", 60000) {
 		t.Fatalf("expected fit within an fp8 KV row's context")
@@ -90,8 +88,7 @@ func TestVRAMRequiredUsesStoredKVWithoutArchitecture(t *testing.T) {
 	}
 }
 
-// A 4.0.0 snapshot without the fields 4.1.0 reshaped (file lists, chat template
-// paths) decodes and validates, and a 4.0.0 overlay merges: only the major gates.
+// A 4.0.0 snapshot decodes and validates and a 4.0.0 overlay merges: only the major gates.
 func TestDecodesSchema40Snapshot(t *testing.T) {
 	const doc = `{"schema_version": "4.0.0", "version": "2026-10-01T00:00:00Z", "generated_at": "2026-10-01T00:00:00Z",
 		"families": [{"name": "L4", "vendor": "nvidia", "architecture": "ada", "compute_capability": "8.9", "dtypes": ["bf16"],

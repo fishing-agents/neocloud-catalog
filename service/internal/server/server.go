@@ -1,5 +1,4 @@
-// Package server runs the catalog service's HTTP servers: the API port
-// (probes and the catalog API) and a separate Prometheus metrics port.
+// Package server runs the API port (probes and /v1) and the metrics port.
 package server
 
 import (
@@ -17,8 +16,7 @@ import (
 
 const readyTimeout = 2 * time.Second
 
-// Handler serves /healthz (the process is up), /readyz (ping, the database,
-// answers within readyTimeout) and api under /v1/.
+// Handler serves /healthz, /readyz (database ping) and api under /v1/.
 func Handler(ping func(context.Context) error, api http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/v1/", api)
@@ -37,8 +35,7 @@ func Handler(ping func(context.Context) error, api http.Handler) http.Handler {
 	return mux
 }
 
-// MetricsHandler serves /metrics from a registry with the Go runtime and
-// process collectors.
+// MetricsHandler serves /metrics with the Go runtime and process collectors.
 func MetricsHandler() http.Handler {
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
@@ -47,9 +44,8 @@ func MetricsHandler() http.Handler {
 	return mux
 }
 
-// Serve runs api on cfg.Server.Addr and the metrics on
-// cfg.Telemetry.MetricsAddr until ctx ends or a server fails, then shuts both
-// down.
+// Serve runs the API and metrics servers until ctx ends or one fails, then
+// shuts both down.
 func Serve(ctx context.Context, cfg *config.Config, api http.Handler) error {
 	servers := []*http.Server{
 		{Addr: cfg.Server.Addr, Handler: api, ReadTimeout: cfg.Server.ReadTimeout, WriteTimeout: cfg.Server.WriteTimeout},

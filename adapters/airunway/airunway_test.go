@@ -111,9 +111,7 @@ func TestGolden(t *testing.T) {
 	}
 }
 
-// On the committed snapshot recipes skip every non-vLLM preset, a second vLLM
-// preset of a repo and the multi-node one; deployments skip llama.cpp and
-// multi-node and export the SGLang disaggregated preset.
+// Pins which committed presets each format exports and skips.
 func TestCoverage(t *testing.T) {
 	a, snap := committed(t)
 	special := map[string]map[adapters.PresetKey]string{
@@ -226,8 +224,7 @@ func TestSkips(t *testing.T) {
 				{PresetKey: k("llamacpp-q4"), Reason: SkipLlamaCpp},
 				{PresetKey: k("vllm-bf16-2node"), Reason: SkipMultiNode},
 				{PresetKey: k("vllm-bf16-pd"), Reason: SkipDisaggregated},
-				// Dynamo gives both roles one set of engine args, so the roles'
-				// tensor-parallel sizes must agree.
+				// Dynamo gives both roles one set of engine args, so their TP sizes must agree.
 				{PresetKey: k("sglang-bf16-pd-uneven"), Reason: SkipDisaggregated},
 			},
 		},
@@ -245,10 +242,7 @@ func TestSkips(t *testing.T) {
 	}
 }
 
-// Every vLLM preset is served by a recipe at its own repo whose command runs
-// the pinned NVIDIA image with Render's arguments; the GPU count, which the
-// Direct vLLM provider turns into tensor parallelism, comes from the reference
-// fit.
+// A recipe runs the pinned NVIDIA image with Render's args; the GPU count comes from the reference fit.
 func TestRecipes(t *testing.T) {
 	a, snap := committed(t)
 	e, files := export(t, a, snap, FormatRecipes)
@@ -291,12 +285,8 @@ func TestRecipes(t *testing.T) {
 	}
 }
 
-// A deployment runs on AI Runway only on the provider that runs its engine:
-// SGLang on Dynamo with Dynamo's own image and Render's tensor-parallel size,
-// vLLM on the vLLM provider with the pinned image, which derives tensor
-// parallelism from the GPU count. The context is contextLength, never an arg.
-// A disaggregated SGLang preset uses Dynamo's disaggregated mode, which adds
-// each worker's role itself.
+// SGLang runs on Dynamo with its own image and Render's TP; vLLM on the vLLM provider
+// with the pinned image. The context is contextLength, never an arg.
 func TestDeployments(t *testing.T) {
 	a, snap := committed(t)
 	e, files := export(t, a, snap, FormatDeployments)

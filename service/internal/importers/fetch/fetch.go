@@ -1,6 +1,5 @@
-// Package fetch reads HTTP responses for importers: bounded bodies, and
-// retries of transport errors, 429 and 5xx after the response's Retry-After
-// (bounded) or a doubling backoff.
+// Package fetch reads bounded HTTP bodies, retrying transport errors, 429 and
+// 5xx after Retry-After (capped) or a doubling backoff.
 package fetch
 
 import (
@@ -12,10 +11,8 @@ import (
 	"time"
 )
 
-// Getter reads responses for one importer. Retries bounds the retries of a
-// request, Backoff is the first wait between attempts, MaxBody the bytes of a
-// body and MaxRetryAfter the longest Retry-After waited out: an importer
-// asked to wait longer fails the request rather than spend jobs.job_timeout.
+// Getter reads responses for one importer. A Retry-After over MaxRetryAfter
+// fails the request rather than spend jobs.job_timeout.
 type Getter struct {
 	Client        *http.Client
 	Backoff       time.Duration
@@ -24,9 +21,8 @@ type Getter struct {
 	MaxRetryAfter time.Duration
 }
 
-// StatusError is a response refused with a status other than 200; Body holds
-// at most MaxBody bytes of it. Wait is the Retry-After beyond MaxRetryAfter
-// the request gave up on, else 0.
+// StatusError is a non-200 response; Wait is the Retry-After over
+// MaxRetryAfter it gave up on, else 0.
 type StatusError struct {
 	Code      int
 	Status    string
@@ -41,11 +37,8 @@ func (e *StatusError) Error() string {
 	return "HTTP " + e.Status
 }
 
-// Get sends req, a request without a body, until it gets a 200 and returns
-// that body and header. It retries transport errors, 429 and 5xx up to
-// Retries times, after Retry-After (at most MaxRetryAfter) when the response
-// has one, else after Backoff doubled per attempt. A body over MaxBody fails
-// the request. A cancelled ctx returns ctx.Err() as it is.
+// Get sends req until a 200. A body over MaxBody fails without retry; a
+// cancelled ctx returns ctx.Err() unwrapped.
 func (g Getter) Get(ctx context.Context, req *http.Request) ([]byte, http.Header, error) {
 	for attempt := 0; ; attempt++ {
 		wait, retry := g.Backoff<<attempt, true
@@ -83,7 +76,7 @@ func (g Getter) Get(ctx context.Context, req *http.Request) ([]byte, http.Header
 	}
 }
 
-// retryAfter reads a Retry-After of seconds or an HTTP date.
+// retryAfter reads seconds or an HTTP date.
 func retryAfter(v string) (time.Duration, bool) {
 	if s, err := strconv.Atoi(v); err == nil && s >= 0 {
 		return time.Duration(s) * time.Second, true
@@ -94,7 +87,7 @@ func retryAfter(v string) (time.Duration, bool) {
 	return 0, false
 }
 
-// Sleep waits d, or returns ctx.Err() once ctx is done.
+// Sleep waits d or until ctx is done.
 func Sleep(ctx context.Context, d time.Duration) error {
 	if d <= 0 {
 		return ctx.Err()

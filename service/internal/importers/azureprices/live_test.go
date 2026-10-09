@@ -6,9 +6,7 @@ import (
 	"testing"
 )
 
-// The recordings under testdata/azure still say what the Retail Prices API
-// says: each committed Azure node type reads the same prices live, in the
-// default regions, as recorded. Opt in with NEOCLOUD_CATALOG_LIVE=1.
+// Live prices match testdata/azure. Opt in with NEOCLOUD_CATALOG_LIVE=1.
 func TestLivePricesMatchRecordings(t *testing.T) {
 	if os.Getenv("NEOCLOUD_CATALOG_LIVE") != "1" {
 		t.Skip("NEOCLOUD_CATALOG_LIVE unset; skipping the live Azure Retail Prices test")

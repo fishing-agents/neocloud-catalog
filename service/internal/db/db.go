@@ -1,6 +1,5 @@
-// Package db opens the pgx *sql.DB and the GORM handle over it. The schema
-// comes from the versioned Atlas migrations (migrations/), diffed from the GORM
-// models in internal/model; serve never migrates.
+// Package db opens the pgx *sql.DB and GORM handle. The schema comes from the Atlas migrations;
+// serve never migrates.
 package db
 
 import (
@@ -13,8 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// Open returns the *sql.DB and the GORM handle built on it; maxConns > 0
-// bounds the pool.
+// Open returns the *sql.DB and GORM handle on it; maxConns > 0 bounds the pool.
 func Open(dsn string, maxConns int) (*sql.DB, *gorm.DB, error) {
 	sqlDB, err := sql.Open("pgx", dsn)
 	if err != nil {

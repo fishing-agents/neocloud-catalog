@@ -67,9 +67,8 @@ func TestMigrationsApplyFromScratch(t *testing.T) {
 
 var setDefault = regexp.MustCompile(`^ALTER TABLE "(\w+)" ALTER COLUMN "(\w+)" SET DEFAULT (.+)$`)
 
-// resetsCurrentDefault reports whether stmt sets a column default the column
-// already has. GORM's postgres migrator re-sets every default it cannot parse
-// into a Go value (jsonb '{}') on each run, so such a statement is no drift.
+// resetsCurrentDefault reports whether stmt re-sets a column's existing default: GORM re-sets
+// defaults it cannot parse (jsonb '{}') every run, which is no drift.
 func resetsCurrentDefault(t *testing.T, sqlDB *sql.DB, stmt string) bool {
 	t.Helper()
 	m := setDefault.FindStringSubmatch(stmt)

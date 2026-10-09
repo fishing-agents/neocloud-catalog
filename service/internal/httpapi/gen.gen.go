@@ -135,7 +135,7 @@ type Change = store.Change
 type CostEstimate struct {
 	Billing Billing `json:"billing"`
 
-	// Cheapest the cheapest estimate of its guidance setup (minimum or optimal) at its billing type, across node types and regions; false for fits
+	// Cheapest cheapest estimate of its guidance setup at its billing type across node types and regions; false for fits
 	Cheapest bool `json:"cheapest"`
 
 	// FitKey the fit's key for setup fit, else empty
@@ -182,7 +182,7 @@ type Error struct {
 	Message string `json:"message"`
 }
 
-// Extensions Extension payloads keyed by namespace. The API never takes them on local writes; the signed overlay alone carries them.
+// Extensions Extension payloads keyed by namespace; only the signed overlay carries them, local writes refuse them.
 type Extensions = catalog.Extensions
 
 // Family A device family (a GPU model, or CPU) with the hardware facts fits and estimates derive from.
@@ -191,7 +191,7 @@ type Family = catalog.Family
 // FieldSource defines model for FieldSource.
 type FieldSource = model.FieldSource
 
-// FlagTable The backend version's flags for the engine-neutral preset fields; the maps translate neutral names to the engine's.
+// FlagTable Maps the engine-neutral preset fields to the backend version's flags.
 type FlagTable = catalog.FlagTable
 
 // GeneratorRun defines model for GeneratorRun.
@@ -200,10 +200,10 @@ type GeneratorRun struct {
 	FinishedAt *time.Time         `json:"finished_at,omitempty"`
 	Id         openapi_types.UUID `json:"id"`
 
-	// InputDigest sha256 of the curated inputs of its snapshot; prices feed only its cost estimates, whose rows carry their own price_source, price_source_url and price_as_of
+	// InputDigest sha256 of its snapshot's curated inputs, excluding prices (cost estimates carry their own price_source)
 	InputDigest string `json:"input_digest"`
 
-	// InputImportRuns the import runs that wrote the inputs of its snapshot; prices feed only its cost estimates, whose rows carry their own price_source, price_source_url and price_as_of
+	// InputImportRuns the import runs that wrote its snapshot's inputs, excluding prices (cost estimates carry their own price_source)
 	InputImportRuns []openapi_types.UUID `json:"input_import_runs"`
 
 	// Report what the generator reported
@@ -215,12 +215,12 @@ type GeneratorRun struct {
 	Status RunStatus `json:"status"`
 }
 
-// ImportConflict a curated value kept over an imported one; field is a column, or files/<path> of a curated manifest, where a file one side lacks is null. The kaito cross-check lists the effective catalog's value as curated and KAITO's as imported.
+// ImportConflict a curated value kept over an imported one; field is a column or files/<path> (null where a side lacks the file). For kaito, curated is the catalog's value and imported KAITO's.
 type ImportConflict = store.Conflict
 
 // ImportCreate defines model for ImportCreate.
 type ImportCreate struct {
-	// Importer the importer's name (bootstrap-from-json, epoch, huggingface, azure-prices, kaito; an operator deployment, with upstream.ref set, runs upstream, azure-prices and kaito)
+	// Importer bootstrap-from-json, epoch, huggingface, azure-prices or kaito; with upstream.ref set, upstream, azure-prices or kaito
 	Importer string `json:"importer"`
 }
 
@@ -241,11 +241,11 @@ type ImportRun struct {
 	// Status queued until a worker starts the run
 	Status RunStatus `json:"status"`
 
-	// Summary the importer's result; changes counts the rows it changed per table, conflicts lists the imported values curated ones were kept over (for the kaito cross-check, which writes nothing, the catalog's values KAITO's model catalog disagrees with), errors the parts of its input the run could not read and sources counts the sources read in full and those with errors. A succeeded run may list errors and failed sources: it imported what it could read.
+	// Summary the importer's result: rows changed per table, imported values kept behind curated ones (for kaito, catalog values KAITO disagrees with), unreadable input, and source counts. A succeeded run may list errors.
 	Summary ImportSummary `json:"summary"`
 }
 
-// ImportSummary the importer's result; changes counts the rows it changed per table, conflicts lists the imported values curated ones were kept over (for the kaito cross-check, which writes nothing, the catalog's values KAITO's model catalog disagrees with), errors the parts of its input the run could not read and sources counts the sources read in full and those with errors. A succeeded run may list errors and failed sources: it imported what it could read.
+// ImportSummary the importer's result: rows changed per table, imported values kept behind curated ones (for kaito, catalog values KAITO disagrees with), unreadable input, and source counts. A succeeded run may list errors.
 type ImportSummary struct {
 	Changes   map[string]Change `json:"changes"`
 	Conflicts *[]ImportConflict `json:"conflicts,omitempty"`
@@ -322,7 +322,7 @@ type Release struct {
 	GeneratorRun openapi_types.UUID `json:"generator_run"`
 	Id           openapi_types.UUID `json:"id"`
 
-	// OverlayRef repository@digest its overlay was published as (release.overlay_ref), at publish or on a later publish
+	// OverlayRef repository@digest its overlay was published as (release.overlay_ref), possibly by a later publish
 	OverlayRef    string     `json:"overlay_ref,omitempty"`
 	PublishedAt   *time.Time `json:"published_at,omitempty"`
 	SchemaVersion string     `json:"schema_version"`

@@ -23,10 +23,8 @@ import (
 	"github.com/fishman/neocloud-catalog/service/internal/store"
 )
 
-// An operator deployment (upstream.ref set) takes its upstream layer from the
-// upstream release only: it refuses the importers that write that layer,
-// saying why, and needs no bootstrap data; prices and the KAITO cross-check
-// still run (R26).
+// An operator deployment refuses the upstream-layer importers, saying why, and
+// needs no bootstrap data; prices and the KAITO cross-check still run.
 func TestOperatorDeploymentRefusesUpstreamLayerImporters(t *testing.T) {
 	_, pub, err := cryptoutils.GeneratePEMEncodedECDSAKeyPair(elliptic.P256(), cryptoutils.StaticPasswordFunc(nil))
 	if err != nil {
@@ -95,7 +93,6 @@ func workSetup(t *testing.T, suffix string, imps ...importers.Importer) (*config
 	return cfg, sqlDB, store.New(db), importers.NewRegistry(imps...)
 }
 
-// awaitRun waits until import run id has status.
 func awaitRun(ctx context.Context, t *testing.T, s *store.Store, id uuid.UUID, status string) {
 	t.Helper()
 	for {
@@ -110,9 +107,8 @@ func awaitRun(ctx context.Context, t *testing.T, s *store.Store, id uuid.UUID, s
 	}
 }
 
-// The worker of import and generate shares the catalog queue with serve's:
-// it may run a job serve's API enqueued while serve runs its own. Once its own
-// finished it lets that job finish instead of cancelling it.
+// work shares the queue with serve: a foreign job it took is allowed to finish
+// after its own job finishes, not cancelled.
 func TestWorkLetsForeignJobsFinish(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -177,8 +173,8 @@ func TestWorkSignalCancelsItsJob(t *testing.T) {
 	}
 }
 
-// On a signal serve gives running jobs the grace to finish: one that finishes
-// within it succeeds, one that overruns it is cancelled and recorded failed.
+// On a signal serve gives running jobs grace: one finishing within it
+// succeeds, one overrunning it is cancelled and recorded failed.
 func TestServeShutdownGrace(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()

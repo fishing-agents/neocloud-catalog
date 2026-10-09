@@ -24,19 +24,16 @@ import (
 )
 
 const (
-	dataDir = "../../../../data"
-	fixture = "../../../testdata/kaito/model_catalog.yaml"
-	// fixtureSHA256 is the sha256 of model_catalog.yaml at Revision.
+	dataDir       = "../../../../data"
+	fixture       = "../../../testdata/kaito/model_catalog.yaml"
 	fixtureSHA256 = "f726754e71c93d1e2c1a2c652c9101b5fb952d71080e3f4056baf1e09d6931f2"
 	llama         = "meta-llama/Llama-3.1-8B-Instruct"
-	// recordedVersion is the input version of the fixture over the committed
-	// catalog; it changes only with the compared facts.
+	// recordedVersion changes only with the compared facts.
 	recordedVersion = "sha256:b30a1bc2c5f5b230ef56d748ff74e5c6f7a623213c1481baa1bb05d9dcee99d7"
 )
 
 var ctx = context.Background()
 
-// recorded is the fixture, byte for byte KAITO's file at Revision.
 func recorded(t *testing.T) string {
 	t.Helper()
 	b, err := os.ReadFile(fixture)
@@ -49,7 +46,6 @@ func recorded(t *testing.T) string {
 	return string(b)
 }
 
-// edit replaces old with new once in the entry of repo.
 func edit(t *testing.T, yaml, repo, old, new string) string {
 	t.Helper()
 	start := strings.Index(yaml, "- name: "+repo+"\n")
@@ -67,7 +63,6 @@ func edit(t *testing.T, yaml, repo, old, new string) string {
 	return yaml[:start] + strings.Replace(e, old, new, 1) + yaml[end:]
 }
 
-// testImporter reads catalog from a test server, retrying quickly.
 func testImporter(t *testing.T, catalog string) *Importer {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -83,7 +78,6 @@ func testImporter(t *testing.T, catalog string) *Importer {
 	return i
 }
 
-// bootstrapped is a store holding the committed catalog.
 func bootstrapped(t *testing.T, suffix string) (*store.Store, *gorm.DB) {
 	t.Helper()
 	sqlDB, db := dbtest.Fresh(t, suffix)
@@ -99,7 +93,6 @@ func bootstrapped(t *testing.T, suffix string) (*store.Store, *gorm.DB) {
 	return s, db
 }
 
-// rows is every row of every table but import_runs, by table.
 func rows(t *testing.T, db *gorm.DB) map[string]string {
 	t.Helper()
 	var tables []string
@@ -136,8 +129,8 @@ func conflictsOf(t *testing.T, s importers.Summary) string {
 	return string(b)
 }
 
-// KAITO's catalog at the pinned release agrees with the committed one: the
-// run lists nothing, changes nothing, and a second run reads the same input.
+// The pinned KAITO catalog agrees with the committed one; a rerun reads the
+// same input.
 func TestRecordedCatalogAgrees(t *testing.T) {
 	s, db := bootstrapped(t, "kaito_recorded")
 	before := rows(t, db)
@@ -170,12 +163,8 @@ func TestRecordedCatalogAgrees(t *testing.T) {
 	}
 }
 
-// A value KAITO disagrees with is listed as a conflict, the catalog's value
-// as curated and KAITO's as imported, in catalog order, and never written.
-// KAITO omits headDim when it is hidden size / attention heads, and a zero
-// KV head count means multi-head attention; repository ids match
-// case-insensitively; an entry lacking a value is an error, its other
-// values still compared.
+// Disagreements are conflicts, never written; an entry lacking a value is an
+// error.
 func TestDisagreementsAreReportedNotWritten(t *testing.T) {
 	const gemma = `- name: google/gemma-2-9b-it
   modelTokenLimit: 8192
@@ -255,8 +244,7 @@ func TestDisagreementsAreReportedNotWritten(t *testing.T) {
 	}
 }
 
-// The input version hashes the KAITO entries the run compared: an entry of a
-// model the catalog lacks leaves it, a compared value changes it.
+// The input version changes only with compared entries.
 func TestInputVersionFollowsTheData(t *testing.T) {
 	s, _ := bootstrapped(t, "kaito_version")
 	version := func(catalog string) string {
@@ -277,8 +265,6 @@ func TestInputVersionFollowsTheData(t *testing.T) {
 	}
 }
 
-// A catalog that cannot be read or lists no model fails the run, which
-// changes nothing.
 func TestUnreadableCatalogFailsTheRun(t *testing.T) {
 	s, db := bootstrapped(t, "kaito_fail")
 	before := rows(t, db)

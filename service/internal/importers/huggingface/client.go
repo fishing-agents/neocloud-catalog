@@ -13,22 +13,17 @@ import (
 	"github.com/fishman/neocloud-catalog/service/internal/importers/fetch"
 )
 
-// maxBody bounds a response the importer reads; a tree of a large repository
-// stays well below it.
 const maxBody = 64 << 20
 
-// maxRetryAfter bounds a Retry-After the importer waits out; the Hub asking
-// for longer fails the request, so one throttled source cannot spend the
-// run's jobs.job_timeout.
+// A longer Retry-After fails the request so one source cannot spend
+// jobs.job_timeout.
 const maxRetryAfter = 5 * time.Minute
 
-// client reads the Hub for one run, spacing its requests.
 type client struct {
 	*Importer
 	last time.Time
 }
 
-// httpError is a response the Hub refused a request with.
 type httpError struct {
 	code int
 	msg  string
@@ -36,8 +31,7 @@ type httpError struct {
 
 func (e *httpError) Error() string { return fmt.Sprintf("HTTP %d: %s", e.code, e.msg) }
 
-// get reads rawURL through the importer's getter, interval after the last
-// request, with the token; a 401 or 403 is a gated refusal.
+// get treats 401 and 403 as gated refusals.
 func (c *client) get(ctx context.Context, rawURL string) ([]byte, http.Header, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -71,7 +65,6 @@ func (c *client) get(ctx context.Context, rawURL string) ([]byte, http.Header, e
 	return body, h, nil
 }
 
-// getJSON decodes the response of rawURL into v.
 func (c *client) getJSON(ctx context.Context, rawURL string, v any) error {
 	body, _, err := c.get(ctx, rawURL)
 	if err != nil {
@@ -84,8 +77,8 @@ func (c *client) getJSON(ctx context.Context, rawURL string, v any) error {
 	return nil
 }
 
-// tree reads a file tree page by page, following each page's Link rel="next"
-// on the Hub's host only, so the token goes nowhere else.
+// tree follows Link rel="next" on the Hub's host only, so the token goes
+// nowhere else.
 func (c *client) tree(ctx context.Context, rawURL string) ([]entry, error) {
 	host := ""
 	if u, err := url.Parse(c.endpoint); err == nil {
@@ -110,7 +103,6 @@ func (c *client) tree(ctx context.Context, rawURL string) ([]entry, error) {
 	return all, nil
 }
 
-// gated names why the Hub refused a gated repository.
 func (c *client) gated(err error) error {
 	if c.token == "" {
 		return fmt.Errorf("gated: token missing (huggingface.token_file): %w", err)
@@ -118,7 +110,7 @@ func (c *client) gated(err error) error {
 	return fmt.Errorf("gated: token rejected or licence not accepted: %w", err)
 }
 
-// message is the Hub's error message in body: {"error": ...} or plain text.
+// message is the Hub's error: {"error": ...} or plain text.
 func message(body []byte) string {
 	var e struct {
 		Error string `json:"error"`
@@ -133,7 +125,6 @@ func message(body []byte) string {
 	return msg
 }
 
-// nextLink is the URL of the rel="next" entry of a Link header, or "".
 func nextLink(h string) string {
 	for part := range strings.SplitSeq(h, ",") {
 		target, params, ok := strings.Cut(part, ";")

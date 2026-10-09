@@ -10,19 +10,17 @@ import (
 
 var nodeTypeID = regexp.MustCompile(`^[a-z]+/[A-Za-z0-9._-]+$`)
 
-// fallbackProvider is reserved for generated fallbacks; curated entries are
-// cloud instances only, so the fallback set stays exactly family x {1,2,4,8}.
+// fallbackProvider is reserved for generated fallbacks, so the fallback set stays
+// exactly family x {1,2,4,8}.
 const fallbackProvider = "other/"
 
-// FallbackNodeType is the vocabulary id reported for a system that is not a
-// listed cloud instance, e.g. "other/H100x8".
+// FallbackNodeType is the id for a system that is not a listed cloud instance.
 func FallbackNodeType(family string, gpus int) string {
 	return fmt.Sprintf("%s%sx%d", fallbackProvider, family, gpus)
 }
 
-// NodeTypeVocabulary validates the curated cloud instances against families
-// and returns them together with the generated fallbacks for 1, 2, 4 and 8
-// GPUs of every family, sorted by id.
+// NodeTypeVocabulary validates the cloud instances and adds 1, 2, 4 and 8 GPU
+// fallbacks per family, sorted by id.
 func NodeTypeVocabulary(families []Family, cloud []NodeType) ([]NodeType, error) {
 	known := make(map[string]bool, len(families))
 	for _, f := range families {

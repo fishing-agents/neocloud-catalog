@@ -18,9 +18,8 @@ import (
 	"github.com/fishman/neocloud-catalog/service/internal/model"
 )
 
-// Patch is what an importer read about objects of its run's layer: values of
-// their value columns, the file manifests of their sources and node type
-// prices. CurationURL is where the importer read the values it marks curated.
+// Patch is what an importer read about objects of its run's layer. CurationURL is where it read
+// the values it marks curated.
 type Patch struct {
 	Values      []Values
 	Manifests   []Manifest
@@ -28,35 +27,32 @@ type Patch struct {
 	CurationURL string
 }
 
-// Prices are the node type prices an importer read from one provider: they
-// replace the layer's prices of node types with Prefix, except those of the
-// node types in Kept, whose prices it could not read.
+// Prices replace the layer's prices of node types with Prefix, except those of the node types in Kept,
+// whose prices the importer could not read.
 type Prices struct {
 	Prefix string
 	Kept   []string
 	Rows   []model.NodeTypePrice
 }
 
-// Values are imported values by column name of the object Kind (KindFamily,
-// KindModel, KindQuantization or KindDraft) keyed Key. Curated names the
-// columns whose value the importer read from curation rather than its source.
+// Values are imported column values of the object Kind keyed Key. Curated names the columns read
+// from curation rather than the source.
 type Values struct {
 	Kind, Key string
 	Columns   map[string]any
 	Curated   []string
 }
 
-// Manifest is the files of a source read at Revision; the source belongs to a
-// quantization (ModelSlug, Quantization) or a draft model (DraftSlug).
+// Manifest is a source's files at Revision; the source belongs to a quantization (ModelSlug,
+// Quantization) or a draft model (DraftSlug).
 type Manifest struct {
 	ModelSlug, Quantization, DraftSlug string
 	Type, Repo, Revision               string
 	Files                              []catalog.ModelFile
 }
 
-// Conflict is an imported value a curated one was kept over (R12). Field is a
-// column, or files/<path> of a curated manifest, where a file one side lacks
-// is null.
+// Conflict is an imported value a curated one was kept over. Field is a column, or files/<path> of a
+// curated manifest, where a file one side lacks is null.
 type Conflict struct {
 	Kind     string `json:"kind"`
 	Key      string `json:"key"`
@@ -65,17 +61,9 @@ type Conflict struct {
 	Imported any    `json:"imported"`
 }
 
-// Patch writes p into the layer of the running import run run, in one
-// transaction, and touches no other row or column: a value sets one column of
-// an existing row, whose row provenance stays its origin; values of a family
-// the layer lacks give all its columns and add it, last, as the run's row; a
-// manifest replaces the files of its source, which must still be pinned at
-// the manifest's revision; prices replace those of their scope. As in
-// ReplaceLayer an unchanged value or price keeps its provenance and an
-// importer run keeps a curated value, unless the value is curated too or the
-// kept one was curated from p.CurationURL (the curation withdrew it); a
-// source with curated files keeps them all. It returns the changes and the
-// kept curated values that differ from the imported ones.
+// Patch writes p into the running run's layer in one transaction, touching no other row or column. A value
+// keeps its row's provenance; values for a family the layer lacks add it last. A manifest's source must
+// still be pinned at its revision. Curated values and files survive as in ReplaceLayer.
 func (s *Store) Patch(ctx context.Context, run uuid.UUID, p Patch) (Changes, []Conflict, error) {
 	changes := Changes{}
 	count := func(table string, c Change) {
@@ -148,8 +136,7 @@ func addFamily(tx *gorm.DB, f *model.Family, key string) error {
 	return tx.Raw(`SELECT COALESCE(MAX(position) + 1, 0) FROM families`).Scan(&f.Position).Error
 }
 
-// patchRow sets the columns of v on the row of st's layer that where selects.
-// Without one, add (nil: none) prepares a new row of v's key.
+// patchRow sets v's columns on the row where selects; without one, add (if non-nil) inserts a new row.
 func patchRow[T any](tx *gorm.DB, st stamp, v Values, add func(*gorm.DB, *T, string) error, where string, args ...any) (Change, []Conflict, error) {
 	var o T
 	found := tx.Where("layer = ?", st.layer).Where(where, args...).Limit(1).Find(&o)
@@ -182,8 +169,7 @@ func patchRow[T any](tx *gorm.DB, st stamp, v Values, add func(*gorm.DB, *T, str
 		}
 		f, x := wv.FieldByName(cols[c].name), reflect.ValueOf(v.Columns[name])
 		if !x.IsValid() || !x.Type().AssignableTo(f.Type()) {
-			// A fresh value: json.Unmarshal merges into the map or struct the
-			// row holds.
+			// A fresh value: json.Unmarshal would merge into the row's map or struct.
 			n := reflect.New(f.Type())
 			if b, err := json.Marshal(v.Columns[name]); !x.IsValid() || err != nil || json.Unmarshal(b, n.Interface()) != nil {
 				return Change{}, nil, fmt.Errorf("%w: %s %q: %s takes no %T", ErrInvalid, v.Kind, v.Key, name, v.Columns[name])
@@ -205,8 +191,7 @@ func patchRow[T any](tx *gorm.DB, st stamp, v Values, add func(*gorm.DB, *T, str
 		*wm.fields = datatypes.NewJSONType(fp)
 		return Change{Inserted: 1}, nil, tx.Create(&w).Error
 	}
-	// fieldProvenance stamps a column without provenance even when its value
-	// is unchanged; a patch stamps only the columns it sets.
+	// fieldProvenance stamps unprovenanced columns even when unchanged; stamp only the columns set.
 	prev := meta(&o).fields.Data()
 	for col := range fp {
 		if _, set := v.Columns[col]; set {
@@ -225,8 +210,7 @@ func patchRow[T any](tx *gorm.DB, st stamp, v Values, add func(*gorm.DB, *T, str
 	return Change{Updated: 1}, kept, tx.Save(&w).Error
 }
 
-// patchFiles replaces the files of m's source in st's layer, unless the
-// source's files are curated and st is an importer's.
+// patchFiles replaces the files of m's source, unless they are curated and st is an importer's.
 func patchFiles(tx *gorm.DB, st stamp, m Manifest) (Change, []Conflict, error) {
 	key := strings.Trim(m.ModelSlug+"/"+m.Quantization+"/"+m.DraftSlug, "/") + " " + m.Type + " " + m.Repo
 	var src model.ModelSource
@@ -277,7 +261,6 @@ func patchFiles(tx *gorm.DB, st stamp, m Manifest) (Change, []Conflict, error) {
 	return Change{}, kept, nil
 }
 
-// patchPrices replaces the prices of p's scope in st's layer with p.Rows.
 func patchPrices(tx *gorm.DB, st stamp, p Prices) (Change, error) {
 	want, errs := checkPrices(p.Rows)
 	if p.Prefix == "" {

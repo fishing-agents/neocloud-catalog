@@ -23,8 +23,7 @@ func (s *Store) GeneratorRun(ctx context.Context, id uuid.UUID) (model.Generator
 	return run, err
 }
 
-// CreateRelease stores rel; a release of its version already stored is
-// ErrConflict.
+// CreateRelease stores rel; a duplicate version is ErrConflict.
 func (s *Store) CreateRelease(ctx context.Context, rel *model.Release) error {
 	err := s.db.WithContext(ctx).Create(rel).Error
 	if pgErr := (*pgconn.PgError)(nil); errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -49,9 +48,8 @@ func (s *Store) Release(ctx context.Context, version string) (model.Release, err
 	return rel, err
 }
 
-// NewerPublished returns the newest published release version after
-// version, or "". Versions are fixed-width UTC times, so they sort in time
-// order as strings.
+// NewerPublished returns the newest published version after version, or "".
+// Versions are fixed-width UTC times, so string order is time order.
 func (s *Store) NewerPublished(ctx context.Context, version string) (string, error) {
 	var newer []string
 	err := s.db.WithContext(ctx).Model(&model.Release{}).Where("published_at IS NOT NULL AND version > ?", version).
@@ -62,9 +60,8 @@ func (s *Store) NewerPublished(ctx context.Context, version string) (string, err
 	return newer[0], nil
 }
 
-// PublishRelease records that the release id was published as ref, with its
-// overlay as overlayRef ("" for none), now. A release published as ref
-// already stays as it is; one published as another ref is an error.
+// PublishRelease marks release id published as ref with overlay overlayRef ("" for none).
+// Republishing as ref is a no-op; as another ref, an error.
 func (s *Store) PublishRelease(ctx context.Context, id uuid.UUID, ref, overlayRef string) (model.Release, error) {
 	var rel model.Release
 	res := s.db.WithContext(ctx).Model(&rel).Clauses(clause.Returning{}).Where("id = ? AND published_at IS NULL", id).
@@ -81,9 +78,7 @@ func (s *Store) PublishRelease(ctx context.Context, id uuid.UUID, ref, overlayRe
 	return rel, nil
 }
 
-// PublishOverlay records that the overlay of the published release id was
-// published as overlayRef, once: an overlay recorded as another ref is
-// ErrConflict.
+// PublishOverlay records the published release id's overlay as overlayRef, once; another ref is ErrConflict.
 func (s *Store) PublishOverlay(ctx context.Context, id uuid.UUID, overlayRef string) error {
 	res := s.db.WithContext(ctx).Model(&model.Release{}).Where("id = ? AND published_at IS NOT NULL AND overlay_ref IN ('', ?)", id, overlayRef).
 		Update("overlay_ref", overlayRef)

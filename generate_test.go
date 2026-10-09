@@ -18,7 +18,6 @@ func llama70b() ModelTemplate {
 	}
 }
 
-// curatedFamilies returns the named families from data/families.json.
 func curatedFamilies(t *testing.T, names ...string) []Family {
 	t.Helper()
 	b, err := os.ReadFile("data/families.json")
@@ -49,8 +48,7 @@ func backendOf(name string, bv BackendVersion) []Backend {
 	return []Backend{{Name: name, Versions: []BackendVersion{bv}}}
 }
 
-// fitsByKey indexes fits by "<slug>/<family>/<quantization>/<kv dtype>", with
-// "/<n>-node" appended for a fit across n > 1 nodes.
+// fitsByKey keys fits "<slug>/<family>/<quant>/<kv>", plus "/<n>-node" when n > 1.
 func fitsByKey(snap CatalogSnapshot) map[string]ModelFit {
 	out := map[string]ModelFit{}
 	for _, f := range snap.Fits {
@@ -78,10 +76,10 @@ func TestGenerateFits(t *testing.T) {
 		gpus, ctx int
 		vram      float64
 	}{
-		// (24 x 0.9 - 16.1)GB / 131072B per token; vram is weights + KV at max_context.
+		// (24 x 0.9 - 16.1)GB / 131072B per token; VRAM is weights + KV at max_context.
 		{"llama-3.1-8b/L4/bf16/auto", 1, 41961, 21.6},
 		{"llama-3.1-8b/A100/bf16/auto", 1, 131072, 33.28},
-		// 141.1GB does not fit one A100 (72GB budget): two, with (144 - 141.1)GB of KV.
+		// 141.1GB exceeds one A100's 72GB budget: two, with 2.9GB of KV.
 		{"llama-3.1-70b/A100/bf16/auto", 2, 8850, 144},
 		{"llama-3.1-70b/MI300X/bf16/auto", 1, 96740, 172.8},
 		{"llama-3.1-70b/L4/bf16/auto", 8, 96740, 172.8},
@@ -105,8 +103,7 @@ func TestGenerateFits(t *testing.T) {
 }
 
 func TestGenerateRespectsTensorParallelHeads(t *testing.T) {
-	// 6 attention heads: TP 4 and 8 are illegal, so the 2-GPU option is the last
-	// one tried before giving up.
+	// 6 attention heads rule out TP 4 and 8, so 2 GPUs is the last option.
 	m := ModelTemplate{Slug: "odd", Task: "chat", DefaultContext: 1024, ContextMax: 1024,
 		Quantizations: []Quantization{{Name: "bf16", Kind: "float", WeightsGB: 30}},
 		Architecture:  Architecture{Layers: 1, AttentionHeads: 6, KVHeads: 6, HeadDim: 64},
@@ -121,8 +118,7 @@ func TestGenerateRespectsTensorParallelHeads(t *testing.T) {
 	}
 }
 
-// fitModes generates llama-3.1-8b's vLLM bf16 and fp8 presets on every curated
-// family and returns the mode of each "<family>/<quantization>" fit.
+// fitModes returns the mode of each "<family>/<quant>" fit of llama-3.1-8b's vLLM presets.
 func fitModes(t *testing.T, vllm BackendVersion) map[string]FitMode {
 	t.Helper()
 	m := llama8b()
@@ -193,11 +189,8 @@ func TestKVFP8DoublesContext(t *testing.T) {
 	}
 }
 
-// TestFitTopology: multi-node presets size fits across their nodes, and a
-// disaggregated preset needs the model to fit on each side.
 func TestFitTopology(t *testing.T) {
-	// 812GB plus 8192 tokens at 516096B exceeds eight H100 (576GB budget): two
-	// nodes of eight (1152GB). Sixteen L4 hold 345.6GB.
+	// 812GB + KV exceeds eight H100 (576GB budget): two nodes of eight.
 	huge := ModelTemplate{Slug: "llama-3.1-405b", Task: "chat", ParamsB: 405, ParamsActiveB: 405, DefaultContext: 8192, ContextMax: 131072,
 		Quantizations: []Quantization{{Name: "bf16", Kind: "float", WeightsGB: 812}},
 		Architecture:  Architecture{Layers: 126, AttentionHeads: 128, KVHeads: 8, HeadDim: 128},
@@ -225,8 +218,7 @@ func TestFitTopology(t *testing.T) {
 	}
 }
 
-// TestMultiNodeFit: a multi-node preset gets a fit of whole nodes of the
-// family's largest node type next to the single-node fit, never drives
+// A multi-node fit spans whole nodes of the largest node type, never drives
 // guidance, and is reported when it fits no family.
 func TestMultiNodeFit(t *testing.T) {
 	twoNode := vllmPreset("vllm-bf16-2node", "bf16", 8192)
@@ -243,8 +235,7 @@ func TestMultiNodeFit(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := fitsByKey(snap)
-	// Two nodes of the fallback other/<family>x8: 16 GPUs, whose budget (1152GB
-	// H100, 345.6GB L4) holds the model's whole context.
+	// Two fallback nodes of eight: 16 GPUs hold the whole context.
 	for _, fam := range []string{"H100", "L4"} {
 		f, ok := got["llama-3.1-70b/"+fam+"/bf16/auto/2-node"]
 		if !ok || f.GPUCount != 16 || f.Nodes != 2 || f.MaxContext != 131072 || FitKey(f) != "llama-3.1-70b/"+fam+"/-/bf16/auto/2-node" {
@@ -254,8 +245,7 @@ func TestMultiNodeFit(t *testing.T) {
 	if f := got["llama-3.1-70b/H100/bf16/auto"]; f.GPUCount != 2 || f.Nodes != 1 {
 		t.Errorf("single-node H100 fit = %d GPUs on %d nodes, want 2 on 1", f.GPUCount, f.Nodes)
 	}
-	// The 2-node fit serves 560 tokens/s per GPU against 31.1 on two H100, but
-	// guidance stays single-node.
+	// The 2-node fit has the higher per-GPU aggregate, yet guidance stays single-node.
 	if d := snap.Models[0].Deployment; d.Minimum == nil || d.Optimal == nil || d.Minimum.Nodes != 1 || d.Optimal.Nodes != 1 {
 		t.Errorf("deployment = %+v, want single-node minimum and optimal", d)
 	}
@@ -280,20 +270,11 @@ func TestMultiNodeFit(t *testing.T) {
 	}
 }
 
-// TestMultiNodeEstimate: tensor parallel within a node, pipeline parallel
-// across nodes, 0.85 per stage boundary.
+// Tensor parallel within a node, pipeline parallel across nodes, 0.85 per stage boundary.
 func TestMultiNodeEstimate(t *testing.T) {
-	// llama-3.1-70b bf16 at 8192 tokens (141.1GB weights, 327680B x 8192 =
-	// 2.68435456GB KV per sequence) on two nodes of eight H100 (80GB, 3350GB/s).
-	// Pipeline 2 (the default, a stage per node), tensor parallel 8:
-	//   rate = 0.8 x 3350 x 16 x 0.75 x 0.85 = 27336 GB/s
-	//   decode(1) = 27336 / 143.78 = 190.1
-	//   capacity = floor((0.92 x 80 x 16 - 141.1) / 2.684) = floor(386.1) = 386,
-	//   where decode(386) = 27336 / 1177.26 = 23.2 still holds 20
-	//   aggregate = 386 x 23.22 = 8962.9
-	// Pipeline 4, tensor parallel 4: rate = 0.8 x 3350 x 16 x 0.75 x 0.85^3 =
-	// 19750.26, decode(1) = 137.4; 20 tokens/s holds up to (987.51 - 141.1) /
-	// 2.684 = 315.3 sequences: 315, aggregate 315 x 20.02 = 6305.4.
+	// llama-3.1-70b bf16 at 8192 tokens on 2 x 8 H100:
+	// PP2/TP8: rate = 0.8 x 3350 x 16 x 0.75 x 0.85 = 27336 GB/s, decode(1) = 190.1, 386 sequences.
+	// PP4/TP4: rate x 0.85^2 = 19750.26, decode(1) = 137.4, 315 sequences.
 	cases := []struct {
 		name string
 		top  Topology
@@ -346,8 +327,7 @@ func TestGenerateFailsOnContradiction(t *testing.T) {
 	}
 }
 
-// An unparsable NVIDIA compute capability would fail every comparison and drop
-// fits silently; AMD gfx targets are not numbers and stay accepted.
+// A non-numeric NVIDIA compute capability fails generation; AMD gfx targets stay accepted.
 func TestGenerateRejectsUnparsableComputeCapability(t *testing.T) {
 	cases := []struct {
 		name string
@@ -375,14 +355,9 @@ func TestGenerateRejectsUnparsableComputeCapability(t *testing.T) {
 }
 
 func TestDeploymentGuidance(t *testing.T) {
-	// llama-3.1-8b bf16 at 8192 tokens (16.1 + 1.07GB) decodes on one A at
-	// 0.8 x 300 / 17.17 = 14.0 tokens/s, below 20 though A is the smallest; on
-	// one B at 46.6, 22 sequences at 20 (443 tokens/s per GPU); on one C at
-	// 156.1, 53 sequences (1946 per GPU). Its Q4_K_M (4.9GB) would win both:
-	// 40.2 on A (24GB), 63 sequences on C (2327 per GPU), but gguf fits never
-	// drive guidance. llama-3.1-70b bf16 (141.1 + 2.68GB) reaches 20 only on two
-	// C (31.7, 2 sequences). huge's bf16 preset fits no family and its decent
-	// Q4_K_M fits do not count: both are reported.
+	// 8b bf16 decodes below 20 tokens/s on A; B and C serve 22 and 53 sequences.
+	// Q4_K_M would win but gguf never drives guidance. 70b reaches 20 only on two C.
+	// huge's bf16 fits no family and its Q4_K_M fits do not count: both reported.
 	fam := func(name string, memory, bandwidth float64) Family {
 		return Family{Name: name, Vendor: "nvidia", ComputeCapability: "9.0", DTypes: []string{"bf16"}, MemoryGB: memory, MemoryBandwidthGBs: bandwidth}
 	}
@@ -502,8 +477,7 @@ func TestGenerateRejectsUnresolvedPresetsAndUnpinnedSources(t *testing.T) {
 	}
 }
 
-// curatedSnap puts one model and its drafts next to the curated backends, so
-// presets are validated against the real flag tables.
+// curatedSnap validates m and its drafts against the curated backends' flag tables.
 func curatedSnap(t *testing.T, m ModelTemplate, drafts ...DraftModel) CatalogSnapshot {
 	t.Helper()
 	snap := CatalogSnapshot{Models: []ModelTemplate{m}, DraftModels: drafts}
@@ -564,8 +538,7 @@ func TestValidateRejectsUnknownTopologyTransfer(t *testing.T) {
 	wantValidate(t, "ucx", curatedSnap(t, m), `llama-3.1-70b/sglang-pd on sglang v0.5.21: has no kv transfer "ucx"`)
 }
 
-// Each case breaks one rule the renderer relies on but cannot check itself, or
-// a closed vocabulary.
+// Each case breaks one rule the renderer relies on, or a closed vocabulary.
 func TestValidateRejectsInconsistentPresetsAndDrafts(t *testing.T) {
 	cases := []struct {
 		name string
@@ -634,8 +607,7 @@ func TestValidateRejectsInconsistentPresetsAndDrafts(t *testing.T) {
 	}
 }
 
-// A chat template path is per vendor image, so Validate renders a preset once
-// per vendor it runs on.
+// Chat template paths differ per vendor image, so Validate renders every vendor.
 func TestValidateRendersEveryVendor(t *testing.T) {
 	m := llama8b()
 	m.Presets = []Preset{{Name: "vllm-bf16", Purpose: "standard", Quantization: "bf16", Backend: "vllm", BackendVersion: "v0.31.0",
@@ -652,8 +624,7 @@ func TestValidateRendersEveryVendor(t *testing.T) {
 	wantValidate(t, "nvidia only", snap, "")
 }
 
-// A multi-node preset renders pipeline parallel across its nodes, so a flag
-// table without it fails validation.
+// A flag table without pipeline parallel fails a multi-node preset.
 func TestValidateRendersMultiNodePipeline(t *testing.T) {
 	m := llama70b()
 	p := vllmPreset("vllm-bf16-2node", "bf16", 8192)
@@ -669,8 +640,7 @@ func TestValidateRendersMultiNodePipeline(t *testing.T) {
 	wantValidate(t, "no pipeline parallel flag", snap, "llama-3.1-70b/vllm-bf16-2node on vllm v0.31.0: cannot express pipeline parallel")
 }
 
-// A preset its backend version has no image for, among the vendors it allows,
-// deploys nowhere.
+// A preset with no image among its allowed vendors deploys nowhere.
 func TestValidateRejectsPresetWithoutVendor(t *testing.T) {
 	m := llama8b()
 	m.Presets = []Preset{vllmPreset("vllm-bf16", "bf16", 8192)}
@@ -687,8 +657,7 @@ func TestValidateRejectsPresetWithoutVendor(t *testing.T) {
 	wantValidate(t, "no images", snap, "llama-3.1-8b/vllm-bf16 on vllm v0.31.0: runs on no vendor")
 }
 
-// FitKey identifies a fit (overlay ids, guidance fit_keys), so a snapshot
-// repeating one fails; fits on other node counts are distinct.
+// Fits on other node counts are distinct.
 func TestValidateRejectsDuplicateFits(t *testing.T) {
 	m := llama8b()
 	m.Presets = []Preset{vllmPreset("vllm-bf16", "bf16", 8192)}
@@ -702,8 +671,7 @@ func TestValidateRejectsDuplicateFits(t *testing.T) {
 	wantValidate(t, "a repeated fit", snap, "fit llama-3.1-8b/H100/-/bf16/auto/2-node: duplicate")
 }
 
-// Regenerating the committed data must reproduce the embedded snapshot: the
-// generator is deterministic and snapshots/v4 is not stale.
+// Regenerating the committed data reproduces the embedded snapshot.
 func TestCommittedSnapshotMatchesData(t *testing.T) {
 	var families []Family
 	var nodeTypes []NodeType
