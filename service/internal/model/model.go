@@ -388,12 +388,16 @@ type Release struct {
 }
 
 // ImportRun is one importer run; importers are idempotent per (Importer,
-// InputVersion). Summary holds the result and diff summary.
+// InputVersion). Source and SourceURL are the provenance of the rows the run
+// writes (Source "curation" for curated input), as of StartedAt. Summary holds
+// the result and diff summary.
 type ImportRun struct {
 	Base
 	Timestamps
 	Importer     string    `gorm:"not null;index:idx_import_runs_input,priority:1"`
 	InputVersion string    `gorm:"not null;index:idx_import_runs_input,priority:2"`
+	Source       string    `gorm:"not null"`
+	SourceURL    string    `gorm:"column:source_url;not null"`
 	Layer        string    `gorm:"not null;check:layer IN ('upstream', 'local', 'overlay')"`
 	Status       string    `gorm:"not null;check:status IN ('running', 'succeeded', 'failed')"`
 	StartedAt    time.Time `gorm:"not null"`

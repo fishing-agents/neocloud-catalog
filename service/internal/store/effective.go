@@ -1,0 +1,295 @@
+package store
+
+import (
+	"cmp"
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"maps"
+	"slices"
+	"strings"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+
+	catalog "github.com/fishman/neocloud-catalog"
+	"github.com/fishman/neocloud-catalog/service/internal/model"
+)
+
+// Effective is the effective catalog: per natural key the local object, else
+// the upstream one, ordered by (position, key) so curated order holds (R11);
+// node types by id. Extensions holds the overlay layer's payloads keyed as
+// catalog.Merge expects; its SnapshotDigest stays empty until a generated
+// snapshot pins it.
+func (s *Store) Effective(ctx context.Context) (Inputs, error) {
+	var in Inputs
+	err := s.read(ctx, func(tx *gorm.DB) error {
+		var err error
+		in, err = effective(tx)
+		return err
+	})
+	return in, err
+}
+
+// read runs fn on one snapshot of the database.
+func (s *Store) read(ctx context.Context, fn func(tx *gorm.DB) error) error {
+	return s.db.WithContext(ctx).Transaction(fn, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+}
+
+func effective(tx *gorm.DB) (Inputs, error) {
+	var layers [2]objects
+	for i, layer := range []string{model.LayerUpstream, model.LayerLocal} {
+		rs, err := load(tx, layer, scope{})
+		if err != nil {
+			return Inputs{}, err
+		}
+		if layers[i], err = assemble(rs); err != nil {
+			return Inputs{}, fmt.Errorf("%s layer: %w", layer, err)
+		}
+	}
+	up, local := layers[0], layers[1]
+	in := Inputs{
+		Families:   pick(up.families, local.families),
+		NodeTypes:  pick(up.nodeTypes, local.nodeTypes),
+		Models:     pick(up.models, local.models),
+		Drafts:     pick(up.drafts, local.drafts),
+		Backends:   pick(up.backends, local.backends),
+		Extensions: catalog.Overlay{SchemaVersion: catalog.SchemaVersion},
+	}
+	var payloads []model.ExtensionPayload
+	if err := tx.Where("layer = ?", model.LayerOverlay).Find(&payloads).Error; err != nil {
+		return Inputs{}, err
+	}
+	kinds := payloadKinds(&in.Extensions)
+	for _, p := range payloads {
+		ids := kinds[slices.IndexFunc(kinds, func(k payloadKind) bool { return k.kind == p.ObjectKind })].ids
+		if *ids == nil {
+			*ids = map[string]catalog.Extensions{}
+		}
+		if (*ids)[p.ObjectKey] == nil {
+			(*ids)[p.ObjectKey] = catalog.Extensions{}
+		}
+		(*ids)[p.ObjectKey][p.Namespace] = json.RawMessage(p.Payload)
+	}
+	return in, nil
+}
+
+// entry is one layer's object with its place in curated order.
+type entry[T any] struct {
+	pos int
+	key string
+	obj T
+}
+
+// pick takes per key the local entry over the upstream one, ordered by
+// (position, key).
+func pick[T any](upstream, local []entry[T]) []T {
+	byKey := make(map[string]entry[T], len(upstream)+len(local))
+	for _, e := range slices.Concat(upstream, local) {
+		byKey[e.key] = e
+	}
+	if len(byKey) == 0 {
+		return nil
+	}
+	es := slices.SortedFunc(maps.Values(byKey), func(a, b entry[T]) int {
+		return cmp.Or(cmp.Compare(a.pos, b.pos), strings.Compare(a.key, b.key))
+	})
+	out := make([]T, len(es))
+	for i, e := range es {
+		out[i] = e.obj
+	}
+	return out
+}
+
+// rowSet holds the rows of one layer, or of one object in it, each table in
+// its curated order; files[i] are the files of sources[i].
+type rowSet struct {
+	families  []model.Family
+	nodeTypes []model.NodeType
+	models    []model.Model
+	quants    []model.ModelQuantization
+	presets   []model.Preset
+	sources   []model.ModelSource
+	files     [][]model.ModelFile
+	drafts    []model.DraftModel
+	backends  []model.Backend
+	versions  []model.BackendVersion
+	flags     []model.FlagTable
+	payloads  []model.ExtensionPayload
+}
+
+func (rs rowSet) size() int {
+	return len(rs.families) + len(rs.nodeTypes) + len(rs.models) + len(rs.quants) + len(rs.presets) + len(rs.sources) +
+		len(rs.drafts) + len(rs.backends) + len(rs.versions) + len(rs.flags) + len(rs.payloads)
+}
+
+// load reads the rows of layer within sc.
+func load(tx *gorm.DB, layer string, sc scope) (rowSet, error) {
+	var rs rowSet
+	for _, t := range []struct {
+		table, order string
+		dest         any
+	}{
+		{"families", "position, name", &rs.families},
+		{"node_types", "node_type_id", &rs.nodeTypes},
+		{"models", "position, slug", &rs.models},
+		{"model_quantizations", "model_slug, position, name", &rs.quants},
+		{"presets", "model_slug, position, name", &rs.presets},
+		{"model_sources", "preference, type, repo", &rs.sources},
+		{"draft_models", "position, slug", &rs.drafts},
+		{"backends", "position, name", &rs.backends},
+		{"backend_versions", "backend, position, version", &rs.versions},
+		{"flag_tables", "backend, backend_version", &rs.flags},
+		{"extension_payloads", "object_kind, object_key, namespace", &rs.payloads},
+	} {
+		q := tx.Table(t.table).Where("layer = ?", layer)
+		if sc.kind != "" {
+			col, ok := sc.column(t.table)
+			if !ok {
+				continue
+			}
+			q = q.Where(col+" = ?", sc.key)
+		}
+		if err := q.Order(t.order).Find(t.dest).Error; err != nil {
+			return rowSet{}, err
+		}
+	}
+	rs.files = make([][]model.ModelFile, len(rs.sources))
+	if len(rs.sources) == 0 {
+		return rs, nil
+	}
+	ids := make([]uuid.UUID, len(rs.sources))
+	index := make(map[uuid.UUID]int, len(rs.sources))
+	for i, src := range rs.sources {
+		ids[i], index[src.ID] = src.ID, i
+	}
+	var files []model.ModelFile
+	if err := tx.Where("model_source_id IN ?", ids).Order("position, path").Find(&files).Error; err != nil {
+		return rowSet{}, err
+	}
+	for _, f := range files {
+		i := index[f.ModelSourceID]
+		rs.files[i] = append(rs.files[i], f)
+	}
+	return rs, nil
+}
+
+// objects are one layer's core objects.
+type objects struct {
+	families  []entry[catalog.Family]
+	nodeTypes []entry[catalog.NodeType]
+	models    []entry[catalog.ModelTemplate]
+	drafts    []entry[catalog.DraftModel]
+	backends  []entry[catalog.Backend]
+}
+
+// assemble builds one layer's core objects, each from the children of that
+// layer, and refuses rows without their parent in the layer.
+func assemble(rs rowSet) (objects, error) {
+	var o objects
+	var problems []string
+	for _, r := range rs.families {
+		o.families = append(o.families, entry[catalog.Family]{r.Position, r.Name, catalog.Family{Name: r.Name, Vendor: r.Vendor,
+			Architecture: r.Architecture, ComputeCapability: r.ComputeCapability, DTypes: r.DTypes, MemoryGB: r.MemoryGB,
+			MemoryBandwidthGBs: r.MemoryBandwidthGBs, TFLOPS: r.TFLOPS.Data(), Interconnect: r.Interconnect,
+			InterconnectGBs: r.InterconnectGBs, Sources: r.Sources}})
+	}
+	for _, r := range rs.nodeTypes {
+		o.nodeTypes = append(o.nodeTypes, entry[catalog.NodeType]{0, r.NodeTypeID,
+			catalog.NodeType{ID: r.NodeTypeID, Family: r.Family, GPUs: r.GPUs, Source: r.DocURL}})
+	}
+
+	type owner struct{ model, quant, draft string }
+	sources := map[owner][]catalog.ModelSource{}
+	for i, r := range rs.sources {
+		src := catalog.ModelSource{Type: r.Type, Repo: r.Repo, Revision: r.Revision}
+		for _, f := range rs.files[i] {
+			if f.Layer != r.Layer {
+				problems = append(problems, fmt.Sprintf("file %s of %s in layer %s", f.Path, r.Repo, f.Layer))
+			}
+			src.Files = append(src.Files, catalog.ModelFile{Path: f.Path, Size: f.SizeBytes, Digest: f.Digest})
+		}
+		k := owner{r.ModelSlug, r.Quantization, r.DraftSlug}
+		sources[k] = append(sources[k], src)
+	}
+	quants := map[string][]catalog.Quantization{}
+	for _, r := range rs.quants {
+		k := owner{model: r.ModelSlug, quant: r.Name}
+		quants[r.ModelSlug] = append(quants[r.ModelSlug], catalog.Quantization{Name: r.Name, Kind: r.Kind,
+			RequiresDType: r.RequiresDType, WeightsGB: r.WeightsGB, Sources: sources[k]})
+		delete(sources, k)
+	}
+	presets := map[string][]catalog.Preset{}
+	for _, r := range rs.presets {
+		presets[r.ModelSlug] = append(presets[r.ModelSlug], catalog.Preset{Name: r.Name, Quantization: r.Quantization,
+			Backend: r.Backend, BackendVersion: r.BackendVersion, MinBackendVersion: r.MinBackendVersion, Purpose: r.Purpose,
+			Context: r.Context, TensorParallel: r.TensorParallel, KVCacheDType: r.KVCacheDType, PrefixCaching: r.PrefixCaching,
+			ToolParser: r.ToolParser, ReasoningParser: r.ReasoningParser, ChatTemplate: r.ChatTemplate,
+			Speculative: r.Speculative.Data(), Topology: r.Topology.Data(), Env: r.Env.Data(), ExtraArgs: r.ExtraArgs, Vendors: r.Vendors})
+	}
+	for _, r := range rs.models {
+		o.models = append(o.models, entry[catalog.ModelTemplate]{r.Position, r.Slug, catalog.ModelTemplate{Slug: r.Slug,
+			Name: r.Name, Family: r.Family, Description: r.Description, Task: r.Task, Capabilities: r.Capabilities,
+			ParamsB: r.ParamsB, ParamsActiveB: r.ParamsActiveB, ReleaseDate: r.ReleaseDate, Home: r.Home, Icon: r.Icon,
+			Aliases: r.Aliases, DefaultContext: r.DefaultContext, ContextMax: r.ContextMax, Quantizations: quants[r.Slug],
+			Architecture: r.Architecture.Data(), License: r.License, Gated: r.Gated, Presets: presets[r.Slug]}})
+		delete(quants, r.Slug)
+		delete(presets, r.Slug)
+	}
+	for _, r := range rs.drafts {
+		d := catalog.DraftModel{Slug: r.Slug, Method: r.Method, Targets: r.Targets, WeightsGB: r.WeightsGB, Backends: r.Backends}
+		k := owner{draft: r.Slug}
+		switch srcs := sources[k]; len(srcs) {
+		case 0:
+		case 1:
+			d.Source = srcs[0]
+		default:
+			problems = append(problems, fmt.Sprintf("draft model %s has %d sources", r.Slug, len(srcs)))
+		}
+		delete(sources, k)
+		o.drafts = append(o.drafts, entry[catalog.DraftModel]{r.Position, r.Slug, d})
+	}
+
+	flags := map[[2]string]catalog.FlagTable{}
+	for _, r := range rs.flags {
+		flags[[2]string{r.Backend, r.BackendVersion}] = r.Flags.Data()
+	}
+	versions := map[string][]catalog.BackendVersion{}
+	for _, r := range rs.versions {
+		k := [2]string{r.Backend, r.Version}
+		f, ok := flags[k]
+		if !ok {
+			problems = append(problems, fmt.Sprintf("backend version %s/%s has no flag table", r.Backend, r.Version))
+		}
+		delete(flags, k)
+		versions[r.Backend] = append(versions[r.Backend], catalog.BackendVersion{Version: r.Version, Images: r.Images.Data(),
+			Command: r.Command, HealthPath: r.HealthPath, MinComputeCapability: r.MinComputeCapability,
+			Quantizations: r.Quantizations.Data(), Flags: f, Defaults: r.Defaults.Data()})
+	}
+	for _, r := range rs.backends {
+		o.backends = append(o.backends, entry[catalog.Backend]{r.Position, r.Name, catalog.Backend{Name: r.Name, Versions: versions[r.Name]}})
+		delete(versions, r.Name)
+	}
+
+	for k := range sources {
+		problems = append(problems, fmt.Sprintf("source of %s", strings.Trim(k.model+"/"+k.quant+"/"+k.draft, "/")))
+	}
+	for slug := range quants {
+		problems = append(problems, "quantizations of model "+slug)
+	}
+	for slug := range presets {
+		problems = append(problems, "presets of model "+slug)
+	}
+	for k := range flags {
+		problems = append(problems, "flag table of backend version "+k[0]+"/"+k[1])
+	}
+	for name := range versions {
+		problems = append(problems, "versions of backend "+name)
+	}
+	if len(problems) > 0 {
+		slices.Sort(problems)
+		return objects{}, fmt.Errorf("inconsistent rows: %s", strings.Join(problems, "; "))
+	}
+	return o, nil
+}

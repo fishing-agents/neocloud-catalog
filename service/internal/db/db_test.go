@@ -4,12 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"net/url"
-	"os"
-	"path/filepath"
 	"reflect"
 	"regexp"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -21,73 +17,9 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/fishman/neocloud-catalog/service/internal/db"
+	"github.com/fishman/neocloud-catalog/service/internal/dbtest"
 	"github.com/fishman/neocloud-catalog/service/internal/model"
 )
-
-// freshDB creates the empty database <NEOCLOUD_CATALOG_TEST_DSN's database>_<suffix>
-// and drops it when the test ends. Tests skip without the env (unit runs stay
-// DB-free).
-func freshDB(t *testing.T, suffix string) (*sql.DB, *gorm.DB) {
-	t.Helper()
-	dsn := os.Getenv("NEOCLOUD_CATALOG_TEST_DSN")
-	if dsn == "" {
-		t.Skip("NEOCLOUD_CATALOG_TEST_DSN unset; skipping integration")
-	}
-	u, err := url.Parse(dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	name := strings.TrimPrefix(u.Path, "/") + "_" + suffix
-	admin := *u
-	admin.Path = "/postgres"
-	adminDB, err := sql.Open("pgx", admin.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { adminDB.Close() })
-	for _, stmt := range []string{`DROP DATABASE IF EXISTS "` + name + `" WITH (FORCE)`, `CREATE DATABASE "` + name + `"`} {
-		if _, err := adminDB.Exec(stmt); err != nil {
-			t.Fatal(err)
-		}
-	}
-	u.Path = "/" + name
-	sqlDB, gormDB, err := db.Open(u.String(), 4)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		sqlDB.Close()
-		if _, err := adminDB.Exec(`DROP DATABASE IF EXISTS "` + name + `" WITH (FORCE)`); err != nil {
-			t.Errorf("drop %s: %v", name, err)
-		}
-	})
-	// The constraint tests provoke errors on purpose; GORM would log each one.
-	return sqlDB, gormDB.Session(&gorm.Session{Logger: logger.Discard})
-}
-
-// applyMigrations runs every versioned migration in file order, as `atlas
-// migrate apply` would.
-func applyMigrations(t *testing.T, sqlDB *sql.DB) {
-	t.Helper()
-	files, err := filepath.Glob("../../migrations/*.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(files) == 0 {
-		t.Fatal("no migrations in ../../migrations")
-	}
-	slices.Sort(files)
-	for _, f := range files {
-		stmts, err := os.ReadFile(f)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := sqlDB.Exec(string(stmts)); err != nil {
-			t.Fatalf("apply %s: %v", filepath.Base(f), err)
-		}
-	}
-}
 
 // ddlRecorder collects the schema-changing statements GORM issues.
 type ddlRecorder struct {
@@ -110,8 +42,8 @@ func (r *ddlRecorder) Trace(_ context.Context, _ time.Time, fc func() (string, i
 }
 
 func TestMigrationsApplyFromScratch(t *testing.T) {
-	sqlDB, gormDB := freshDB(t, "scratch")
-	applyMigrations(t, sqlDB)
+	sqlDB, gormDB := dbtest.Fresh(t, "scratch")
+	dbtest.Migrate(t, sqlDB)
 
 	// AutoMigrate in a rolled-back transaction: any DDL it wants to issue is a
 	// drift between the models and the migrations.
@@ -162,8 +94,8 @@ func pgError(err error) *pgconn.PgError {
 }
 
 func TestNaturalKeyUniquePerLayer(t *testing.T) {
-	sqlDB, gormDB := freshDB(t, "natural")
-	applyMigrations(t, sqlDB)
+	sqlDB, gormDB := dbtest.Fresh(t, "natural")
+	dbtest.Migrate(t, sqlDB)
 
 	src := model.ModelSource{Provenance: model.Provenance{Layer: model.LayerUpstream}, ModelSlug: "m", Quantization: "q", Type: "huggingface", Repo: "org/m"}
 	if err := gormDB.Create(&src).Error; err != nil {
@@ -216,8 +148,8 @@ func TestNaturalKeyUniquePerLayer(t *testing.T) {
 }
 
 func TestConstraintsRefuseInvalidRows(t *testing.T) {
-	sqlDB, gormDB := freshDB(t, "constraints")
-	applyMigrations(t, sqlDB)
+	sqlDB, gormDB := dbtest.Fresh(t, "constraints")
+	dbtest.Migrate(t, sqlDB)
 
 	run := model.GeneratorRun{Status: model.RunSucceeded}
 	if err := gormDB.Create(&run).Error; err != nil {
@@ -262,8 +194,8 @@ func TestConstraintsRefuseInvalidRows(t *testing.T) {
 }
 
 func TestFieldProvenanceRoundTrip(t *testing.T) {
-	sqlDB, gormDB := freshDB(t, "fieldprov")
-	applyMigrations(t, sqlDB)
+	sqlDB, gormDB := dbtest.Fresh(t, "fieldprov")
+	dbtest.Migrate(t, sqlDB)
 
 	run := uuid.New()
 	asOf := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
