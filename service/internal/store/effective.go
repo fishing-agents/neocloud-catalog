@@ -175,6 +175,15 @@ func load(tx *gorm.DB, layer string, sc scope) (rowSet, error) {
 	return rs, nil
 }
 
+// orEmpty keeps a list the snapshot marshals without omitempty (quantizations,
+// versions) from turning null when its parent has no child rows.
+func orEmpty[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
+}
+
 // objects are one layer's core objects.
 type objects struct {
 	families  []entry[catalog.Family]
@@ -232,7 +241,7 @@ func assemble(rs rowSet) (objects, error) {
 		o.models = append(o.models, entry[catalog.ModelTemplate]{r.Position, r.Slug, catalog.ModelTemplate{Slug: r.Slug,
 			Name: r.Name, Family: r.Family, Description: r.Description, Task: r.Task, Capabilities: r.Capabilities,
 			ParamsB: r.ParamsB, ParamsActiveB: r.ParamsActiveB, ReleaseDate: r.ReleaseDate, Home: r.Home, Icon: r.Icon,
-			Aliases: r.Aliases, DefaultContext: r.DefaultContext, ContextMax: r.ContextMax, Quantizations: quants[r.Slug],
+			Aliases: r.Aliases, DefaultContext: r.DefaultContext, ContextMax: r.ContextMax, Quantizations: orEmpty(quants[r.Slug]),
 			Architecture: r.Architecture.Data(), License: r.License, Gated: r.Gated, Presets: presets[r.Slug]}})
 		delete(quants, r.Slug)
 		delete(presets, r.Slug)
@@ -268,7 +277,7 @@ func assemble(rs rowSet) (objects, error) {
 			Quantizations: r.Quantizations.Data(), Flags: f, Defaults: r.Defaults.Data()})
 	}
 	for _, r := range rs.backends {
-		o.backends = append(o.backends, entry[catalog.Backend]{r.Position, r.Name, catalog.Backend{Name: r.Name, Versions: versions[r.Name]}})
+		o.backends = append(o.backends, entry[catalog.Backend]{r.Position, r.Name, catalog.Backend{Name: r.Name, Versions: orEmpty(versions[r.Name])}})
 		delete(versions, r.Name)
 	}
 

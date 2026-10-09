@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -130,20 +131,120 @@ func rowsOf(t *testing.T, db *gorm.DB, run uuid.UUID) int64 {
 	return n
 }
 
-// Every core field of the committed data survives ReplaceLayer and Effective,
-// in curated order; replacing the layer with the same input changes no row.
+// committedWithEmptyLists is the committed data plus a model without
+// quantizations and a backend without versions, explicitly empty: the snapshot
+// marshals both lists without omitempty, so nil would change its digest.
+func committedWithEmptyLists(t *testing.T) store.Inputs {
+	in := committed(t)
+	in.Models = append(in.Models, catalog.ModelTemplate{Slug: "no-quantizations", Name: "None", Family: "none", Task: "chat",
+		Quantizations: []catalog.Quantization{}})
+	in.Backends = append(in.Backends, catalog.Backend{Name: "no-versions", Versions: []catalog.BackendVersion{}})
+	return in
+}
+
+// everyField sets every stored core field the committed data leaves zero,
+// with prefix caching unset, off and on.
+func everyField() store.Inputs {
+	on, off := true, false
+	preset := func(name string, prefix *bool) catalog.Preset {
+		return catalog.Preset{Name: name, Quantization: "fp8", Backend: "vllm", BackendVersion: "v2", MinBackendVersion: "v1",
+			Purpose: "latency", Context: 8192, TensorParallel: 2, KVCacheDType: "fp8", PrefixCaching: prefix, ToolParser: "hermes",
+			ReasoningParser: "deepseek_r1", ChatTemplate: "tools", Speculative: &catalog.Speculative{Method: "eagle3", DraftModel: "d", Tokens: 3},
+			Topology: catalog.Topology{Kind: "disaggregated", Nodes: 2, Pipeline: 2, Prefill: 4, Decode: 4, Transfer: "nixl"},
+			Env:      map[string]string{"VLLM_USE_V1": "1"}, ExtraArgs: []string{"--enforce-eager"}, Vendors: []string{"nvidia"}}
+	}
+	return store.Inputs{
+		Families: []catalog.Family{{Name: "F", Vendor: "nvidia", Architecture: "hopper", ComputeCapability: "9.0", DTypes: []string{"bf16"},
+			MemoryGB: 80, MemoryBandwidthGBs: 3350.5, TFLOPS: map[string]float64{"bf16": 989.4}, Interconnect: "nvlink",
+			InterconnectGBs: 900, Sources: []string{"https://example.com/f"}}},
+		NodeTypes: []catalog.NodeType{{ID: "aws/f.48xlarge", Family: "F", GPUs: 8, Source: "https://example.com/n"}},
+		Models: []catalog.ModelTemplate{{Slug: "m", Name: "M", Family: "llama", Description: "d", Task: "chat",
+			Capabilities: []string{"tools"}, ParamsB: 8.03, ParamsActiveB: 8.03, ReleaseDate: "2026-01-01", Home: "https://example.com/m",
+			Icon: "https://example.com/m.png", Aliases: []string{"mm"}, DefaultContext: 8192, ContextMax: 131072,
+			Quantizations: []catalog.Quantization{{Name: "fp8", Kind: "fp8", RequiresDType: "fp8", WeightsGB: 8.5,
+				Sources: []catalog.ModelSource{{Type: "huggingface", Repo: "org/m", Revision: "abc",
+					Files: []catalog.ModelFile{{Path: "model.safetensors", Size: 8_500_000_000, Digest: "sha256:aa"}}}}}},
+			Architecture: catalog.Architecture{Layers: 32, AttentionHeads: 32, KVHeads: 8, HeadDim: 128}, License: "apache-2.0", Gated: true,
+			Presets: []catalog.Preset{preset("unset", nil), preset("off", &off), preset("on", &on)}}},
+		Drafts: []catalog.DraftModel{{Slug: "d", Method: "eagle3", Targets: []string{"m"}, WeightsGB: 1.5, Backends: []string{"vllm"},
+			Source: catalog.ModelSource{Type: "huggingface", Repo: "org/d", Revision: "def",
+				Files: []catalog.ModelFile{{Path: "config.json", Size: 512, Digest: "git-oid:bb"}}}}},
+		Backends: []catalog.Backend{{Name: "vllm", Versions: []catalog.BackendVersion{{Version: "v2",
+			Images: map[string]string{"nvidia": "vllm:v2"}, Command: []string{"vllm", "serve", "{{model_path}}"}, HealthPath: "/health",
+			MinComputeCapability: "8.0", Quantizations: map[string]catalog.QuantSupport{"fp8": {NativeDType: "fp8", EmulatedFrom: "8.0"}},
+			Defaults: map[string]string{"gpu_memory_utilization": "0.9"},
+			Flags: catalog.FlagTable{Context: "--max-model-len", TensorParallel: "--tensor-parallel-size",
+				PipelineParallel: "--pipeline-parallel-size", KVCacheDType: "--kv-cache-dtype", KVCacheDTypes: map[string]string{"fp8": "fp8_e4m3"},
+				PrefixCachingOn: "--enable-prefix-caching", PrefixCachingOff: "--no-enable-prefix-caching", ToolParser: "--tool-call-parser",
+				ToolParserNeeds: []string{"--enable-auto-tool-choice"}, ToolParsers: map[string]string{"hermes": "hermes"},
+				ReasoningParser: "--reasoning-parser", ReasoningParsers: map[string]string{"deepseek_r1": "deepseek_r1"},
+				ChatTemplate: "--chat-template", ChatTemplates: map[string]map[string]string{"tools": {"nvidia": "/t.jinja"}},
+				Speculative: "json:--speculative-config", SpeculativeMethods: map[string]string{"eagle3": "eagle3"},
+				Disaggregation: "vllm", KVTransfers: map[string]string{"nixl": "NixlConnector"}, MultiNode: "vllm", SeparateValues: true}}}}},
+	}
+}
+
+// requireEveryField fails on a zero field anywhere in v, except the derived and
+// overlay-only fields and the paths in unset, so a field added to the core
+// types has to join the fixture.
+func requireEveryField(t *testing.T, path string, v reflect.Value, unset map[string]bool) {
+	t.Helper()
+	switch {
+	case unset[path]:
+		return
+	case v.IsZero():
+		t.Errorf("fixture leaves %s zero", path)
+		return
+	}
+	switch v.Kind() {
+	case reflect.Pointer:
+		if v.Elem().Kind() == reflect.Struct {
+			requireEveryField(t, path, v.Elem(), unset)
+		}
+	case reflect.Struct:
+		for i := range v.NumField() {
+			if name := v.Type().Field(i).Name; name != "KVBytesPerToken" && name != "Deployment" && name != "Extensions" {
+				requireEveryField(t, path+"."+name, v.Field(i), unset)
+			}
+		}
+	case reflect.Slice:
+		for i := range v.Len() {
+			requireEveryField(t, fmt.Sprintf("%s[%d]", path, i), v.Index(i), unset)
+		}
+	case reflect.Map:
+		for _, k := range v.MapKeys() {
+			requireEveryField(t, fmt.Sprintf("%s[%v]", path, k), v.MapIndex(k), unset)
+		}
+	}
+}
+
+// Every core field survives ReplaceLayer and Effective, in curated order, so
+// Generate over the effective catalog gives the file-generated digest; replacing
+// the layer with the same input changes no row.
 func TestReplaceLayerRoundTripsCommittedData(t *testing.T) {
 	s, db := newStore(t, "roundtrip")
-	in := committed(t)
+	in := committedWithEmptyLists(t)
 	first := startRun(t, db, model.LayerUpstream, model.SourceCuration)
 	if err := s.ReplaceLayer(ctx, model.LayerUpstream, first, in); err != nil {
 		t.Fatal(err)
 	}
-	sameCore(t, effective(t, s), in)
+	got := effective(t, s)
+	sameCore(t, got, in)
+	fromFiles, _, err := catalog.Generate(in.Families, in.NodeTypes, in.Models, in.Drafts, in.Backends)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromStore, _, err := catalog.Generate(got.Families, got.NodeTypes, got.Models, got.Drafts, got.Backends)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fromStore.Digest() != fromFiles.Digest() {
+		t.Errorf("snapshot digest from the store %s, from the files %s", fromStore.Digest(), fromFiles.Digest())
+	}
 
 	written := rowsOf(t, db, first)
 	second := startRun(t, db, model.LayerUpstream, model.SourceCuration)
-	if err := s.ReplaceLayer(ctx, model.LayerUpstream, second, committed(t)); err != nil {
+	if err := s.ReplaceLayer(ctx, model.LayerUpstream, second, committedWithEmptyLists(t)); err != nil {
 		t.Fatal(err)
 	}
 	if n := rowsOf(t, db, second); n != 0 {
@@ -153,6 +254,13 @@ func TestReplaceLayerRoundTripsCommittedData(t *testing.T) {
 		t.Errorf("first run holds %d rows after the re-import, want %d", n, written)
 	}
 	sameCore(t, effective(t, s), in)
+
+	every := everyField()
+	requireEveryField(t, "fixture", reflect.ValueOf(every), map[string]bool{"fixture.Models[0].Presets[0].PrefixCaching": true})
+	if err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, model.SourceCuration), every); err != nil {
+		t.Fatal(err)
+	}
+	sameCore(t, effective(t, s), every)
 }
 
 func TestEffectiveCatalogLayering(t *testing.T) {
