@@ -1,225 +1,140 @@
 # catalog-service
 
-The neocloud catalog service: a Postgres-backed store of the catalog's model
-templates, hardware facts and node types, the importers that fill it, the
-generator that derives fits, estimates, guidance and cost estimates from it,
-and the releases that publish the signed schema 4 export. neocloud-api,
-GPUStack, AI Runway and air-gapped installs keep consuming that export; none
-of them reads this database.
+Runs the catalog as a service for us and for operators. It imports from Hugging
+Face, Epoch AI and Azure prices with provenance per value, cross-checks against
+KAITO, generates fits and guidance, and publishes signed releases. An operator
+layers local changes over our release and re-publishes it under their own key.
 
-It is a nested Go module (`github.com/fishman/neocloud-catalog/service`) next
-to the stdlib-only core, which it shares the types, `Generate`, `Render`,
-`Merge`, `Validate` and the export encoding with.
+Consumers (neocloud-api, GPUStack, AI Runway) read the export, never this
+database. Nested module `github.com/fishman/neocloud-catalog/service`;
+it reuses the core's `Generate`, `Render`, `Merge` and `Validate`. Until the
+cutover, `data/*.json` stays the bootstrap input and CI releases from it.
 
-Until the cutover the committed `data/*.json` stays the bootstrap input and CI
-keeps releasing from those files (see the core README's Release section).
+## Layout
 
-## Architecture
+- `cmd/catalog-service` - `serve` plus one-shot commands.
+- `internal/model` - GORM models (schema authority); `migrations/` - Atlas migrations.
+- `internal/store` - layered reads/writes, the effective catalog.
+- `internal/importers/*`, `internal/jobs` - importers as River jobs on the `catalog` queue.
+- `internal/generator`, `internal/costs`, `internal/release`.
+- `internal/httpapi` (generated from `api/openapi.yaml`), `internal/auth`, `internal/server`.
+- `charts/catalog-service` - Helm chart; `Dockerfile` - image.
 
-```
-importers (bootstrap-from-json, epoch, huggingface, azure-prices, kaito, upstream)
-        |                                   /v1 curation API (operators)
-        v                                          |
-   Postgres  <------------------------------------+
-   (layers: upstream | local | overlay; provenance per value)
-        |
-   generator (fits, estimates, guidance, cost estimates) -> derived tables
-        |
-   release: signed schema 4 export (OCI artifact) + overlay + adapter exports
-```
+## Layers
 
-- `cmd/catalog-service` - the binary: `serve` plus one-shot commands.
-- `internal/model` - GORM models, the schema authority; `migrations/` -
-  versioned Atlas migrations generated from them.
-- `internal/store` - layered reads and writes, the effective catalog.
-- `internal/importers/*` - one package per importer; `internal/jobs` - River
-  jobs on the `catalog` queue for import and generator runs.
-- `internal/generator`, `internal/costs` - generator runs and cost estimates.
-- `internal/release` - releases: create, publish (OCI push, cosign signing),
-  adapter exports.
-- `internal/httpapi` (generated from `api/openapi.yaml`), `internal/auth`,
-  `internal/server` - the HTTP API, `/healthz`, `/readyz`, `/metrics`.
-- `charts/catalog-service` - the Helm chart; `Dockerfile` - its image.
+- `upstream` - importer output (ours) or our signed release (operator).
+- `local` - operator curation; replaces the upstream object with the same key
+  as a whole row, deleting it restores upstream.
+- `overlay` - extension payloads only.
 
-## Layers and provenance
-
-Every curated or imported row carries its `layer`, `source` (an importer name
-or `curation`), `source_url`, `as_of` and the import run that wrote it.
-Tables mixing sources (models, quantizations, families, node types, draft
-models) also carry `field_provenance`: per field, where its value came from.
-`GET /v1/catalog?provenance=true` returns both.
-
-- `upstream` - what the importers write. In our deployment the bootstrap,
-  Epoch and Hugging Face importers; in an operator deployment only our
-  release (read-only there).
-- `local` - operator curation through the API. A local object replaces the
-  upstream object with the same key as a whole row; deleting it restores the
-  upstream one. A local object takes the position of the upstream object it
-  overrides; local-only objects follow all upstream objects, ordered by their
-  own position and key, so upstream reorders never move them.
-- `overlay` - extension payloads only, never core fields (core `Merge` rules).
-
-An importer never overwrites a field whose provenance is curation; its run
-summary lists each curated value kept over a differing imported one under
-`conflicts` (curated and imported value), the whole-layer imports
-(`bootstrap-from-json`, `upstream`) included. The bootstrap run records its
-rows as `bootstrap-from-json`, not as curation, so later importers may correct
-them; curation enters only through curation writes (the local layer and the
-curated `families.overlay.json`).
+Rows carry `layer`, `source`, `source_url`, `as_of` and import run; mixed-source
+tables add per-field `field_provenance` (`GET /v1/catalog?provenance=true`).
+Importers never overwrite curated values; kept curated values are listed under
+`conflicts` in the run summary.
 
 ## Importers
 
-Each run is a job on the `catalog` queue and a row in `import_runs` with its
-status (`succeeded` may still list per-source errors), summary and changes.
-Importers are idempotent per input version: a second run over unchanged input
-changes nothing.
+Run with `catalog-service import <name>` or `POST /v1/imports`. Idempotent per
+input version.
 
 | Importer | Deployment | Writes |
 |---|---|---|
-| `bootstrap-from-json` | ours | the upstream layer from `bootstrap.data_dir` (`data/*.json`) |
-| `epoch` | ours | family hardware facts: Epoch AI's ML hardware data merged with `families.overlay.json` |
-| `huggingface` | ours | file manifests, weight sizes, parameter counts, architecture and context limits read at each source's pinned revision |
-| `azure-prices` | both | Azure Retail Prices (Linux on-demand, spot, 1-year reserved) of the `azure/` node types in `azure_prices.regions`; internal |
-| `kaito` | both | nothing: lists disagreements with KAITO's model catalog at its pinned release |
-| `upstream` | operator | our signed release into the upstream layer and, with `upstream.overlay_ref`, our signed overlay pinned to it into the overlay layer |
+| `bootstrap-from-json` | ours | upstream layer from `bootstrap.data_dir` |
+| `epoch` | ours | family hardware facts (Epoch AI + `families.overlay.json`) |
+| `huggingface` | ours | manifests, sizes, parameters, architecture, context at pinned revisions |
+| `azure-prices` | both | Azure prices of `azure/` node types in `azure_prices.regions` (internal) |
+| `kaito` | both | nothing; reports disagreements with KAITO's catalog |
+| `upstream` | operator | our signed release (and `upstream.overlay_ref` overlay); refuses older releases |
 
-- Hugging Face: gated repositories need a token in `huggingface.token_file`
-  (a mounted Secret, read at startup). Without one, gated sources are
-  reported as `gated: token missing`. The recorded config fixtures of the
-  gated Llama 3.1 8B and 70B and Gemma 2 9B repositories hold the Hub's 401;
-  with a token whose account accepted those licences, replace each
-  `testdata/hf/<repo>/<revision>/config.401.txt` by the `config.200.json`
-  the Hub returns.
-- Azure prices: a node type priced in none of the configured regions is an
-  error of the run and loses its upstream price rows; a price of 0 counts as
-  unpriced. The run fails only when Azure node types exist and none could be
-  priced; a catalog without `azure/` node types succeeds.
-- Upstream: verified as neocloud-api verifies a release (cosign bundle as an
-  OCI referrer, keyless identity or public key), and refused when older than
-  a release already imported.
+Gated Hugging Face repos need `huggingface.token_file`. The gated fixtures under
+`testdata/hf/<repo>/<revision>/` hold the Hub's 401 (`config.401.txt`); replace
+with `config.200.json` given a token that accepted the licences.
 
-Run one from the CLI (`catalog-service import <importer>`) or the API
-(`POST /v1/imports {"importer": "<name>"}`).
+## Generator, releases, prices
 
-## Generator and cost estimates
-
-A generator run (`catalog-service generate`, `POST /v1/generator-runs`) runs
-the core generation over the effective catalog and writes fits, estimates
-and guidance with the input import runs and an input digest. Cost estimates
-are computed in the same run per fit and guidance setup, cloud node type,
-region and billing type (instances needed, USD per hour, USD per month =
-hourly x 730), each with its price's source and `as_of`.
-
-## Prices and cost estimates are internal
-
-Prices and cost estimates are stored and served by this service only
-(`/v1/local/prices`, `/v1/cost-estimates`). No release, overlay or adapter
-export carries them: provider price terms do not clearly allow
-redistribution. They stay outside a generator run's input digest, so a price
-change never changes a release.
-
-## Releases
-
-- `release create <generator-run-id>` (`POST /v1/releases`) freezes a
-  succeeded generator run. Its version is the run's generation time
-  (`catalog.VersionLayout`), so it is always newer than any upstream release
-  it imported.
-- `release publish` (`POST /v1/releases/{version}/publish`) pushes the public
-  export (schema 4: no prices, cost estimates or extensions) to
-  `release.ref` as the signed catalog artifact, and with
-  `release.overlay_ref` the overlay re-pinned to the release digest. A
-  release is published once; publishing it again with identical content
-  changes nothing.
-- Releases are immutable: a database trigger refuses changes to a published
-  release's content and refs. Publishing is monotonic: a release older than
-  a published one is refused, so a tag never moves back.
-- Signing: the API signs with `release.key` (a cosign key pair; password in
-  `COSIGN_PASSWORD`), within `release.publish_timeout`. The CLI signs with
-  `-key <cosign.key>` or `-keyless` (cosign's keyless flow, for CI) and with
-  `-exports <dir>` also writes the adapter exports and a signed `SHA256SUMS`.
+- `generate` (`POST /v1/generator-runs`) derives fits, estimates, guidance and
+  cost estimates (USD/month = hourly x 730).
+- `release create <generator-run-id>` (`POST /v1/releases`) freezes a run; its
+  version is the run's generation time, so it is always newer than any imported
+  upstream release.
+- `release publish -ref <repo:tag> (-key <cosign.key> | -keyless) [-overlay-ref <repo:tag>] [-exports <dir>] <version>`
+  (`POST /v1/releases/{version}/publish`, signs with `release.key`) pushes the
+  signed export, optionally the re-pinned overlay and adapter exports with a
+  signed `SHA256SUMS`. Key password in `COSIGN_PASSWORD`.
+- Published releases are immutable (DB trigger) and monotonic (older than a
+  published one is refused).
+- Prices and cost estimates are internal: no release, overlay or export carries
+  them (provider terms), and they are outside the generator input digest.
 
 ## API
 
-`api/openapi.yaml` is the contract (`make generate`). Every `/v1` call needs a
-bearer token: an API key or, with `auth.issuer_url` set, an OIDC JWT from ICP
-whose `aud` contains `auth.audience`. Reads take any authenticated principal;
-writes take an API key or a JWT whose roles claim contains `admin`. When the
-auth backend fails the API answers 503 `auth_unavailable`, not 401.
-
-API keys are minted with the CLI, printed once and stored as their SHA-256:
+Contract: [`api/openapi.yaml`](api/openapi.yaml) (`make generate`). `/v1` needs a
+bearer token: an API key, or an OIDC JWT (`auth.issuer_url`, `aud` contains
+`auth.audience`). Writes need an API key or the `admin` role. Auth backend
+failure is 503 `auth_unavailable`.
 
 ```sh
-catalog-service auth issue -name ops -prefix ops [-expires 720h]
-# in a cluster:
-kubectl exec deploy/catalog-service -- /catalog-service auth issue -name ops
+catalog-service auth issue -name ops -prefix ops [-expires 720h]   # printed once, stored hashed
 ```
 
-Endpoints: `GET /v1/catalog` (effective catalog), `/v1/local/models/{slug}`
-and its `presets/{name}`, `/v1/local/node-types/{id}`, `/v1/local/prices`,
-`/v1/imports` and `/v1/imports/{id}`, `/v1/generator-runs` and
-`/v1/generator-runs/{id}`, `/v1/releases`, `/v1/releases/{version}/publish`,
-`/v1/cost-estimates`.
+| Path | Methods |
+|---|---|
+| `/v1/catalog` | GET |
+| `/v1/local/models/{slug}`, `.../presets/{name}` | GET PUT DELETE |
+| `/v1/local/node-types/{id}`, `/v1/local/prices` | GET PUT DELETE |
+| `/v1/imports` | GET POST |
+| `/v1/imports/{id}`, `/v1/generator-runs/{id}` | GET |
+| `/v1/generator-runs` | POST |
+| `/v1/releases` | GET POST |
+| `/v1/releases/{version}/publish` | POST |
+| `/v1/cost-estimates` | GET |
+
+Also `/healthz`, `/readyz`, and `/metrics` on `telemetry.metrics_addr`.
 
 ## Configuration
 
-Embedded defaults (`internal/config/defaults.toml`, which documents every
-key), then `$NEOCLOUD_CATALOG_CONFIG_DIR/*.toml` in lexical order, then
-`NEOCLOUD_CATALOG_<KEY>` env (`NEOCLOUD_CATALOG_DATABASE_DSN` ->
-`database.dsn`). Sections: `server`, `database`, `telemetry`, `bootstrap`,
-`huggingface`, `azure_prices`, `auth`, `jobs`, `release`, `upstream`.
+Embedded `internal/config/defaults.toml` (documents every key), then
+`$NEOCLOUD_CATALOG_CONFIG_DIR/*.toml` in lexical order, then
+`NEOCLOUD_CATALOG_<KEY>` env (`NEOCLOUD_CATALOG_DATABASE_DSN` -> `database.dsn`).
 
-`jobs.job_timeout` cancels a run on the catalog queue (runs are never
-retried); a run still running after `jobs.rescue_after` was left by a worker
-that exited and is failed. On SIGTERM `serve` gives running jobs
-`server.write_timeout` to finish, then cancels them and records them as
-failed.
+| Section | Keys |
+|---|---|
+| `server` | `addr`, `read_timeout`, `write_timeout` (also SIGTERM grace for running jobs) |
+| `database` | `dsn`, `max_conns` |
+| `telemetry` | `metrics_addr` |
+| `bootstrap` | `data_dir` |
+| `huggingface` | `token_file` |
+| `azure_prices` | `regions` |
+| `auth` | `issuer_url`, `audience` |
+| `jobs` | `job_timeout` (runs never retried), `rescue_after` (orphaned runs failed) |
+| `release` | `ref`, `key`, `overlay_ref`, `publish_timeout` |
+| `upstream` | `ref`, `identity_issuer`, `identity`, `public_key`, `overlay_ref`, `overlay_identity_issuer`, `overlay_identity`, `overlay_public_key`, `trusted_root`, `plain_http` |
 
-`import` and `generate` share the queue with `serve`'s worker: they work it
-until their own job finished, then until any job of another process they
-took finished (at most `jobs.job_timeout`), and never cancel such a job. A
-signal cancels only their own job; a second signal exits at once.
-
-## Schema
-
-The GORM models are the schema authority. `make migrate-diff NAME=<name>`
-writes the next versioned migration from them (Atlas, against a docker
-postgres:16 dev database). Production applies the versioned migrations with
-`atlas migrate apply` (`make migrate-apply`, or the chart's migrate Job);
-`make migrate` (GORM AutoMigrate plus the releases trigger) is for dev and
-tests only. `serve` migrates River's own tables at startup.
-
-## Run locally
+## Make targets
 
 ```sh
-make migrate                       # dev schema in database.dsn
-go run ./cmd/catalog-service import bootstrap-from-json
-go run ./cmd/catalog-service generate
+make migrate                 # dev only: GORM AutoMigrate + releases trigger
+make migrate-diff NAME=<n>   # next Atlas migration from the models (docker postgres:16)
+make migrate-apply           # production migrations (the chart's migrate Job does this)
 make serve
+make image                   # from repo root context: docker build -f service/Dockerfile .
+make test-unit               # DB tests skip
+make test-integration        # Postgres at TEST_DSN
+make chart-test              # helm template + lint; skipped without helm
+NEOCLOUD_CATALOG_LIVE=1 go test ./internal/importers/... -run TestLive
 ```
+
+Local run: `make migrate`, `go run ./cmd/catalog-service import bootstrap-from-json`,
+`go run ./cmd/catalog-service generate`, `make serve`.
 
 ## Deploy
 
-Build the image from the repository root (the module replaces `../` and
-`../adapters`): `make image`, or `docker build -f service/Dockerfile .`. It
-carries the binary, the curated `data/` and the migrations.
-
-The chart (`charts/catalog-service`, Kubernetes 1.36+) runs `serve` (the API
-and the catalog queue's workers) and a pre-install and pre-upgrade hook Job
-that applies the migrations with the pinned `arigaio/atlas` image, mounting
-the service image as an image volume, so the migrations always match the
-binary. `config` in the values is a TOML overlay with the keys of
-`defaults.toml`; the chart sets the listen addresses, `bootstrap.data_dir`
-and the paths of the files it mounts.
-
-Secrets are referenced, never values:
-
-| Values | Secret | Used for |
-|---|---|---|
-| `database.dsnSecretName`, `dsnSecretKey` | the Postgres DSN | service and migrate Job (env only) |
-| `signing.secretName` | `cosign.key`, `cosign.password` | `release.key`; required with `config.release.ref` |
-| `huggingface.tokenSecretName`, `tokenSecretKey` | Hugging Face token | `huggingface.token_file` (gated repositories); not mounted in an operator deployment |
-| `registryAuth.secretName` | `kubernetes.io/dockerconfigjson` | pushing releases, pulling a private upstream |
-| `imagePullSecrets` | `kubernetes.io/dockerconfigjson` | pulling the service image (Deployment and migrate Job); may name the `registryAuth` Secret |
+Chart `charts/catalog-service` (Kubernetes 1.36+) runs `serve` plus a
+pre-install/upgrade Job applying migrations from the service image. `config` in
+[values](charts/catalog-service/values.yaml) is a TOML overlay of
+`defaults.toml`. Secrets are referenced by name: `database.dsnSecretName`,
+`signing.secretName` (`cosign.key`, `cosign.password`), `huggingface.tokenSecretName`,
+`registryAuth.secretName`, `imagePullSecrets`.
 
 ```sh
 kubectl create secret generic catalog-service-db --from-literal=dsn='postgres://...'
@@ -230,17 +145,11 @@ helm install catalog-service charts/catalog-service \
   --set config.release.ref=<registry>/neocloud-catalog:v4
 ```
 
-`serviceMonitor.enabled` scrapes `/metrics` on the metrics port.
+### Operator mode
 
-### Operator deployment
-
-An operator runs the same chart with `config.upstream.ref` set. The deployment
-then registers only the `upstream`, `azure-prices` and `kaito` importers; the
-upstream layer is our release, replaced whole by each upstream import. The
-operator curates `local`, and publishes with its own key: its release (newer
-than ours by construction) and, with `config.release.overlay_ref`, our
-overlay re-pinned to its release digest, both signed with
-`signing.secretName`.
+Set `config.upstream.ref`: only `upstream`, `azure-prices` and `kaito` run, the
+upstream layer is our release, the operator curates `local` and publishes with
+its own key.
 
 ```yaml
 config:
@@ -260,26 +169,7 @@ registryAuth:
   secretName: operator-registry
 ```
 
-Air-gapped or private registries: `upstreamTrust.publicKey` and
-`overlayPublicKey` (PEM) trust a key instead of a keyless identity,
-`upstreamTrust.trustedRoot` (a Sigstore `trusted_root.json`) verifies keyless
-signatures without the public-good TUF repository, and
-`config.upstream.plain_http` talks HTTP to a registry mirror. The chart
-refuses `upstreamTrust` without `config.upstream.ref`.
-
-The operator's neocloud-api then trusts the operator's key:
-`catalog.ref` at the operator's release, `catalog.public_key` and
-`catalog.overlay_public_key` at its `cosign.pub`.
-
-## Test
-
-```sh
-make test-unit                     # no database: DB tests skip
-make test-integration              # Postgres at TEST_DSN; per-package databases, dropped after
-make chart-test                    # helm template and helm lint; skipped without helm
-NEOCLOUD_CATALOG_LIVE=1 go test ./internal/importers/... -run TestLive
-```
-
-The Epoch, Hugging Face, Azure prices and KAITO importers are tested against
-recordings under `testdata/`; each has one opt-in live test that checks the
-recordings still match the live source.
+Air-gapped: `upstreamTrust.publicKey`/`overlayPublicKey` (PEM),
+`upstreamTrust.trustedRoot`, `config.upstream.plain_http`. The operator's
+neocloud-api sets `catalog.ref`, `catalog.public_key` and
+`catalog.overlay_public_key` to the operator's release and `cosign.pub`.

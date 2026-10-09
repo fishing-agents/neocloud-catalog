@@ -1,299 +1,90 @@
 # neocloud-catalog
 
-A public, CNCF-donation-ready model-template catalog: curated model templates,
-the backends that serve them, structured deployable presets, the hardware facts
-of GPU device families, a closed vocabulary of node types, and a fit matrix of
-which families run each model, at which quantization and KV cache dtype, on how
-many GPUs and nodes, with what context, VRAM and estimated throughput, plus
-per-model deployment guidance. Consumers see a headless data artifact: a pure
-Go module and a signed OCI artifact whose whole value is the versioned,
-digest-pinned snapshot (schema 4). The catalog service in `service/` curates
-and imports the catalog in Postgres and can publish that snapshot (see Catalog
-service). neocloud ingests the snapshot; it does not curate models itself.
+For operators and serving platforms: one curated, validated model catalog -
+models, quantizations, serving presets per backend and GPU vendor, a fit matrix
+of what runs on which GPU family and node count, and sources pinned to a
+revision with file manifests. It ships as a signed, versioned snapshot and
+exports directly to GPUStack and AI Runway, so choosing hardware and flags for a
+model needs no guesswork.
 
-## What is here
+Delivered as a stdlib-only Go module and a cosign-signed OCI artifact (schema
+4). The catalog service in [`service/`](service/README.md) curates and imports
+it; neocloud only ingests the snapshot.
 
-- `catalog.go` - the pure catalog core. Stdlib only: no GORM, tenancy, or HTTP.
-  Types: `Family` (vendor, architecture, compute capability or gfx target,
-  native dtypes, memory, bandwidth, interconnect, source URLs), `NodeType`,
-  `ModelTemplate` (metadata, weights and sources per quantization with its kind
-  and required dtype, architecture, derived KV bytes/token, context limits,
-  license, gated, presets, deployment guidance), `ModelSource` (huggingface,
-  modelscope, oci or local; pinned revision; optional `files` manifest of
-  `ModelFile` path, size and `sha256:` or `git-oid:` digest), `Preset`,
-  `DraftModel`, `Backend` and `BackendVersion` (image per vendor, command
-  template, health path, quantization kinds, flag table), `ModelFit` (model x
-  family x quantization x KV cache dtype -> native or emulated, GPU count,
-  nodes, max context, VRAM, estimate), `CatalogSnapshot`, `VRAMRequired`
-  (weights + KV for any context), `Fit`, `Digest` (sha256 of the snapshot
-  content, the pin clients use).
-- `artifact.go` - the published OCI artifact contract (`ArtifactType`,
-  `OverlayArtifactType`, `VersionAnnotation`) and `ParseVersion`, the order
-  clients refresh by.
-- `extension.go` - the extension API (`Extension`, `RegisterExtension`,
-  `RunExtensions`) and the overlay `Merge`; see Extensions and overlays.
-- `nodetype.go` - `NodeTypeVocabulary` and `FallbackNodeType`; see Node types.
-- `render.go` - `Render`/`RenderRole` turn a structured preset into the engine
-  arguments through its backend version's flag table (multi-node arguments carry
-  `{{master_addr}}` and `{{master_port}}` for the caller to fill).
-- `data/` - the curated sources. `models.json` holds each model's metadata
-  (description, task, capabilities, active parameters, release date, model
-  card, aliases), published architecture (from its config), checkpoint kind,
-  size and sources per quantization, license, gated flag and presets;
-  `draft_models.json` the speculative-decoding drafts with their targets and
-  the backends that load them; `backends.json` the inference servers (vLLM,
-  SGLang, llama.cpp) with a pinned image per vendor, command templates
-  (`{{model_path}}`, `{{model}}`, `{{port}}`), the quantization kinds they run
-  and their flag tables; `families.json` the per-family hardware facts and
-  `families.overlay.json` their curated part (see Regenerate);
-  `node_types.json` the cloud instances of the node-type vocabulary.
-- `generate.go` - the outsourced generation. `Generate` validates the input
-  (`CatalogSnapshot.Validate`: every source has a known type and repo, and
-  huggingface, modelscope and oci sources a pinned revision; drafts are pinned
-  huggingface or modelscope repos; a model's `task` is one of `chat`,
-  `completion`, `embedding`, `rerank`, `vision-chat` and its `capabilities`
-  among `tools`, `reasoning`, `vision`, `long-context`, `json-schema`; every
-  preset has a `purpose` (see Presets) and names a quantization of its model
-  whose kind its backend version runs - natively in the quantization's
-  `requires_dtype`, when set - an existing backend version and a draft for its
-  backend, model and method that fits next to the model, stays within the
-  model's context, spans at least two nodes when multi-node, and renders on its
-  backend version for at least one vendor; preset names are unique per model;
-  no two fits share a fit key), derives the fit matrix and deployment
-  guidance, then runs the registered extensions.
-  KV bytes/token = 2 x layers x KV heads x head dim x 2 bytes (half for an fp8
-  KV cache). A fit exists for a model, quantization, KV cache dtype, family and
-  node count only where some preset with them runs there: its backend version
-  has an image for the family's vendor, the family meets its minimum compute
-  capability (NVIDIA only), and the quantization kind runs `native` (its dtype
-  is native to the family) or `emulated` (NVIDIA from a compute capability).
-  The fit is the smallest layout such a preset needs - tensor-parallel GPU
-  counts (1/2/4/8, dividing the attention heads), each side of a disaggregated
-  one, and for a multi-node preset its `nodes` whole nodes of the family's
-  largest node type (cloud or fallback), tensor parallel within a node and
-  pipeline parallel across nodes - whose budget (90% of GPU memory, a
-  conservative budget below vLLM's 0.92 default) holds the weights plus the
-  preset's context; max context is what the rest holds, capped at the model's
-  ceiling. A preset whose quantization fits families its backend runs on none
-  of, or an unparsable NVIDIA compute capability, fails generation. Each
-  model's `deployment` names, among its single-node float and fp8 fits serving
-  one sequence at 20 tokens/s, the minimum (least GPU memory) and optimal
-  (highest aggregate per GPU at 20 tokens/s per sequence) with example node
-  types; models without a minimum and presets whose quantization fits no
-  family are reported.
-- `estimate.go` - `Estimate`, the per-fit performance estimate: a
-  memory-bandwidth roofline where each decode step reads the active weights
-  once and every concurrent sequence's KV cache; concurrency is the most
-  sequences memory holds that each still decode 20 tokens/s. Its constants are
-  documented in one place: `BandwidthEfficiency` 0.8 of peak bandwidth,
-  tensor-parallel efficiency 0.85 (2 GPUs) and 0.75 (4 or more),
-  `CrossNodeEfficiency` 0.85 per pipeline stage boundary of a multi-node fit,
-  `EstimateMemoryUtilization` 0.92 of memory for weights and KV, and
-  `DecentDecodeTokensPerSec` 20.
-- `snapshots/v4/catalog.json` - the committed, generated snapshot the module
-  embeds (schema 4.1.0). `SnapshotV4()` returns it.
-- `cmd/catalog-generate` - the pipeline CLI: reads `data/` and writes the
-  snapshot.
-- `service/internal/importers/epoch` (catalog service module) - imports the
-  family hardware facts: Epoch AI's ML hardware data (vendor, memory,
-  bandwidth, dense tensor TFLOPS, NVLink-class bandwidth) merged with
-  `data/families.overlay.json` (the SKU each family name stands for, its Epoch
-  row, architecture, compute capability or gfx target, native dtypes,
-  interconnect, and Epoch gaps or corrections), every value with its source
-  URL. The core holds no network code; this importer replaces the removed
-  `cmd/families-import`.
-- `runrecord/` - the run-record contract: one serving configuration observed
-  over one window with its outcome (Go types, `schema/run-record.v1.json`,
-  strict `Decode`, `Validate`, the launch-flag allowlist `FilterArgs`).
-- `adapters/` - a nested module (own `go.mod`, so the core stays stdlib only):
-  the adapter contract and registry, one adapter per serving platform
-  (`gpustack/`, `airunway/`), and `cmd/catalog-export`.
-- `.github/workflows/release.yml` - publishes and signs the snapshot and the
-  platform exports on a tag.
-- `service/` - the catalog service, a nested module with its own Postgres:
-  importers, generator, releases, the operator API and its Helm chart; see
-  Catalog service and `service/README.md`.
+## Layout
 
-## Catalog service
-
-The service (`service/`, details in `service/README.md`) keeps the catalog in
-Postgres and runs everything that needs dependencies. The core stays the
-shared, stdlib-only contract: the service generates and validates with the
-same `Generate`, `Render`, `Merge` and `Validate`.
-
-- Layers: `upstream` (what the importers write), `local` (operator curation
-  through the API, replacing the upstream object of the same key as a whole)
-  and `overlay` (extension payloads only). Every row records its source,
-  source URL, `as_of` and import run; mixed-source tables record it per
-  field. Importers never overwrite curated values.
-- Importers: `bootstrap-from-json` (`data/*.json`), `epoch` (hardware facts),
-  `huggingface` (manifests, sizes, parameters, architecture and context at
-  pinned revisions; gated repositories need a token), `azure-prices`
-  (internal) and `kaito` (cross-check, writes nothing). An operator
-  deployment imports our signed release and overlay with `upstream` instead
-  of the first three.
-- Generator runs derive fits, estimates, guidance and cost estimates from the
-  effective catalog.
-- Releases freeze a generator run at its generation time, so an operator's
-  release is always newer than ours. They are immutable once published, and
-  a release older than a published one is refused. The public export is the
-  schema 4 snapshot below; an operator re-publishes our overlay re-pinned to
-  its own release, signed with its own key.
-- Prices and cost estimates are internal: the service stores and serves them,
-  no release or export carries them.
-
-Until the cutover `data/*.json` stays the bootstrap input and CI keeps
-releasing from these files (see Release).
+- `catalog.go` - core types (`Family`, `NodeType`, `ModelTemplate`,
+  `ModelSource`, `Preset`, `Backend`, `ModelFit`, `CatalogSnapshot`), `Fit`,
+  `VRAMRequired`, `Digest`.
+- `artifact.go` - OCI artifact contract and `ParseVersion`.
+- `extension.go` - `Extension`, `RegisterExtension`, overlay `Merge`.
+- `nodetype.go` - `NodeTypeVocabulary`, `FallbackNodeType`.
+- `render.go` - `Render`/`RenderRole`: preset -> engine argv via the backend
+  version's flag table.
+- `generate.go` - `Generate`: validate `data/`, derive fits and guidance, run
+  extensions.
+- `estimate.go` - `Estimate`: memory-bandwidth roofline; tuning constants live here.
+- `data/` - curated sources: `models.json`, `draft_models.json`, `backends.json`,
+  `families.json` + `families.overlay.json`, `node_types.json`.
+- `snapshots/v4/catalog.json` - generated, embedded snapshot (`SnapshotV4()`).
+- `cmd/catalog-generate` - `data/` -> snapshot.
+- `runrecord/` - run-record contract (`schema/run-record.v1.json`).
+- `adapters/` - nested module: platform adapters and `cmd/catalog-export`.
+- `service/` - nested module: catalog service and Helm chart.
+- `.github/workflows/release.yml` - publishes and signs on tag.
 
 ## Snapshot contract
 
-The snapshot is the sellable/embeddable artifact. `SchemaVersion` is the wire
-format (bump the major on a breaking shape change; clients gate on the major).
-4.1.0 replaced the never-published 4.0.0's file lists with file manifests and
-its chat template paths with paths per image vendor. `Version` changes when the
-content changes; `Digest` is the content hash clients pin and the ETag for
-conditional gets. The `/v1/model-catalog` endpoint in neocloud serves the same
-shape and semantics.
+- `SchemaVersion` is the wire format; clients gate on the major (4).
+- `Version` changes with content; `Digest` is the content hash clients pin
+  (and the ETag of neocloud's `/v1/model-catalog`).
+- Published as a single-layer OCI artifact
+  `application/vnd.neocloud.catalog.v4+json`, version in the
+  `org.opencontainers.image.version` annotation, cosign-signed. Clients verify
+  the Sigstore bundle (OCI referrer) against the manifest digest and publisher
+  identity, refuse non-newer versions and keep the last good snapshot on any
+  failure.
+- Schema 3 is no longer published; the `v3` tag serves its last release. Point
+  `catalog.ref` at `:v4`.
 
-Upstream refresh: the snapshot is published as a single-layer OCI artifact
-(`application/vnd.neocloud.catalog.v4+json`, version in the
-`org.opencontainers.image.version` manifest annotation), signed with cosign. A
-client resolves the reference to a manifest digest, verifies the Sigstore bundle
-attached as an OCI referrer against that digest and the publisher's identity,
-refuses a version not newer than the one in use, pulls the layer, and accepts
-the snapshot only if its version matches the annotation and its schema major is
-4. Anything else keeps the last good snapshot.
+Field semantics: see the types in `catalog.go`. Key rules:
 
-Schema 4 replaced schema 3 in one cutover; schema 3 is not published any more.
-The moving `v3` tag keeps serving the last schema 3 release, which a schema 4
-client refuses while it keeps its last good catalog: repoint `catalog.ref` to
-`:v4`.
-
-### Presets
-
-A preset states intent in engine-neutral fields: `purpose` (`standard`,
-`throughput`, `latency`, `long-context`), `context`, `tensor_parallel` (0 = from
-the fit), `kv_cache_dtype` (`auto`, `fp8`), `prefix_caching`, `tool_parser`,
-`reasoning_parser`, `chat_template`, `speculative`, `topology`, `env` (no
-secrets), `min_backend_version`, `extra_args` (verbatim escape hatch) and
-`vendors`. Each backend version's flag table maps the fields and the neutral
-parser, template, KV dtype, speculative method and KV transfer names to its own
-flags; a chat template maps to a path per image vendor, since each vendor's
-image lays out its files differently. `Render` produces the argv for one
-vendor's image, so adapters do not translate by hand. Validate renders every
-preset once per vendor it runs on.
-
-- Speculative decoding: `speculative` names the method, the token count and,
-  when the method needs one, a draft from `draft_models`. Only `eagle` and
-  `eagle3` are mapped today, the methods verified against the pinned engine
-  sources; other methods (`mtp`, `ngram`, `draft-model`) fail generation until
-  a flag table maps them (vLLM's `ngram` needs prompt lookup bounds a preset
-  cannot state). Validate checks that the draft's weights fit next to the
-  model's on the GPUs of every fit the preset deploys on, but a fit's
-  `vram_required_gb` does not include them.
-- Topology: `single` (default), `multi-node` (`nodes` and `pipeline`, the
-  pipeline-parallel stages across them, default one per node) or
-  `disaggregated` (`prefill_gpus`, `decode_gpus`, KV `transfer` `nixl` or
-  `mooncake`). Fits carry the node count; a fit key
-  (`<slug>/<family>/<profile|->/<quantization>/<kv dtype>`) ends in
-  `/<n>-node` for a fit across n > 1 nodes.
-- llama.cpp: the `llamacpp` backend runs `gguf` quantizations (e.g. `Q4_K_M`)
-  whose source names the file in `files`, from pinned llama-server images for
-  nvidia, amd and cpu.
-
-### Hardware facts
-
-`families` carry vendor, architecture, compute capability (NVIDIA) or gfx
-target (AMD), native dtypes, memory, memory bandwidth and interconnect. Memory,
-bandwidth and tensor throughput come from Epoch AI's ML hardware data (CC BY
-4.0, see `NOTICE`); compute capability from developer.nvidia.com/cuda/gpus;
-gfx target and native dtypes from rocm.docs.amd.com. Every value carries its
-source URL. A fit is `native` when the quantization's dtype is native to the
-family and `emulated` when the backend version runs it weight-only from a
-compute capability (FP8 on A100 and A10G).
-
-### Node types
-
-`node_types` is a closed vocabulary of the systems models run on: cloud
-instances by `<provider>/<instance type>` (e.g. `aws/p5.48xlarge`) with only
-their GPU family and count, plus generated fallbacks `other/<family>x<gpus>`
-for 1, 2, 4 and 8 GPUs of every family. A system that is no listed instance is
-reported as its fallback, never as free text. Deployment guidance names
-example node types.
-
-### Deployment guidance
-
-Each model's `deployment` holds a `minimum` (the least GPU memory serving one
-sequence at `DecentDecodeTokensPerSec`, 20 tokens/s, at the preset's context)
-and an `optimal` setup (the highest aggregate output tokens/s per GPU while each
-sequence keeps 20 tokens/s): family, GPUs, nodes, quantization, preset,
-context, example node types and the fits it derives from. Only single-node
-float and fp8 fits drive guidance; every fit carries its own `performance`
-estimate.
-Recommendations are estimates (`source` and `confidence` `estimate`) until
-observed aggregates exist.
-
-### Extensions and overlays
-
-`Family`, `ModelTemplate`, `Preset`, `ModelFit` and `BackendVersion` carry
-`extensions`: payloads keyed by a namespace (e.g. `neocloud.io/interruption`)
-that the core preserves and the digest covers but never interprets. The public
-snapshot has none. Private features register an `Extension`; generation fails
-when one writes outside its namespace. Their payloads ship as an `Overlay` (an
-OCI artifact of type `application/vnd.neocloud.catalog-overlay.v4+json`, signed
-by its own identity) pinned to the public snapshot digest. `Merge` adds the
-payloads and refuses another digest, an unknown id or a namespace already
-present. `Validate` checks only registered namespaces and ignores the rest. A
-merged snapshot is identified by the public digest plus the overlay digest,
-never by a merged digest.
+- Presets are engine-neutral (`purpose`, `context`, `kv_cache_dtype`,
+  `speculative`, `topology`, ...); each backend version's flag table maps them.
+  Speculative methods mapped today: `eagle`, `eagle3`. Topologies: `single`,
+  `multi-node` (fit keys end in `/<n>-node`), `disaggregated` (`nixl`,
+  `mooncake`).
+- A fit is `native` when the quantization dtype is native to the family,
+  `emulated` when the backend runs it weight-only from a compute capability.
+  VRAM budget is 90% of GPU memory.
+- `deployment` per model: `minimum` (least GPU memory at 20 tokens/s) and
+  `optimal` (highest per-GPU throughput at 20 tokens/s per sequence), from
+  single-node float/fp8 fits. Estimates only.
+- Node types: `<provider>/<instance>` plus fallbacks `other/<family>x<gpus>`.
+- Extensions: namespaced payloads the core preserves but never interprets; the
+  public snapshot has none. Private payloads ship as an overlay
+  (`application/vnd.neocloud.catalog-overlay.v4+json`) pinned to the public
+  digest.
 
 ## Platform adapters
 
-An adapter fits the catalog to one serving platform using settings the
-platform already has. It declares what the platform can express
-(`Capabilities`), exports the snapshot in the platform's formats, and lists
-every preset it cannot express with a documented reason: `adapters.Coverage`
-fails an export where a preset is neither exported nor skipped. vLLM and SGLang
-presets are equally first-class. Adding a platform is adding a package that
+Each adapter exports presets in a platform's formats and must list every preset
+it skips with a reason (`adapters.Coverage`). Add a platform by a package that
 calls `adapters.Register` from `init`.
 
 ```sh
-cd adapters && go run ./cmd/catalog-export -out ../dist   # every adapter and format
-go run ./cmd/catalog-export -adapter gpustack -out ../dist
+cd adapters && go run ./cmd/catalog-export -out ../dist   # all adapters
+go run ./cmd/catalog-export -adapter gpustack -out ../dist  # flags: -format -snapshot -reference-family (default H100)
 ```
 
-Adapters render every preset through `Render` (its flag table) and add only
-what the platform owns. Platforms without a fit matrix get the GPU count of
-the `-reference-family` fit (default `H100`), else of the best fit on a vendor
-the preset has an image for: native before emulated, then the fewest GPUs.
-Export extensions registered next to a catalog extension
-(`adapters.RegisterExportExtension`) render its payloads into their adapter's
-formats after the adapter; they may change the files but not which presets are
-exported. Public builds register none.
+| Format | Use with |
+|---|---|
+| `gpustack` (`model-catalog.yaml`) | GPUStack `--model-catalog-file <url>` |
+| `airunway-recipes` | AI Runway `VLLM_RECIPES_BASE_URL=<base>` (vLLM only) |
+| `airunway-deployments` | `kubectl apply -f deployments/...` or `POST /api/deployments` (NVIDIA only) |
 
-| Format | Use it with | Notes |
-|---|---|---|
-| `gpustack` (`model-catalog.yaml`) | GPUStack `--model-catalog-file <url>` or an admin catalog source | One spec per preset and GPU vendor (each vendor has its own image), `mode` = preset name (GPUStack shows one spec per mode and picks the first whose `gpu_filters` match). NVIDIA specs carry `gpu_filters.compute_capability`: the backend version's `emulated_from` where it emulates the quantization (FP8: `>=7.5` vLLM, `>=8.0` SGLang), else the lowest family with its native dtype (native FP8 `>=8.9`, bf16 `>=8.0`). The pinned image goes in `image_name`, not `backend_version` (GPUStack refuses both, and its bundled runners predate our versions). No GPU count: GPUStack's scheduler sizes it. llama.cpp runs as `backend: Custom` (GPUStack has no llama.cpp backend): `run_command` holds llama-server's arguments, the GGUF file `huggingface_filename`. vLLM specs come last per repo, plain ones after speculative ones (GPUStack takes a repo's defaults from its last spec). Skipped: `topology GPUStack catalog cannot express` (multi-node, which GPUStack's scheduler decides; disaggregated, as GPUStack's prefill/decode roles are not mapped yet), `backend GPUStack cannot run`, `no Hugging Face or ModelScope source` (also a gguf source of several files; other manifests list the revision's files, which GPUStack downloads whole). Lost: source revision (no field), fit matrix, the CPU llama.cpp image (GPUStack matches specs by GPU vendor). |
-| `airunway-recipes` | AI Runway `VLLM_RECIPES_BASE_URL=<base>` | vLLM presets only. One recipe per Hugging Face repo; further vLLM presets are derived recipes (`meta.derived_from`). The NVIDIA image and families only (see deployments). Skipped: `recipes resolver is vLLM only` (SGLang, llama.cpp), `recipes resolve to one Direct vLLM server` (multi-node, disaggregated), `one recipe per Hugging Face repo`, `recipes need a Hugging Face org/model repo`, `no whole-GPU fit to size the GPU count`. |
-| `airunway-deployments` | `kubectl apply -f deployments/...` or `POST /api/deployments` with `api/...` | vLLM and SGLang presets on NVIDIA GPUs (AI Runway's API requests `nvidia.com/gpu`). SGLang runs only on AI Runway's Dynamo provider, on Dynamo's sglang-runtime image (the pinned SGLang image is not used); manifests carry `neocloud.io/required-provider`. A disaggregated SGLang preset uses `serving.mode: disaggregated` with `scaling.prefill`/`decode` GPU counts; Dynamo adds each worker's role. Gated models use AI Runway's `hf-token-secret`. Skipped: `KAITO runs llama.cpp only as an AIKit runner` (its template passes no context or engine flags to the pinned llama-server), `AI Runway has no multi-node deployments`, `topology needs Dynamo disaggregated mode` (vLLM, or roles needing different engine args), `backend AI Runway cannot run`, `ModelDeployment source is huggingface or custom only`, `no whole-GPU fit to size the GPU count`. Lost: source revision, ModelScope-only models, AMD. |
-
-Model metadata: a GPUStack model set carries `name`, `description`, `home`
-(the model's, else its first source's page), `size` (`params_b`),
-`activated_size` (`params_active_b` of a mixture of experts), `categories`
-(`task`: chat, completion and vision-chat `llm`, embedding `embedding`, rerank
-`reranker`), `capabilities` (`context/<context_max>K`, which stands for
-`long-context`, then `tools`, `reasoning`, `vision`), `licenses` and
-`release_date`. Lost there: `json-schema` (GPUStack names no such capability),
-`icon` (a neocloud asset path GPUStack cannot serve), `family`, `aliases`,
-`gated`. AI Runway reads only a recipe's `hf_id`, `title` (the model name) and
-`provider` (the repo's org), and no metadata from a ModelDeployment; recipes
-also carry `model.parameter_count` and `model.context_length` (the
-recipes.vllm.ai layout), unread. Every other metadata field is lost in both AI
-Runway formats.
-
-A release publishes the exports with a cosign-signed `SHA256SUMS`
-(`SHA256SUMS.sigstore.json`) as release assets and on GitHub Pages, which serves
-the recipes tree. Neither platform verifies signatures itself; check by hand:
+Releases attach the exports with a cosign-signed `SHA256SUMS` and serve the
+recipes tree on GitHub Pages (enable Pages with source GitHub Actions once).
 
 ```sh
 cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
@@ -302,60 +93,35 @@ cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
 sha256sum -c SHA256SUMS
 ```
 
-GitHub Pages must be enabled once in the repository settings (source: GitHub
-Actions) before the first release.
+## Curate and regenerate
 
-## Curate
-
-Sources pin the exact content: `revision` is the commit sha, never a branch.
+Pin `revision` to a commit sha, never a branch; pin backend images to release
+tags you have pulled.
 
 ```sh
 curl -s https://huggingface.co/api/models/<org>/<repo> | jq -r .sha
 git ls-remote https://www.modelscope.cn/<org>/<repo>.git HEAD
 ```
 
-Backend images are pinned release tags per vendor (`vllm/vllm-openai:vX.Y.Z`,
-`lmsysorg/sglang:vX.Y.Z`, `ghcr.io/ggml-org/llama.cpp:server[-<variant>]-bNNNN`);
-pull a tag successfully before committing it. Every hardware value and node type
-carries its source URL. `gated` is true when a source needs an authenticated,
-licence-accepted account.
-
-## Regenerate
-
-Hardware facts come from Epoch's CSV plus the overlay, imported by the catalog
-service, from `service/`:
-
-```sh
-go run ./cmd/catalog-service import epoch
-```
-
-Until the cutover `data/families.json` stays the bootstrap and file-release
-input: edit it together with `data/families.overlay.json`. From `service/`,
+Hardware facts: edit `data/families.json` with `data/families.overlay.json`;
+from `service/`, `go run ./cmd/catalog-service import epoch` imports them and
 `NEOCLOUD_CATALOG_LIVE=1 go test ./internal/importers/epoch -run TestLive`
-fails until both agree with Epoch's live data.
+checks them against Epoch.
 
-After editing `data/`, from the module root:
+After editing `data/`, from the repo root:
 
 ```sh
-go run ./cmd/catalog-generate
+go run ./cmd/catalog-generate   # validates, rewrites snapshots/v4/catalog.json, prints digest
 ```
 
-This validates `data/`, rewrites `snapshots/v4/catalog.json`, lists the models
-without a minimum setup and prints the digest. Unchanged content keeps the
-committed version and digest. Commit the snapshot; the module's embedded
-snapshot is picked up at build.
+Commit the snapshot; unchanged content keeps version and digest.
 
 ## Release
 
-Push a `v*` tag on a commit whose committed snapshot is current. The release
-workflow checks that regenerating reproduces the snapshot, pushes it to
-`ghcr.io/fishing-agents/neocloud-catalog` under the git tag and the moving `v4`
-tag, and signs the manifest with cosign keyless. There is no signing key: the
-signature binds the digest to the workflow identity
-`https://github.com/fishing-agents/neocloud-catalog/.github/workflows/release.yml@refs/tags/<tag>`,
-recorded in the public Rekor log.
-
-neocloud trusts it with:
+Push a `v*` tag on a commit with a current snapshot. The workflow checks the
+snapshot reproduces, pushes it to `ghcr.io/fishing-agents/neocloud-catalog`
+under the tag and `v4`, and signs keyless (identity: the release workflow at
+the tag, logged in Rekor). neocloud trusts it with:
 
 ```toml
 [catalog]
@@ -364,8 +130,8 @@ identity_issuer = "https://token.actions.githubusercontent.com"
 identity = '^https://github\.com/fishing-agents/neocloud-catalog/\.github/workflows/release\.yml@refs/tags/v.*$'
 ```
 
-Pin the identity to this exact workflow file: an org-wide pattern would trust
-any workflow in any repository of the org. Check a release by hand:
+Pin the identity to this workflow file; an org-wide pattern trusts any workflow
+in the org.
 
 ```sh
 cosign verify ghcr.io/fishing-agents/neocloud-catalog:v4 \
@@ -377,17 +143,12 @@ cosign verify ghcr.io/fishing-agents/neocloud-catalog:v4 \
 
 ```sh
 go test ./... && (cd adapters && go test ./...)
+cd adapters && go test ./gpustack ./airunway -update   # regenerate goldens, review diff
 ```
 
-Pure unit tests; no database. One test regenerates `data/` and fails when the
-committed snapshot is stale. Adapter exports are compared with golden files under
-`adapters/<platform>/testdata/`; after a deliberate change, regenerate them with
-`cd adapters && go test ./gpustack ./airunway -update` and review the diff.
+A test fails when the committed snapshot is stale.
 
 ## License
 
-Apache-2.0. Isolated and dependency-free so it can lift out for donation.
-
-`data/families.json` contains hardware figures from Epoch AI, "Data on Machine
-Learning Hardware" (https://epoch.ai/data/machine-learning-hardware), licensed
-under CC BY 4.0; see `NOTICE`.
+Apache-2.0. `data/families.json` contains Epoch AI hardware data
+(https://epoch.ai/data/machine-learning-hardware), CC BY 4.0; see `NOTICE`.
