@@ -115,7 +115,7 @@ func seed(t *testing.T, s *store.Store, source string, in store.Inputs) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, run.ID, in); err != nil {
+	if _, _, err := s.ReplaceLayer(ctx, model.LayerUpstream, run.ID, in); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.FinishImport(ctx, run.ID, "v1", nil, nil); err != nil {

@@ -46,8 +46,8 @@ func (i *Importer) Run(ctx context.Context, s *store.Store, run uuid.UUID) (impo
 	if err != nil {
 		return importers.Summary{}, err
 	}
-	changes, err := s.ReplaceLayer(ctx, model.LayerUpstream, run, in)
-	return importers.Summary{InputVersion: version, Changes: changes}, err
+	changes, conflicts, err := s.ReplaceLayer(ctx, model.LayerUpstream, run, in)
+	return importers.Summary{InputVersion: version, Changes: changes, Conflicts: conflicts}, err
 }
 
 // Load reads the curated files of dir and their version, the sha256 over

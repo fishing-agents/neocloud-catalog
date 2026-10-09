@@ -127,6 +127,47 @@ func TestImporterIdempotent(t *testing.T) {
 	}
 }
 
+// A family value the overlay curated survives a bootstrap run whose data
+// differs, and the run's summary lists the disagreement (R12).
+func TestKeptCurationIsListed(t *testing.T) {
+	s, _ := newStore(t, "bootstrap_curated")
+	imp, err := bootstrap.New(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := importers.Execute(ctx, s, imp, uuid.New()); err != nil {
+		t.Fatal(err)
+	}
+	epoch, err := s.StartImport(ctx, uuid.New(), "epoch", model.LayerUpstream, "epoch", "https://epoch.ai/data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.Patch(ctx, epoch.ID, store.Patch{CurationURL: "file:///data/families.overlay.json", Values: []store.Values{
+		{Kind: store.KindFamily, Key: "H100", Columns: map[string]any{"memory_gb": 81.0}, Curated: []string{"memory_gb"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.FinishImport(ctx, epoch.ID, "v1", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	run, err := importers.Execute(ctx, s, imp, uuid.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []store.Conflict{{Kind: store.KindFamily, Key: "H100", Field: "memory_gb", Curated: 81.0, Imported: 80.0}}
+	if sum := summaryOf(t, run); !reflect.DeepEqual(sum.Conflicts, want) || len(sum.Changes) != 0 {
+		t.Errorf("summary %+v, want no changes and conflicts %+v", sum, want)
+	}
+	in, err := s.Effective(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range in.Families {
+		if f.Name == "H100" && f.MemoryGB != 81 {
+			t.Errorf("H100 memory_gb %v after the bootstrap, want the curated 81", f.MemoryGB)
+		}
+	}
+}
+
 // A run that fails is recorded as failed with its error.
 func TestFailedImportIsRecorded(t *testing.T) {
 	s, db := newStore(t, "bootstrap_fail")

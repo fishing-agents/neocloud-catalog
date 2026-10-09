@@ -143,13 +143,16 @@ type Changes map[string]Change
 // time; per column too, except that an unchanged value keeps its provenance
 // and an importer run (source other than curation) keeps a curated value
 // (R12). The overlay layer takes only in.Extensions, whose ids must exist in
-// the effective catalog; the other layers take no payloads.
-func (s *Store) ReplaceLayer(ctx context.Context, layer string, run uuid.UUID, in Inputs) (Changes, error) {
+// the effective catalog; the other layers take no payloads. It returns the
+// changes and, as Patch does, the kept curated values that differ from the
+// run's.
+func (s *Store) ReplaceLayer(ctx context.Context, layer string, run uuid.UUID, in Inputs) (Changes, []Conflict, error) {
 	want, err := toRows(layer, in)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var changes Changes
+	var conflicts []Conflict
 	err = s.write(ctx, func(tx *gorm.DB) error {
 		r, err := runningRun(tx, run, layer)
 		if err != nil {
@@ -160,13 +163,13 @@ func (s *Store) ReplaceLayer(ctx context.Context, layer string, run uuid.UUID, i
 				return err
 			}
 		}
-		changes, err = replace(tx, runStamp(r), want)
+		changes, conflicts, err = replace(tx, runStamp(r), want)
 		return err
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return changes, nil
+	return changes, conflicts, nil
 }
 
 // ReplaceUpstream makes the upstream layer hold in's core objects and the
@@ -183,18 +186,19 @@ func (s *Store) ReplaceLayer(ctx context.Context, layer string, run uuid.UUID, i
 // cannot roll the layers back. The run records its version in the same
 // transaction, so a recorded version was written whatever the run's final
 // status.
-func (s *Store) ReplaceUpstream(ctx context.Context, run uuid.UUID, version time.Time, in Inputs, overlayURL string) (Changes, error) {
+func (s *Store) ReplaceUpstream(ctx context.Context, run uuid.UUID, version time.Time, in Inputs, overlayURL string) (Changes, []Conflict, error) {
 	ov := Inputs{Extensions: in.Extensions}
 	in.Extensions = catalog.Overlay{}
 	core, err := toRows(model.LayerUpstream, in)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	payloads, err := toRows(model.LayerOverlay, ov)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var changes Changes
+	var conflicts []Conflict
 	err = s.write(ctx, func(tx *gorm.DB) error {
 		r, err := runningRun(tx, run, model.LayerUpstream)
 		if err != nil {
@@ -212,21 +216,21 @@ func (s *Store) ReplaceUpstream(ctx context.Context, run uuid.UUID, version time
 			return err
 		}
 		st := runStamp(r)
-		if changes, err = replace(tx, st, core); err != nil {
+		if changes, conflicts, err = replace(tx, st, core); err != nil {
 			return err
 		}
 		if err := checkPayloadIDs(tx, ov.Extensions); err != nil {
 			return err
 		}
 		st.layer, st.sourceURL = model.LayerOverlay, overlayURL
-		c, err := replace(tx, st, payloads)
+		c, _, err := replace(tx, st, payloads)
 		maps.Copy(changes, c)
 		return err
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return changes, nil
+	return changes, conflicts, nil
 }
 
 // ImportedVersion is the newest upstream release version a run of importer
@@ -266,10 +270,10 @@ func runStamp(r model.ImportRun) stamp {
 }
 
 // replace makes st's layer hold want.
-func replace(tx *gorm.DB, st stamp, want rowSet) (Changes, error) {
+func replace(tx *gorm.DB, st stamp, want rowSet) (Changes, []Conflict, error) {
 	have, err := load(tx, st.layer, scope{})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	return apply(tx, st, have, want)
 }
@@ -327,7 +331,7 @@ func upsert(tx *gorm.DB, object any) error {
 	if err != nil {
 		return err
 	}
-	_, err = apply(tx, stamp{layer: model.LayerLocal, source: model.SourceCuration, asOf: time.Now()}, have, want)
+	_, _, err = apply(tx, stamp{layer: model.LayerLocal, source: model.SourceCuration, asOf: time.Now()}, have, want)
 	return err
 }
 
@@ -345,7 +349,7 @@ func (s *Store) Delete(ctx context.Context, kind, key string) error {
 		if have.size() == 0 {
 			return fmt.Errorf("local %s %q: %w", kind, key, ErrNotFound)
 		}
-		_, err = apply(tx, stamp{}, have, rowSet{})
+		_, _, err = apply(tx, stamp{}, have, rowSet{})
 		return err
 	})
 }
@@ -648,9 +652,10 @@ func payloadKinds(o *catalog.Overlay) []payloadKind {
 func keyOf(parts ...string) string { return strings.Join(parts, "\x00") }
 
 // apply turns the rows have into want table by table (see syncTable) and
-// returns what it changed. Files follow their source by its id.
-func apply(tx *gorm.DB, st stamp, have, want rowSet) (Changes, error) {
-	files := func() (Change, error) {
+// returns what it changed and the curated values it kept over differing ones
+// of want. Files follow their source by its id.
+func apply(tx *gorm.DB, st stamp, have, want rowSet) (Changes, []Conflict, error) {
+	files := func() (Change, []Conflict, error) {
 		var old, fresh []model.ModelFile
 		for _, fs := range have.files {
 			old = append(old, fs...)
@@ -664,86 +669,102 @@ func apply(tx *gorm.DB, st stamp, have, want rowSet) (Changes, error) {
 		return syncTable(tx, st, old, fresh, func(r *model.ModelFile) string { return keyOf(r.ModelSourceID.String(), r.Path) })
 	}
 	changes := Changes{}
+	var conflicts []Conflict
 	for _, step := range []struct {
 		table string
-		sync  func() (Change, error)
+		sync  func() (Change, []Conflict, error)
 	}{
-		{"families", func() (Change, error) {
+		{"families", func() (Change, []Conflict, error) {
 			return syncTable(tx, st, have.families, want.families, func(r *model.Family) string { return r.Name })
 		}},
-		{"node_types", func() (Change, error) {
+		{"node_types", func() (Change, []Conflict, error) {
 			return syncTable(tx, st, have.nodeTypes, want.nodeTypes, func(r *model.NodeType) string { return r.NodeTypeID })
 		}},
-		{"models", func() (Change, error) {
+		{"models", func() (Change, []Conflict, error) {
 			return syncTable(tx, st, have.models, want.models, func(r *model.Model) string { return r.Slug })
 		}},
-		{"model_quantizations", func() (Change, error) {
+		{"model_quantizations", func() (Change, []Conflict, error) {
 			return syncTable(tx, st, have.quants, want.quants, func(r *model.ModelQuantization) string { return keyOf(r.ModelSlug, r.Name) })
 		}},
-		{"presets", func() (Change, error) {
+		{"presets", func() (Change, []Conflict, error) {
 			return syncTable(tx, st, have.presets, want.presets, func(r *model.Preset) string { return keyOf(r.ModelSlug, r.Name) })
 		}},
-		{"model_sources", func() (Change, error) {
+		{"model_sources", func() (Change, []Conflict, error) {
 			return syncTable(tx, st, have.sources, want.sources, func(r *model.ModelSource) string {
 				return keyOf(r.ModelSlug, r.Quantization, r.DraftSlug, r.Type, r.Repo)
 			})
 		}},
 		{"model_files", files},
-		{"draft_models", func() (Change, error) {
+		{"draft_models", func() (Change, []Conflict, error) {
 			return syncTable(tx, st, have.drafts, want.drafts, func(r *model.DraftModel) string { return r.Slug })
 		}},
-		{"backends", func() (Change, error) {
+		{"backends", func() (Change, []Conflict, error) {
 			return syncTable(tx, st, have.backends, want.backends, func(r *model.Backend) string { return r.Name })
 		}},
-		{"backend_versions", func() (Change, error) {
+		{"backend_versions", func() (Change, []Conflict, error) {
 			return syncTable(tx, st, have.versions, want.versions, func(r *model.BackendVersion) string { return keyOf(r.Backend, r.Version) })
 		}},
-		{"flag_tables", func() (Change, error) {
+		{"flag_tables", func() (Change, []Conflict, error) {
 			return syncTable(tx, st, have.flags, want.flags, func(r *model.FlagTable) string { return keyOf(r.Backend, r.BackendVersion) })
 		}},
-		{"extension_payloads", func() (Change, error) {
+		{"extension_payloads", func() (Change, []Conflict, error) {
 			return syncTable(tx, st, have.payloads, want.payloads, func(r *model.ExtensionPayload) string {
 				return keyOf(r.ObjectKind, r.ObjectKey, r.Namespace)
 			})
 		}},
 	} {
-		c, err := step.sync()
+		c, kept, err := step.sync()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if c != (Change{}) {
 			changes[step.table] = c
 		}
+		for kind, k := range provenanceKinds {
+			if k.table == step.table {
+				for _, kc := range kept {
+					kc.Kind = kind
+					conflicts = append(conflicts, kc)
+				}
+			}
+		}
 	}
-	return changes, nil
+	return changes, conflicts, nil
 }
 
 // syncTable turns the rows have of one table into want by key: an unchanged
 // row stays as it is, a changed one is updated in place with st's provenance,
 // a new one is inserted and a row want lacks is deleted. Every want row ends
-// with its id.
-func syncTable[T any](tx *gorm.DB, st stamp, have, want []T, key func(*T) string) (Change, error) {
+// with its id. It returns the curated values kept over differing ones of want,
+// keyed by the row's key parts joined with "/", without their kind.
+func syncTable[T any](tx *gorm.DB, st stamp, have, want []T, key func(*T) string) (Change, []Conflict, error) {
 	old := make(map[string]*T, len(have))
 	for i := range have {
 		old[key(&have[i])] = &have[i]
 	}
 	var c Change
+	var conflicts []Conflict
 	var fresh []int
 	for i := range want {
 		w := &want[i]
-		o := old[key(w)]
-		delete(old, key(w))
-		changed, err := stampRow(tx, st, w, o)
+		k := key(w)
+		o := old[k]
+		delete(old, k)
+		changed, kept, err := stampRow(tx, st, w, o)
+		for _, kc := range kept {
+			kc.Key = strings.ReplaceAll(k, "\x00", "/")
+			conflicts = append(conflicts, kc)
+		}
 		switch {
 		case err != nil:
-			return c, err
+			return c, nil, err
 		case !changed:
 			*w = *o
 		case o == nil:
 			fresh = append(fresh, i)
 		default:
 			if err := tx.Save(w).Error; err != nil {
-				return c, err
+				return c, nil, err
 			}
 			c.Updated++
 		}
@@ -754,25 +775,25 @@ func syncTable[T any](tx *gorm.DB, st stamp, have, want []T, key func(*T) string
 			ids = append(ids, meta(o).base.ID)
 		}
 		if err := tx.Where("id IN ?", ids).Delete(new(T)).Error; err != nil {
-			return c, err
+			return c, nil, err
 		}
 		c.Deleted = len(ids)
 	}
 	if len(fresh) == 0 {
-		return c, nil
+		return c, conflicts, nil
 	}
 	rows := make([]T, len(fresh))
 	for j, i := range fresh {
 		rows[j] = want[i]
 	}
 	if err := tx.CreateInBatches(&rows, 500).Error; err != nil {
-		return c, err
+		return c, nil, err
 	}
 	for j, i := range fresh {
 		want[i] = rows[j]
 	}
 	c.Inserted = len(rows)
-	return c, nil
+	return c, conflicts, nil
 }
 
 // rowMeta points at the identity, audit and provenance parts of a curated
@@ -799,41 +820,43 @@ func meta(row any) rowMeta {
 
 // stampRow gives the new row w the identity of the layer's row o of its key
 // (nil for a new key) and st's provenance, settles its field provenance, and
-// reports whether w differs from o.
-func stampRow[T any](tx *gorm.DB, st stamp, w, o *T) (bool, error) {
+// reports whether w differs from o and the curated values of o it kept.
+func stampRow[T any](tx *gorm.DB, st stamp, w, o *T) (bool, []Conflict, error) {
 	wm := meta(w)
 	*wm.prov = model.Provenance{Layer: st.layer, Source: st.source, SourceURL: st.sourceURL, AsOf: st.asOf, ImportRunID: st.run}
 	if o == nil {
 		if wm.fields != nil {
-			fp, err := fieldProvenance(tx, st, w, nil)
+			fp, _, err := fieldProvenance(tx, st, w, nil)
 			*wm.fields = datatypes.NewJSONType(fp)
-			return true, err
+			return true, nil, err
 		}
-		return true, nil
+		return true, nil, nil
 	}
 	om := meta(o)
 	wm.base.ID, wm.ts.CreatedAt = om.base.ID, om.ts.CreatedAt
 	changed := false
+	var kept []Conflict
 	if wm.fields != nil {
-		fp, err := fieldProvenance(tx, st, w, o)
+		fp, k, err := fieldProvenance(tx, st, w, o)
 		if err != nil {
-			return false, err
+			return false, nil, err
 		}
 		*wm.fields = datatypes.NewJSONType(fp)
-		changed = !reflect.DeepEqual(fp, om.fields.Data())
+		changed, kept = !reflect.DeepEqual(fp, om.fields.Data()), k
 	}
-	return changed || !sameContent(w, o), nil
+	return changed || !sameContent(w, o), kept, nil
 }
 
 // fieldProvenance is the provenance per value column of w: a value equal to
 // the one in o keeps its provenance, a curated value of o survives an
 // importer run's value that is not curated (and is copied back into w) unless
 // it was curated from st's own curation URL (a withdrawn correction), any
-// other value is st's.
-func fieldProvenance[T any](tx *gorm.DB, st stamp, w, o *T) (model.FieldProvenance, error) {
+// other value is st's. It lists each curated value it kept as a Conflict with
+// its field, curated and imported value only, by field.
+func fieldProvenance[T any](tx *gorm.DB, st stamp, w, o *T) (model.FieldProvenance, []Conflict, error) {
 	cols, err := valueColumns(tx, w)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var prev model.FieldProvenance
 	var ov reflect.Value
@@ -842,6 +865,7 @@ func fieldProvenance[T any](tx *gorm.DB, st stamp, w, o *T) (model.FieldProvenan
 	}
 	wv := reflect.ValueOf(w).Elem()
 	fp := make(model.FieldProvenance, len(cols))
+	var kept []Conflict
 	for _, c := range cols {
 		p, had := prev[c.db]
 		cs := st.of(c.db)
@@ -850,13 +874,15 @@ func fieldProvenance[T any](tx *gorm.DB, st stamp, w, o *T) (model.FieldProvenan
 			fp[c.db] = p
 		case had && p.Source == model.SourceCuration && cs.source != model.SourceCuration &&
 			(st.curationURL == "" || p.SourceURL != st.curationURL):
+			kept = append(kept, Conflict{Field: c.db, Curated: ov.FieldByName(c.name).Interface(), Imported: wv.FieldByName(c.name).Interface()})
 			wv.FieldByName(c.name).Set(ov.FieldByName(c.name))
 			fp[c.db] = p
 		default:
 			fp[c.db] = cs.field()
 		}
 	}
-	return fp, nil
+	slices.SortFunc(kept, func(a, b Conflict) int { return strings.Compare(a.Field, b.Field) })
+	return fp, kept, nil
 }
 
 type column struct{ name, db string }

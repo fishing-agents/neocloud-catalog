@@ -88,7 +88,7 @@ func (i *Importer) Run(ctx context.Context, s *store.Store, run uuid.UUID) (impo
 	if err := seeded.Validate(); err != nil {
 		return importers.Summary{}, fmt.Errorf("snapshot: %w", err)
 	}
-	sum.Changes, err = s.ReplaceUpstream(ctx, run, rel.Time, in, overlayURL)
+	sum.Changes, sum.Conflicts, err = s.ReplaceUpstream(ctx, run, rel.Time, in, overlayURL)
 	return sum, err
 }
 

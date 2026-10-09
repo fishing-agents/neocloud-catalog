@@ -175,9 +175,7 @@ func patchRow[T any](tx *gorm.DB, st stamp, v Values, add func(*gorm.DB, *T, str
 		old = nil
 	}
 	wv := reflect.ValueOf(&w).Elem()
-	names := slices.Sorted(maps.Keys(v.Columns))
-	fields, imported := make([]reflect.Value, len(names)), make([]any, len(names))
-	for i, name := range names {
+	for _, name := range slices.Sorted(maps.Keys(v.Columns)) {
 		c := slices.IndexFunc(cols, func(c column) bool { return c.db == name })
 		if c < 0 {
 			return Change{}, nil, fmt.Errorf("%w: %s %q: no value column %s", ErrInvalid, v.Kind, v.Key, name)
@@ -193,11 +191,13 @@ func patchRow[T any](tx *gorm.DB, st stamp, v Values, add func(*gorm.DB, *T, str
 			x = n.Elem()
 		}
 		f.Set(x)
-		fields[i], imported[i] = f, f.Interface()
 	}
-	fp, err := fieldProvenance(tx, st, &w, old)
+	fp, kept, err := fieldProvenance(tx, st, &w, old)
 	if err != nil {
 		return Change{}, nil, err
+	}
+	for i := range kept {
+		kept[i].Kind, kept[i].Key = v.Kind, v.Key
 	}
 	wm := meta(&w)
 	if isNew {
@@ -216,12 +216,6 @@ func patchRow[T any](tx *gorm.DB, st stamp, v Values, add func(*gorm.DB, *T, str
 			fp[col] = p
 		} else {
 			delete(fp, col)
-		}
-	}
-	var kept []Conflict
-	for i, f := range fields {
-		if got := f.Interface(); !reflect.DeepEqual(got, imported[i]) {
-			kept = append(kept, Conflict{Kind: v.Kind, Key: v.Key, Field: names[i], Curated: got, Imported: imported[i]})
 		}
 	}
 	if reflect.DeepEqual(fp, wm.fields.Data()) && sameContent(&w, &o) {
@@ -260,8 +254,7 @@ func patchFiles(tx *gorm.DB, st stamp, m Manifest) (Change, []Conflict, error) {
 		return Change{}, nil, err
 	}
 	if st.source == model.SourceCuration || !slices.ContainsFunc(have, func(f model.ModelFile) bool { return f.Source == model.SourceCuration }) {
-		c, err := syncTable(tx, st, have, want, func(r *model.ModelFile) string { return r.Path })
-		return c, nil, err
+		return syncTable(tx, st, have, want, func(r *model.ModelFile) string { return r.Path })
 	}
 	var kept []Conflict
 	conflict := func(path string, curated, imp *catalog.ModelFile) {
@@ -306,5 +299,6 @@ func patchPrices(tx *gorm.DB, st stamp, p Prices) (Change, error) {
 	if err := q.Find(&have).Error; err != nil {
 		return Change{}, err
 	}
-	return syncTable(tx, st, have, want, priceKey)
+	c, _, err := syncTable(tx, st, have, want, priceKey)
+	return c, err
 }

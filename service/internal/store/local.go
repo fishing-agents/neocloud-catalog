@@ -108,7 +108,7 @@ func (s *Store) ReplaceLocalPrices(ctx context.Context, prices []model.NodeTypeP
 		if err := tx.Where("layer = ?", model.LayerLocal).Find(&have).Error; err != nil {
 			return err
 		}
-		_, err := syncTable(tx, stamp{layer: model.LayerLocal, source: model.SourceCuration, asOf: now()}, have, want, priceKey)
+		_, _, err := syncTable(tx, stamp{layer: model.LayerLocal, source: model.SourceCuration, asOf: now()}, have, want, priceKey)
 		return err
 	})
 }

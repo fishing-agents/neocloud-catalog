@@ -85,7 +85,7 @@ func writeLayer(t *testing.T, s *store.Store, layer string, in store.Inputs) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.ReplaceLayer(ctx, layer, run.ID, in); err != nil {
+	if _, _, err := s.ReplaceLayer(ctx, layer, run.ID, in); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.FinishImport(ctx, run.ID, "", nil, nil); err != nil {

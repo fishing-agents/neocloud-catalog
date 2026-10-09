@@ -228,7 +228,7 @@ func TestReplaceLayerRoundTripsCommittedData(t *testing.T) {
 	s, db := newStore(t, "roundtrip")
 	in := committedWithEmptyLists(t)
 	first := startRun(t, db, model.LayerUpstream, model.SourceCuration)
-	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, first, in); err != nil {
+	if _, _, err := s.ReplaceLayer(ctx, model.LayerUpstream, first, in); err != nil {
 		t.Fatal(err)
 	}
 	got := effective(t, s)
@@ -247,7 +247,7 @@ func TestReplaceLayerRoundTripsCommittedData(t *testing.T) {
 
 	written := rowsOf(t, db, first)
 	second := startRun(t, db, model.LayerUpstream, model.SourceCuration)
-	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, second, committedWithEmptyLists(t)); err != nil {
+	if _, _, err := s.ReplaceLayer(ctx, model.LayerUpstream, second, committedWithEmptyLists(t)); err != nil {
 		t.Fatal(err)
 	}
 	if n := rowsOf(t, db, second); n != 0 {
@@ -260,7 +260,7 @@ func TestReplaceLayerRoundTripsCommittedData(t *testing.T) {
 
 	every := everyField()
 	requireEveryField(t, "fixture", reflect.ValueOf(every), map[string]bool{"fixture.Models[0].Presets[0].PrefixCaching": true})
-	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, model.SourceCuration), every); err != nil {
+	if _, _, err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, model.SourceCuration), every); err != nil {
 		t.Fatal(err)
 	}
 	sameCore(t, effective(t, s), every)
@@ -270,7 +270,7 @@ func TestEffectiveCatalogLayering(t *testing.T) {
 	s, db := newStore(t, "layering")
 	in := committed(t)
 	run := startRun(t, db, model.LayerUpstream, model.SourceCuration)
-	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, run, in); err != nil {
+	if _, _, err := s.ReplaceLayer(ctx, model.LayerUpstream, run, in); err != nil {
 		t.Fatal(err)
 	}
 	upstream := effective(t, s)
@@ -327,7 +327,7 @@ func TestEffectiveCatalogLayering(t *testing.T) {
 func TestEffectiveCrossLayerOrder(t *testing.T) {
 	s, db := newStore(t, "cross_layer_order")
 	in := committed(t)
-	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, "test"), in); err != nil {
+	if _, _, err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, "test"), in); err != nil {
 		t.Fatal(err)
 	}
 	up := effective(t, s)
@@ -348,7 +348,7 @@ func TestEffectiveCrossLayerOrder(t *testing.T) {
 		extra.Slug = fmt.Sprintf("upstream-new-%d", i)
 		in.Models = append(in.Models, extra)
 	}
-	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, "test"), in); err != nil {
+	if _, _, err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, "test"), in); err != nil {
 		t.Fatal(err)
 	}
 	var want []string
@@ -384,7 +384,7 @@ func TestReplaceUpstreamIsAtomic(t *testing.T) {
 		Presets: map[string]catalog.Extensions{m.Slug + "/" + m.Presets[1].Name: payload}}
 	first := startRun(t, db, model.LayerUpstream, "upstream")
 	v := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	if _, err := s.ReplaceUpstream(ctx, first, v, in, "https://example.com/overlay"); err != nil {
+	if _, _, err := s.ReplaceUpstream(ctx, first, v, in, "https://example.com/overlay"); err != nil {
 		t.Fatal(err)
 	}
 	before := effective(t, s)
@@ -412,7 +412,7 @@ func TestReplaceUpstreamIsAtomic(t *testing.T) {
 	next.Families[0].MemoryGB++
 	next.Extensions = in.Extensions
 	run := startRun(t, db, model.LayerUpstream, "upstream")
-	_, err := s.ReplaceUpstream(ctx, run, v, next, "https://example.com/overlay")
+	_, _, err := s.ReplaceUpstream(ctx, run, v, next, "https://example.com/overlay")
 	if err == nil {
 		t.Fatal("an overlay with a payload of a preset the effective catalog lacks was applied")
 	}
@@ -428,10 +428,10 @@ func TestReplaceUpstreamIsAtomic(t *testing.T) {
 		t.Errorf("refused import left %d rows", n)
 	}
 
-	if _, err := s.ReplaceUpstream(ctx, startRun(t, db, model.LayerOverlay, "upstream"), v, committed(t), ""); err == nil {
+	if _, _, err := s.ReplaceUpstream(ctx, startRun(t, db, model.LayerOverlay, "upstream"), v, committed(t), ""); err == nil {
 		t.Error("an overlay-layer run replaced the upstream layer")
 	}
-	changes, err := s.ReplaceUpstream(ctx, startRun(t, db, model.LayerUpstream, "upstream"), v, committed(t), "")
+	changes, _, err := s.ReplaceUpstream(ctx, startRun(t, db, model.LayerUpstream, "upstream"), v, committed(t), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -464,12 +464,12 @@ func TestReplaceUpstreamRefusesOlderVersion(t *testing.T) {
 	}
 	jan, feb := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
 	older, newer := start(), start()
-	if _, err := s.ReplaceUpstream(ctx, newer, feb, committed(t), ""); err != nil {
+	if _, _, err := s.ReplaceUpstream(ctx, newer, feb, committed(t), ""); err != nil {
 		t.Fatal(err)
 	}
 	in := committed(t)
 	in.Models = in.Models[1:]
-	_, err := s.ReplaceUpstream(ctx, older, jan, in, "")
+	_, _, err := s.ReplaceUpstream(ctx, older, jan, in, "")
 	if !errors.Is(err, store.ErrConflict) || !strings.Contains(err.Error(), newer.String()) {
 		t.Errorf("an older release after a newer one: %v, want a conflict naming run %s", err, newer)
 	}
@@ -483,17 +483,17 @@ func TestReplaceUpstreamRefusesOlderVersion(t *testing.T) {
 	if _, err := s.FinishImport(ctx, newer, "", nil, errors.New("worker failed after the write")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.ReplaceUpstream(ctx, start(), jan, in, ""); !errors.Is(err, store.ErrConflict) {
+	if _, _, err := s.ReplaceUpstream(ctx, start(), jan, in, ""); !errors.Is(err, store.ErrConflict) {
 		t.Errorf("an older release after a failed run that wrote a newer one: %v, want a conflict", err)
 	}
-	if _, err := s.ReplaceUpstream(ctx, start(), feb, committed(t), ""); err != nil {
+	if _, _, err := s.ReplaceUpstream(ctx, start(), feb, committed(t), ""); err != nil {
 		t.Errorf("the release imported last again: %v", err)
 	}
 }
 
 func TestReplaceLayerIsAtomic(t *testing.T) {
 	s, db := newStore(t, "atomic")
-	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, model.SourceCuration), committed(t)); err != nil {
+	if _, _, err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, model.SourceCuration), committed(t)); err != nil {
 		t.Fatal(err)
 	}
 	before := effective(t, s)
@@ -507,7 +507,7 @@ func TestReplaceLayerIsAtomic(t *testing.T) {
 	last := &bad.Backends[len(bad.Backends)-1]
 	last.Versions[0].HealthPath = "/health\x00"
 	run := startRun(t, db, model.LayerUpstream, model.SourceCuration)
-	_, err := s.ReplaceLayer(ctx, model.LayerUpstream, run, bad)
+	_, _, err := s.ReplaceLayer(ctx, model.LayerUpstream, run, bad)
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) {
 		t.Fatalf("replace with a failing row: %v, want the database's error", err)
@@ -521,7 +521,7 @@ func TestReplaceLayerIsAtomic(t *testing.T) {
 func TestOverlayOnlyAddsPayloads(t *testing.T) {
 	s, db := newStore(t, "overlay")
 	upRun := startRun(t, db, model.LayerUpstream, model.SourceCuration)
-	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, upRun, committed(t)); err != nil {
+	if _, _, err := s.ReplaceLayer(ctx, model.LayerUpstream, upRun, committed(t)); err != nil {
 		t.Fatal(err)
 	}
 	before := effective(t, s)
@@ -539,7 +539,7 @@ func TestOverlayOnlyAddsPayloads(t *testing.T) {
 		Backends: map[string]catalog.Extensions{b.Name + "/" + b.Versions[0].Version: payload},
 	}
 	ovRun := startRun(t, db, model.LayerOverlay, "overlay-import")
-	if _, err := s.ReplaceLayer(ctx, model.LayerOverlay, ovRun, store.Inputs{Extensions: ov}); err != nil {
+	if _, _, err := s.ReplaceLayer(ctx, model.LayerOverlay, ovRun, store.Inputs{Extensions: ov}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -566,7 +566,7 @@ func TestOverlayOnlyAddsPayloads(t *testing.T) {
 	}
 
 	replace := func(layer string, run uuid.UUID, in store.Inputs) error {
-		_, err := s.ReplaceLayer(ctx, layer, run, in)
+		_, _, err := s.ReplaceLayer(ctx, layer, run, in)
 		return err
 	}
 	refused := map[string]func() error{
@@ -602,12 +602,13 @@ func TestOverlayOnlyAddsPayloads(t *testing.T) {
 	}
 }
 
-// An importer run never overwrites a curated value (R12); values it imported
-// itself it updates, and every unchanged value keeps its provenance.
+// An importer run never overwrites a curated value (R12) and lists the value
+// it disagrees on; values it imported itself it updates, and every unchanged
+// value keeps its provenance.
 func TestImporterKeepsCuratedFields(t *testing.T) {
 	s, db := newStore(t, "curated")
 	h100 := committed(t).Families[2]
-	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, model.SourceCuration),
+	if _, _, err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, model.SourceCuration),
 		store.Inputs{Families: []catalog.Family{h100}}); err != nil {
 		t.Fatal(err)
 	}
@@ -616,14 +617,23 @@ func TestImporterKeepsCuratedFields(t *testing.T) {
 	imported.MemoryGB = 1
 	x := clone(t, h100)
 	x.Name, x.MemoryGB = "X100", 100
+	wantConflicts := []string{`{"kind":"family","key":"H100","field":"memory_gb","curated":80,"imported":1}`}
 	epoch := startRun(t, db, model.LayerUpstream, "epoch")
-	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, epoch, store.Inputs{Families: []catalog.Family{imported, x}}); err != nil {
+	_, conflicts, err := s.ReplaceLayer(ctx, model.LayerUpstream, epoch, store.Inputs{Families: []catalog.Family{imported, x}})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if got := conflictsJSON(t, conflicts); !reflect.DeepEqual(got, wantConflicts) {
+		t.Errorf("conflicts = %s, want %s", got, wantConflicts)
 	}
 	x.MemoryGB = 120
 	again := startRun(t, db, model.LayerUpstream, "epoch")
-	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, again, store.Inputs{Families: []catalog.Family{imported, x}}); err != nil {
+	_, conflicts, err = s.ReplaceLayer(ctx, model.LayerUpstream, again, store.Inputs{Families: []catalog.Family{imported, x}})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if got := conflictsJSON(t, conflicts); !reflect.DeepEqual(got, wantConflicts) {
+		t.Errorf("conflicts of the run again = %s, want %s", got, wantConflicts)
 	}
 
 	sameCore(t, effective(t, s), store.Inputs{Families: []catalog.Family{h100, x}})
@@ -640,7 +650,7 @@ func TestImporterKeepsCuratedFields(t *testing.T) {
 
 	curated := clone(t, h100)
 	curated.MemoryGB = 81
-	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, model.SourceCuration),
+	if _, _, err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, model.SourceCuration),
 		store.Inputs{Families: []catalog.Family{curated}}); err != nil {
 		t.Fatal(err)
 	}
@@ -672,7 +682,7 @@ func TestReplaceLayerRefusesBadRunsAndKeys(t *testing.T) {
 		"duplicate model":      {model.LayerUpstream, up, dupModel},
 		"duplicate file path":  {model.LayerUpstream, up, dupFile},
 	} {
-		if _, err := s.ReplaceLayer(ctx, c.layer, c.run, c.in); err == nil {
+		if _, _, err := s.ReplaceLayer(ctx, c.layer, c.run, c.in); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
@@ -689,7 +699,7 @@ func TestEffectiveWithRunsListsRunsOfEffectiveValues(t *testing.T) {
 	s, db := newStore(t, "runs")
 	replace := func(layer string, run uuid.UUID, in store.Inputs) {
 		t.Helper()
-		if _, err := s.ReplaceLayer(ctx, layer, run, in); err != nil {
+		if _, _, err := s.ReplaceLayer(ctx, layer, run, in); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -66,7 +66,7 @@ var twoFiles = []catalog.ModelFile{
 func TestPatchKeepsCuratedValues(t *testing.T) {
 	s, db := newStore(t, "patch_curated")
 	in := committed(t)
-	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, model.SourceCuration), in); err != nil {
+	if _, _, err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, model.SourceCuration), in); err != nil {
 		t.Fatal(err)
 	}
 	before := rowTimes(t, db)
@@ -122,7 +122,7 @@ func TestPatchFillsImportedValues(t *testing.T) {
 	s, db := newStore(t, "patch_fill")
 	in := committed(t)
 	other := startRun(t, db, model.LayerUpstream, "other")
-	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, other, in); err != nil {
+	if _, _, err := s.ReplaceLayer(ctx, model.LayerUpstream, other, in); err != nil {
 		t.Fatal(err)
 	}
 	llama := in.Models[0]
@@ -177,7 +177,7 @@ func TestPatchFillsImportedValues(t *testing.T) {
 func TestPatchRefuses(t *testing.T) {
 	s, db := newStore(t, "patch_refuse")
 	in := committed(t)
-	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, "other"), in); err != nil {
+	if _, _, err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, "other"), in); err != nil {
 		t.Fatal(err)
 	}
 	finished := model.ImportRun{Importer: "test", Source: "huggingface", Layer: model.LayerUpstream, Status: model.RunSucceeded, StartedAt: time.Now()}
@@ -219,7 +219,7 @@ func TestPatchRefuses(t *testing.T) {
 func TestPatchStampsOnlyItsColumns(t *testing.T) {
 	s, db := newStore(t, "patch_untouched")
 	in := committed(t)
-	if _, err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, "other"), in); err != nil {
+	if _, _, err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, "other"), in); err != nil {
 		t.Fatal(err)
 	}
 	llama := in.Models[0]
