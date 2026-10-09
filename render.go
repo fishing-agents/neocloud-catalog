@@ -5,46 +5,34 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 )
 
-// FlagTable.Speculative, Disaggregation and MultiNode name how the engine takes
-// the setting: "json:<flag>" is vLLM's JSON-valued flag, "vllm" and "sglang"
-// their fixed flag sets. Only methods and transfers verified against the pinned
-// sources are mapped; vLLM's ngram, for one, needs prompt lookup bounds a preset
-// cannot state.
-var (
-	vllmSpecMethods   = map[string]string{"eagle": "eagle", "eagle3": "eagle3"}
-	sglangSpecMethods = map[string]string{"eagle": "EAGLE", "eagle3": "EAGLE3"}
-	vllmConnectors    = map[string]string{"nixl": "NixlConnector"}
-	sglangTransfers   = []string{"nixl", "mooncake"}
-)
-
 // Render is RenderRole for a single server: no disaggregation role, node 0.
-func Render(m ModelTemplate, p Preset, bv BackendVersion, fit ModelFit, draft *DraftModel) ([]string, error) {
-	return RenderRole(m, p, bv, fit, draft, "", 0)
+func Render(m ModelTemplate, p Preset, bv BackendVersion, fit ModelFit, draft *DraftModel, vendor string) ([]string, error) {
+	return RenderRole(m, p, bv, fit, draft, vendor, "", 0)
 }
 
 // RenderRole renders a preset into the arguments that follow its backend
 // version's command, in a stable order: context, parallelism, KV cache dtype,
 // prefix caching, parsers, chat template, speculative decoding, topology, extra
 // args. Tensor parallel is the role's GPU count on a disaggregated side, else
-// the preset's, else the fit's GPU count. role is
-// "prefill" or "decode" for one side of a disaggregated preset and empty
-// otherwise; nodeRank is the node of a multi-node preset, whose arguments carry
-// the placeholders {{master_addr}} and {{master_port}} for the caller to fill.
+// the preset's, else the fit's GPU count. vendor is the GPU vendor (or cpu) of
+// the image the arguments are for. role is "prefill" or "decode" for one side
+// of a disaggregated preset and empty otherwise; nodeRank is the node of a
+// multi-node preset, whose arguments carry the placeholders {{master_addr}}
+// and {{master_port}} for the caller to fill.
 // A field the flag table cannot express is an error naming the backend version.
-func RenderRole(m ModelTemplate, p Preset, bv BackendVersion, fit ModelFit, draft *DraftModel, role string, nodeRank int) ([]string, error) {
-	args, err := render(p, bv.Flags, fit, draft, role, nodeRank)
+func RenderRole(m ModelTemplate, p Preset, bv BackendVersion, fit ModelFit, draft *DraftModel, vendor, role string, nodeRank int) ([]string, error) {
+	args, err := render(p, bv.Flags, fit, draft, vendor, role, nodeRank)
 	if err != nil {
 		return nil, fmt.Errorf("%s/%s on %s %s: %w", m.Slug, p.Name, p.Backend, bv.Version, err)
 	}
 	return args, nil
 }
 
-func render(p Preset, f FlagTable, fit ModelFit, draft *DraftModel, role string, nodeRank int) ([]string, error) {
+func render(p Preset, f FlagTable, fit ModelFit, draft *DraftModel, vendor, role string, nodeRank int) ([]string, error) {
 	a := argv{separate: f.SeparateValues}
 	if p.Context > 0 {
 		if f.Context == "" {
@@ -122,15 +110,19 @@ func render(p Preset, f FlagTable, fit ModelFit, draft *DraftModel, role string,
 		a.set(f.ReasoningParser, name)
 	}
 	if p.ChatTemplate != "" {
-		path, ok := f.ChatTemplates[p.ChatTemplate]
+		paths, ok := f.ChatTemplates[p.ChatTemplate]
 		if !ok || f.ChatTemplate == "" {
 			return nil, fmt.Errorf("has no chat template %q", p.ChatTemplate)
+		}
+		path, ok := paths[vendor]
+		if !ok {
+			return nil, fmt.Errorf("has no chat template %q for vendor %q", p.ChatTemplate, vendor)
 		}
 		a.set(f.ChatTemplate, path)
 	}
 
 	if s := p.Speculative; s != nil {
-		if err := a.speculative(f.Speculative, *s, draft); err != nil {
+		if err := a.speculative(f, *s, draft); err != nil {
 			return nil, err
 		}
 	}
@@ -162,21 +154,16 @@ func (a *argv) setJSON(flag string, v map[string]any) {
 	a.set(flag, string(b))
 }
 
-func (a *argv) speculative(style string, s Speculative, draft *DraftModel) error {
+func (a *argv) speculative(f FlagTable, s Speculative, draft *DraftModel) error {
 	if s.Tokens < 1 {
 		return errors.New("speculative tokens must be positive")
 	}
-	flag, vllm := strings.CutPrefix(style, "json:")
-	var method string
-	switch {
-	case vllm:
-		method = vllmSpecMethods[s.Method]
-	case style == "sglang":
-		method = sglangSpecMethods[s.Method]
-	default:
+	flag, vllm := strings.CutPrefix(f.Speculative, "json:")
+	if !vllm && f.Speculative != "sglang" {
 		return errors.New("cannot express speculative decoding")
 	}
-	if method == "" {
+	method, ok := f.SpeculativeMethods[s.Method]
+	if !ok {
 		return fmt.Errorf("has no speculative method %q", s.Method)
 	}
 	// Every mapped method loads draft weights; vLLM refuses to start without
@@ -222,26 +209,23 @@ func (a *argv) topology(f FlagTable, t Topology, role string, nodeRank int) erro
 		if role != "prefill" && role != "decode" {
 			return fmt.Errorf("disaggregated preset needs role prefill or decode, got %q", role)
 		}
-		if flag, ok := strings.CutPrefix(f.Disaggregation, "json:"); ok {
-			connector, ok := vllmConnectors[t.Transfer]
-			if !ok {
-				return fmt.Errorf("has no kv transfer %q", t.Transfer)
-			}
+		transfer, ok := f.KVTransfers[t.Transfer]
+		flag, vllm := strings.CutPrefix(f.Disaggregation, "json:")
+		switch {
+		case !vllm && f.Disaggregation != "sglang":
+			return errors.New("cannot express disaggregation")
+		case !ok:
+			return fmt.Errorf("has no kv transfer %q", t.Transfer)
+		case vllm:
 			kvRole := "kv_producer"
 			if role == "decode" {
 				kvRole = "kv_consumer"
 			}
-			a.setJSON(flag, map[string]any{"kv_connector": connector, "kv_role": kvRole})
-			return nil
+			a.setJSON(flag, map[string]any{"kv_connector": transfer, "kv_role": kvRole})
+		default:
+			a.set("--disaggregation-mode", role)
+			a.set("--disaggregation-transfer-backend", transfer)
 		}
-		if f.Disaggregation != "sglang" {
-			return errors.New("cannot express disaggregation")
-		}
-		if !slices.Contains(sglangTransfers, t.Transfer) {
-			return fmt.Errorf("has no kv transfer %q", t.Transfer)
-		}
-		a.set("--disaggregation-mode", role)
-		a.set("--disaggregation-transfer-backend", t.Transfer)
 	case "multi-node":
 		if nodeRank < 0 || nodeRank >= t.Nodes {
 			return fmt.Errorf("node rank %d outside %d nodes", nodeRank, t.Nodes)

@@ -1,7 +1,7 @@
 {
   "schema_version": "4.0.0",
-  "version": "2026-10-08T10:48:26Z",
-  "generated_at": "2026-10-08T10:48:26.272478823Z",
+  "version": "2026-10-09T03:02:45Z",
+  "generated_at": "2026-10-09T03:02:45.913313813Z",
   "families": [
     {
       "name": "A100",
@@ -491,10 +491,7 @@
           "purpose": "standard",
           "context": 8192,
           "tool_parser": "llama3",
-          "chat_template": "llama3.1-tools",
-          "vendors": [
-            "nvidia"
-          ]
+          "chat_template": "llama3.1-tools"
         },
         {
           "name": "sglang-bf16",
@@ -513,10 +510,7 @@
           "purpose": "standard",
           "context": 8192,
           "tool_parser": "llama3",
-          "chat_template": "llama3.1-tools",
-          "vendors": [
-            "nvidia"
-          ]
+          "chat_template": "llama3.1-tools"
         },
         {
           "name": "sglang-fp8",
@@ -540,10 +534,7 @@
             "method": "eagle3",
             "draft_model": "eagle3-llama-3.1-8b-redhat",
             "tokens": 3
-          },
-          "vendors": [
-            "nvidia"
-          ]
+          }
         },
         {
           "name": "sglang-bf16-eagle3",
@@ -595,7 +586,7 @@
           "gpus": 1,
           "nodes": 1,
           "quantization": "fp8",
-          "preset": "sglang-fp8",
+          "preset": "vllm-fp8",
           "context": 8192,
           "node_types": [
             "azure/Standard_ND96isr_MI300X_v5",
@@ -688,10 +679,7 @@
           "purpose": "standard",
           "context": 8192,
           "tool_parser": "llama3",
-          "chat_template": "llama3.1-tools",
-          "vendors": [
-            "nvidia"
-          ]
+          "chat_template": "llama3.1-tools"
         },
         {
           "name": "sglang-bf16",
@@ -710,10 +698,7 @@
           "purpose": "standard",
           "context": 8192,
           "tool_parser": "llama3",
-          "chat_template": "llama3.1-tools",
-          "vendors": [
-            "nvidia"
-          ]
+          "chat_template": "llama3.1-tools"
         },
         {
           "name": "sglang-fp8",
@@ -751,10 +736,7 @@
           "topology": {
             "kind": "multi-node",
             "nodes": 2
-          },
-          "vendors": [
-            "nvidia"
-          ]
+          }
         }
       ],
       "deployment": {
@@ -781,7 +763,7 @@
           "gpus": 1,
           "nodes": 1,
           "quantization": "fp8",
-          "preset": "sglang-fp8",
+          "preset": "vllm-fp8",
           "context": 8192,
           "node_types": [
             "azure/Standard_ND96isr_MI300X_v5",
@@ -2847,10 +2829,20 @@
             },
             "chat_template": "--chat-template",
             "chat_templates": {
-              "llama3.1-tools": "/vllm-workspace/examples/tool_chat_template_llama3.1_json.jinja"
+              "llama3.1-tools": {
+                "amd": "/app/vllm/examples/tool_chat_template_llama3.1_json.jinja",
+                "nvidia": "/vllm-workspace/examples/tool_chat_template_llama3.1_json.jinja"
+              }
             },
             "speculative": "json:--speculative-config",
+            "speculative_methods": {
+              "eagle": "eagle",
+              "eagle3": "eagle3"
+            },
             "disaggregation": "json:--kv-transfer-config",
+            "kv_transfers": {
+              "nixl": "NixlConnector"
+            },
             "multi_node": "vllm"
           },
           "defaults": {
@@ -2908,7 +2900,15 @@
               "qwen25": "qwen25"
             },
             "speculative": "sglang",
+            "speculative_methods": {
+              "eagle": "EAGLE",
+              "eagle3": "EAGLE3"
+            },
             "disaggregation": "sglang",
+            "kv_transfers": {
+              "mooncake": "mooncake",
+              "nixl": "nixl"
+            },
             "multi_node": "sglang"
           }
         }

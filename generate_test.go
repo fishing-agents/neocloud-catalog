@@ -452,10 +452,6 @@ func TestValidateRejectsInconsistentPresetsAndDrafts(t *testing.T) {
 			m.Presets[0].TensorParallel = 4
 			m.Presets[0].Topology = Topology{Kind: "disaggregated", Prefill: 2, Decode: 2, Transfer: "nixl"}
 		}, "disaggregated topology needs prefill_gpus and decode_gpus >= 1 and no tensor_parallel"},
-		{"tool template without vendors", func(m *ModelTemplate, _ []DraftModel) { m.Presets[0].Vendors = nil },
-			`llama-3.1-8b/vllm-bf16 on vllm v0.31.0: chat template "llama3.1-tools" needs vendors [nvidia]`},
-		{"tool template on amd too", func(m *ModelTemplate, _ []DraftModel) { m.Presets[0].Vendors = []string{"nvidia", "amd"} },
-			`chat template "llama3.1-tools" needs vendors [nvidia]`},
 		{"min backend version compares numerically", func(m *ModelTemplate, _ []DraftModel) { m.Presets[0].MinBackendVersion = "v0.9.0" }, ""},
 		{"min backend version equal", func(m *ModelTemplate, _ []DraftModel) { m.Presets[0].MinBackendVersion = "v0.31" }, ""},
 		{"min backend version newer", func(m *ModelTemplate, _ []DraftModel) { m.Presets[0].MinBackendVersion = "v0.31.1" },
@@ -501,13 +497,31 @@ func TestValidateRejectsInconsistentPresetsAndDrafts(t *testing.T) {
 		m, drafts := llama8b(), eagle3Drafts()
 		m.Presets = []Preset{
 			{Name: "vllm-bf16", Purpose: "standard", Quantization: "bf16", Backend: "vllm", BackendVersion: "v0.31.0", Context: 8192,
-				ToolParser: "llama3", ChatTemplate: "llama3.1-tools", Vendors: []string{"nvidia"}},
+				ToolParser: "llama3", ChatTemplate: "llama3.1-tools"},
 			{Name: "eagle3", Purpose: "standard", Quantization: "bf16", Backend: "vllm", BackendVersion: "v0.31.0",
 				Speculative: &Speculative{Method: "eagle3", DraftModel: vllmEagle3.Slug, Tokens: 3}},
 		}
 		c.edit(&m, drafts)
 		wantValidate(t, c.name, curatedSnap(t, m, drafts...), c.want)
 	}
+}
+
+// A chat template path is per vendor image, so Validate renders a preset once
+// per vendor it runs on.
+func TestValidateRendersEveryVendor(t *testing.T) {
+	m := llama8b()
+	m.Presets = []Preset{{Name: "vllm-bf16", Purpose: "standard", Quantization: "bf16", Backend: "vllm", BackendVersion: "v0.31.0",
+		ToolParser: "llama3", ChatTemplate: "llama3.1-tools"}}
+	snap := curatedSnap(t, m)
+	wantValidate(t, "a path per vendor", snap, "")
+	for _, b := range snap.Backends {
+		if b.Name == "vllm" {
+			delete(b.Versions[0].Flags.ChatTemplates["llama3.1-tools"], "amd")
+		}
+	}
+	wantValidate(t, "no amd path", snap, `llama-3.1-8b/vllm-bf16 on vllm v0.31.0: has no chat template "llama3.1-tools" for vendor "amd"`)
+	snap.Models[0].Presets[0].Vendors = []string{"nvidia"}
+	wantValidate(t, "nvidia only", snap, "")
 }
 
 // Regenerating the committed data must reproduce the embedded snapshot: the

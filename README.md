@@ -132,15 +132,20 @@ the fit), `kv_cache_dtype` (`auto`, `fp8`), `prefix_caching`, `tool_parser`,
 `reasoning_parser`, `chat_template`, `speculative`, `topology`, `env` (no
 secrets), `min_backend_version`, `extra_args` (verbatim escape hatch) and
 `vendors`. Each backend version's flag table maps the fields and the neutral
-parser, template and KV dtype names to its own flags; `Render` produces the
-argv, so adapters do not translate by hand.
+parser, template, KV dtype, speculative method and KV transfer names to its own
+flags; a chat template maps to a path per image vendor, since each vendor's
+image lays out its files differently. `Render` produces the argv for one
+vendor's image, so adapters do not translate by hand. Validate renders every
+preset once per vendor it runs on.
 
 - Speculative decoding: `speculative` names the method, the token count and,
   when the method needs one, a draft from `draft_models`. Only `eagle` and
-  `eagle3` render today; other methods (`mtp`, `ngram`, `draft-model`) fail
-  generation until they are mapped (the method maps live in render.go; moving them into the flag-table data is a tracked follow-up). Validate checks that the draft's
-  weights fit next to the model's on the GPUs of every fit the preset deploys
-  on, but a fit's `vram_required_gb` does not include them.
+  `eagle3` are mapped today, the methods verified against the pinned engine
+  sources; other methods (`mtp`, `ngram`, `draft-model`) fail generation until
+  a flag table maps them (vLLM's `ngram` needs prompt lookup bounds a preset
+  cannot state). Validate checks that the draft's weights fit next to the
+  model's on the GPUs of every fit the preset deploys on, but a fit's
+  `vram_required_gb` does not include them.
 - Topology: `single` (default), `multi-node` (`nodes`, `pipeline` stages per
   node) or `disaggregated` (`prefill_gpus`, `decode_gpus`, KV `transfer`
   `nixl` or `mooncake`). Fits carry the node count.

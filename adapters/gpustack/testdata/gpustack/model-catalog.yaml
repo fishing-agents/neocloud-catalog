@@ -169,6 +169,27 @@
           "quantization": "BF16",
           "gpu_filters": {
             "vendor": [
+              "amd"
+            ]
+          },
+          "source": "huggingface",
+          "huggingface_repo_id": "meta-llama/Llama-3.1-8B-Instruct",
+          "backend": "vLLM",
+          "image_name": "vllm/vllm-openai-rocm:v0.31.0",
+          "backend_parameters": [
+            "--max-model-len=8192",
+            "--enable-auto-tool-choice",
+            "--tool-call-parser=llama3_json",
+            "--chat-template=/app/vllm/examples/tool_chat_template_llama3.1_json.jinja",
+            "--speculative-config",
+            "{\"method\":\"eagle3\",\"model\":\"RedHatAI/Llama-3.1-8B-Instruct-speculator.eagle3\",\"num_speculative_tokens\":3,\"revision\":\"f4fa34a8f803a0ba75d048d6b3dbc1ad5149e9ac\"}"
+          ]
+        },
+        {
+          "mode": "vllm-bf16-eagle3",
+          "quantization": "BF16",
+          "gpu_filters": {
+            "vendor": [
               "nvidia"
             ],
             "compute_capability": ">=8.0"
@@ -191,6 +212,25 @@
           "quantization": "BF16",
           "gpu_filters": {
             "vendor": [
+              "amd"
+            ]
+          },
+          "source": "huggingface",
+          "huggingface_repo_id": "meta-llama/Llama-3.1-8B-Instruct",
+          "backend": "vLLM",
+          "image_name": "vllm/vllm-openai-rocm:v0.31.0",
+          "backend_parameters": [
+            "--max-model-len=8192",
+            "--enable-auto-tool-choice",
+            "--tool-call-parser=llama3_json",
+            "--chat-template=/app/vllm/examples/tool_chat_template_llama3.1_json.jinja"
+          ]
+        },
+        {
+          "mode": "vllm-bf16",
+          "quantization": "BF16",
+          "gpu_filters": {
+            "vendor": [
               "nvidia"
             ],
             "compute_capability": ">=8.0"
@@ -204,6 +244,25 @@
             "--enable-auto-tool-choice",
             "--tool-call-parser=llama3_json",
             "--chat-template=/vllm-workspace/examples/tool_chat_template_llama3.1_json.jinja"
+          ]
+        },
+        {
+          "mode": "vllm-fp8",
+          "quantization": "FP8",
+          "gpu_filters": {
+            "vendor": [
+              "amd"
+            ]
+          },
+          "source": "huggingface",
+          "huggingface_repo_id": "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8",
+          "backend": "vLLM",
+          "image_name": "vllm/vllm-openai-rocm:v0.31.0",
+          "backend_parameters": [
+            "--max-model-len=8192",
+            "--enable-auto-tool-choice",
+            "--tool-call-parser=llama3_json",
+            "--chat-template=/app/vllm/examples/tool_chat_template_llama3.1_json.jinja"
           ]
         },
         {
@@ -320,6 +379,25 @@
           "quantization": "BF16",
           "gpu_filters": {
             "vendor": [
+              "amd"
+            ]
+          },
+          "source": "huggingface",
+          "huggingface_repo_id": "meta-llama/Llama-3.1-70B-Instruct",
+          "backend": "vLLM",
+          "image_name": "vllm/vllm-openai-rocm:v0.31.0",
+          "backend_parameters": [
+            "--max-model-len=8192",
+            "--enable-auto-tool-choice",
+            "--tool-call-parser=llama3_json",
+            "--chat-template=/app/vllm/examples/tool_chat_template_llama3.1_json.jinja"
+          ]
+        },
+        {
+          "mode": "vllm-bf16",
+          "quantization": "BF16",
+          "gpu_filters": {
+            "vendor": [
               "nvidia"
             ],
             "compute_capability": ">=8.0"
@@ -333,6 +411,25 @@
             "--enable-auto-tool-choice",
             "--tool-call-parser=llama3_json",
             "--chat-template=/vllm-workspace/examples/tool_chat_template_llama3.1_json.jinja"
+          ]
+        },
+        {
+          "mode": "vllm-fp8",
+          "quantization": "FP8",
+          "gpu_filters": {
+            "vendor": [
+              "amd"
+            ]
+          },
+          "source": "huggingface",
+          "huggingface_repo_id": "RedHatAI/Meta-Llama-3.1-70B-Instruct-FP8",
+          "backend": "vLLM",
+          "image_name": "vllm/vllm-openai-rocm:v0.31.0",
+          "backend_parameters": [
+            "--max-model-len=8192",
+            "--enable-auto-tool-choice",
+            "--tool-call-parser=llama3_json",
+            "--chat-template=/app/vllm/examples/tool_chat_template_llama3.1_json.jinja"
           ]
         },
         {

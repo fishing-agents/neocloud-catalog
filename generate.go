@@ -359,10 +359,10 @@ func exampleNodeTypes(vocab []NodeType, family string, gpus int) []string {
 // when set), an existing backend version, and a draft model for its backend,
 // model and method that fits next to the model on every fit the preset deploys
 // on, stays within the model's context, spans at least two nodes when
-// multi-node and renders on its backend version. It then runs Validate of every
-// registered extension. Payloads of namespaces no registered extension owns are
-// preserved and ignored. Embedders can run it on a snapshot fetched from an
-// upstream.
+// multi-node and renders on its backend version for every vendor it runs on.
+// It then runs Validate of every registered extension. Payloads of namespaces
+// no registered extension owns are preserved and ignored. Embedders can run it
+// on a snapshot fetched from an upstream.
 func (s CatalogSnapshot) Validate() error { return s.validate(extensions) }
 
 func (s CatalogSnapshot) validate(reg *registry) error {
@@ -455,8 +455,8 @@ func (s CatalogSnapshot) validate(reg *registry) error {
 }
 
 // validatePreset checks what the renderer relies on but cannot see, then
-// renders the preset on a representative fit so a field its flag table cannot
-// express fails generation instead of a deployment.
+// renders the preset on a representative fit for every vendor it runs on so a
+// field its flag table cannot express fails generation instead of a deployment.
 func validatePreset(m ModelTemplate, p Preset, q Quantization, bv BackendVersion, drafts map[string]*DraftModel) error {
 	id := presetID(m, p)
 	var errs []error
@@ -474,10 +474,6 @@ func validatePreset(m ModelTemplate, p Preset, q Quantization, bv BackendVersion
 	}
 	if t := p.Topology; t.Kind == "multi-node" && t.Nodes < 2 {
 		errs = append(errs, fmt.Errorf("%s: multi-node topology needs nodes >= 2", id))
-	}
-	// The template's path exists only in vLLM's CUDA image.
-	if p.Backend == "vllm" && p.ChatTemplate == "llama3.1-tools" && !slices.Equal(p.Vendors, []string{"nvidia"}) {
-		errs = append(errs, fmt.Errorf("%s: chat template %q needs vendors [nvidia]", id, p.ChatTemplate))
 	}
 	if p.MinBackendVersion != "" {
 		switch c, err := compareVersions(p.MinBackendVersion, p.BackendVersion); {
@@ -509,9 +505,14 @@ func validatePreset(m ModelTemplate, p Preset, q Quantization, bv BackendVersion
 		roles = []string{"prefill", "decode"}
 	}
 	fit := ModelFit{ModelSlug: m.Slug, Quantization: p.Quantization, GPUCount: cmp.Or(p.TensorParallel, 1)}
-	for _, role := range roles {
-		if _, err := RenderRole(m, p, bv, fit, draft, role, 0); err != nil {
-			return err
+	for _, vendor := range slices.Sorted(maps.Keys(bv.Images)) {
+		if len(p.Vendors) > 0 && !slices.Contains(p.Vendors, vendor) {
+			continue
+		}
+		for _, role := range roles {
+			if _, err := RenderRole(m, p, bv, fit, draft, vendor, role, 0); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

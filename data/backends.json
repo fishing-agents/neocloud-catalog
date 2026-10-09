@@ -27,9 +27,16 @@
           "tool_parser_needs": ["--enable-auto-tool-choice"],
           "tool_parsers": {"llama3": "llama3_json", "mistral": "mistral", "qwen25": "hermes"},
           "chat_template": "--chat-template",
-          "chat_templates": {"llama3.1-tools": "/vllm-workspace/examples/tool_chat_template_llama3.1_json.jinja"},
+          "chat_templates": {
+            "llama3.1-tools": {
+              "nvidia": "/vllm-workspace/examples/tool_chat_template_llama3.1_json.jinja",
+              "amd": "/app/vllm/examples/tool_chat_template_llama3.1_json.jinja"
+            }
+          },
           "speculative": "json:--speculative-config",
+          "speculative_methods": {"eagle": "eagle", "eagle3": "eagle3"},
           "disaggregation": "json:--kv-transfer-config",
+          "kv_transfers": {"nixl": "NixlConnector"},
           "multi_node": "vllm"
         },
         "defaults": {"memory_utilization": "0.92"}
@@ -62,7 +69,9 @@
           "tool_parser": "--tool-call-parser",
           "tool_parsers": {"llama3": "llama3", "mistral": "mistral", "qwen25": "qwen25"},
           "speculative": "sglang",
+          "speculative_methods": {"eagle": "EAGLE", "eagle3": "EAGLE3"},
           "disaggregation": "sglang",
+          "kv_transfers": {"nixl": "nixl", "mooncake": "mooncake"},
           "multi_node": "sglang"
         }
       }

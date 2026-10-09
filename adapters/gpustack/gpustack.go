@@ -195,12 +195,6 @@ func (a adapter) specs(snap catalog.CatalogSnapshot, r adapters.Ref) ([]spec, st
 	if !ok {
 		return nil, "", fmt.Errorf("gpustack: %s/%s: backend %s %s not in the snapshot", r.Model.Slug, p.Name, p.Backend, p.BackendVersion)
 	}
-	// GPUStack's scheduler sizes the GPU count, so no fit sets tensor
-	// parallelism.
-	args, err := catalog.Render(r.Model, p, bv, catalog.ModelFit{}, adapters.Draft(snap, p))
-	if err != nil {
-		return nil, "", fmt.Errorf("gpustack: %w", err)
-	}
 	base := spec{
 		// GPUStack offers one spec per mode (routes/model_sets.py
 		// filter_specs_by_gpu), so every preset needs its own.
@@ -208,11 +202,6 @@ func (a adapter) specs(snap catalog.CatalogSnapshot, r adapters.Ref) ([]spec, st
 		Quantization: strings.ToUpper(p.Quantization),
 		Backend:      backend,
 		Env:          p.Env,
-	}
-	if backend == "Custom" {
-		base.RunCommand = runCommand(bv.Command, args)
-	} else {
-		base.BackendParameters = parameters(args)
 	}
 	var file string
 	if len(src.Files) == 1 {
@@ -231,7 +220,18 @@ func (a adapter) specs(snap catalog.CatalogSnapshot, r adapters.Ref) ([]spec, st
 		if v == "cpu" {
 			continue
 		}
+		// GPUStack's scheduler sizes the GPU count, so no fit sets tensor
+		// parallelism.
+		args, err := catalog.Render(r.Model, p, bv, catalog.ModelFit{}, adapters.Draft(snap, p), v)
+		if err != nil {
+			return nil, "", fmt.Errorf("gpustack: %w", err)
+		}
 		s := base
+		if backend == "Custom" {
+			s.RunCommand = runCommand(bv.Command, args)
+		} else {
+			s.BackendParameters = parameters(args)
+		}
 		// GPUStack rejects image_name together with backend_version
 		// (routes/models.py validate_model_in), and the pinned image is the pin.
 		s.ImageName = bv.Images[v]

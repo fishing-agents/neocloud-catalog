@@ -109,10 +109,6 @@ func TestCommittedPresets(t *testing.T) {
 		}
 		bv, _ := adapters.BackendVersion(snap, r.Preset.Backend, r.Preset.BackendVersion)
 		q, _ := r.Quantization()
-		args, err := catalog.Render(r.Model, r.Preset, bv, catalog.ModelFit{}, adapters.Draft(snap, r.Preset))
-		if err != nil {
-			t.Fatal(err)
-		}
 		vendors := slices.DeleteFunc(adapters.Vendors(r.Preset, bv), func(v string) bool { return v == "cpu" })
 		got := specs(doc, r)
 		if len(got) != len(vendors) {
@@ -121,6 +117,10 @@ func TestCommittedPresets(t *testing.T) {
 		}
 		for i, s := range got {
 			v := vendors[i]
+			args, err := catalog.Render(r.Model, r.Preset, bv, catalog.ModelFit{}, adapters.Draft(snap, r.Preset), v)
+			if err != nil {
+				t.Fatal(err)
+			}
 			cc := ""
 			if v == "nvidia" {
 				cc = wantCC[r.Preset.Backend+"/"+q.Kind]

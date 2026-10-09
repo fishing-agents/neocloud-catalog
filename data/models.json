@@ -92,10 +92,7 @@
         "purpose": "standard",
         "context": 8192,
         "tool_parser": "llama3",
-        "chat_template": "llama3.1-tools",
-        "vendors": [
-          "nvidia"
-        ]
+        "chat_template": "llama3.1-tools"
       },
       {
         "name": "sglang-bf16",
@@ -114,10 +111,7 @@
         "purpose": "standard",
         "context": 8192,
         "tool_parser": "llama3",
-        "chat_template": "llama3.1-tools",
-        "vendors": [
-          "nvidia"
-        ]
+        "chat_template": "llama3.1-tools"
       },
       {
         "name": "sglang-fp8",
@@ -141,10 +135,7 @@
           "method": "eagle3",
           "draft_model": "eagle3-llama-3.1-8b-redhat",
           "tokens": 3
-        },
-        "vendors": [
-          "nvidia"
-        ]
+        }
       },
       {
         "name": "sglang-bf16-eagle3",
@@ -247,10 +238,7 @@
         "purpose": "standard",
         "context": 8192,
         "tool_parser": "llama3",
-        "chat_template": "llama3.1-tools",
-        "vendors": [
-          "nvidia"
-        ]
+        "chat_template": "llama3.1-tools"
       },
       {
         "name": "sglang-bf16",
@@ -269,10 +257,7 @@
         "purpose": "standard",
         "context": 8192,
         "tool_parser": "llama3",
-        "chat_template": "llama3.1-tools",
-        "vendors": [
-          "nvidia"
-        ]
+        "chat_template": "llama3.1-tools"
       },
       {
         "name": "sglang-fp8",
@@ -310,10 +295,7 @@
         "topology": {
           "kind": "multi-node",
           "nodes": 2
-        },
-        "vendors": [
-          "nvidia"
-        ]
+        }
       }
     ]
   },

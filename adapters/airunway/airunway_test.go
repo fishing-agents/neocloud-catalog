@@ -190,9 +190,10 @@ func TestSkips(t *testing.T) {
 		Fits: []catalog.ModelFit{fit("bf16", "H100"), fit("bf16", "MI300X"), fit("w8", "MI300X"), fit("q4", "H100")},
 		Backends: []catalog.Backend{
 			{Name: "vllm", Versions: []catalog.BackendVersion{{Version: "v1", Images: images,
-				Flags: catalog.FlagTable{Context: "--max-model-len", TensorParallel: "--tensor-parallel-size", Disaggregation: "json:--kv-transfer-config", MultiNode: "vllm"}}}},
+				Flags: catalog.FlagTable{Context: "--max-model-len", TensorParallel: "--tensor-parallel-size", Disaggregation: "json:--kv-transfer-config",
+					KVTransfers: map[string]string{"nixl": "NixlConnector"}, MultiNode: "vllm"}}}},
 			{Name: "sglang", Versions: []catalog.BackendVersion{{Version: "v1", Images: images,
-				Flags: catalog.FlagTable{Context: "--context-length", TensorParallel: "--tp-size", Disaggregation: "sglang"}}}},
+				Flags: catalog.FlagTable{Context: "--context-length", TensorParallel: "--tp-size", Disaggregation: "sglang", KVTransfers: map[string]string{"nixl": "nixl"}}}}},
 			{Name: "llamacpp", Versions: []catalog.BackendVersion{{Version: "v1", Images: images, Flags: catalog.FlagTable{Context: "-c", SeparateValues: true}}}},
 			{Name: "tgi", Versions: []catalog.BackendVersion{{Version: "v1", Images: images}}},
 		},
@@ -263,7 +264,7 @@ func TestRecipes(t *testing.T) {
 		src, _ := r.Source(catalog.SourceHuggingFace)
 		bv, _ := adapters.BackendVersion(snap, r.Preset.Backend, r.Preset.BackendVersion)
 		fit, _ := adapters.ReferenceFit(snap, r, nvidia, adapters.Options{})
-		args, err := catalog.Render(r.Model, r.Preset, bv, catalog.ModelFit{}, adapters.Draft(snap, r.Preset))
+		args, err := catalog.Render(r.Model, r.Preset, bv, catalog.ModelFit{}, adapters.Draft(snap, r.Preset), gpuVendor)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -332,12 +333,12 @@ func TestDeployments(t *testing.T) {
 				t.Errorf("%s: SGLang on provider %q, annotated %q, image %q; AI Runway runs SGLang only on Dynamo with its own image",
 					md.Metadata.Name, s.Provider.Name, md.Metadata.Annotations[RequiredProviderAnnotation], en.Image)
 			}
-			tokens, err = catalog.Render(r.Model, rp, bv, fit, draft)
+			tokens, err = catalog.Render(r.Model, rp, bv, fit, draft, gpuVendor)
 		case "vllm":
 			if s.Provider.Name != "vllm" || md.Metadata.Annotations[RequiredProviderAnnotation] != "vllm" || en.Image != bv.Images["nvidia"] {
 				t.Errorf("%s: vLLM on provider %q with image %q, want vllm with %s", md.Metadata.Name, s.Provider.Name, en.Image, bv.Images["nvidia"])
 			}
-			tokens, err = catalog.Render(r.Model, rp, bv, catalog.ModelFit{}, draft)
+			tokens, err = catalog.Render(r.Model, rp, bv, catalog.ModelFit{}, draft, gpuVendor)
 		}
 		if top := r.Preset.Topology; top.Kind == "disaggregated" {
 			disaggregated++
@@ -346,10 +347,10 @@ func TestDeployments(t *testing.T) {
 				t.Errorf("%s: serving %+v scaling %+v resources %+v, want disaggregated with %d prefill and %d decode GPUs",
 					md.Metadata.Name, s.Serving, s.Scaling, s.Resources, top.Prefill, top.Decode)
 			}
-			if _, ok := en.Args["disaggregation-mode"]; ok || en.Args["disaggregation-transfer-backend"] != top.Transfer || en.Args["tp-size"] != strconv.Itoa(top.Prefill) {
+			if _, ok := en.Args["disaggregation-mode"]; ok || en.Args["disaggregation-transfer-backend"] != bv.Flags.KVTransfers[top.Transfer] || en.Args["tp-size"] != strconv.Itoa(top.Prefill) {
 				t.Errorf("%s: args %v, want the transfer backend and tp-size %d without a role", md.Metadata.Name, en.Args, top.Prefill)
 			}
-			tokens, err = catalog.RenderRole(r.Model, rp, bv, fit, draft, "prefill", 0)
+			tokens, err = catalog.RenderRole(r.Model, rp, bv, fit, draft, gpuVendor, "prefill", 0)
 			tokens = slices.DeleteFunc(tokens, func(t string) bool { return t == "--disaggregation-mode=prefill" })
 		} else if s.Serving != nil || s.Scaling != nil || s.Resources == nil || s.Resources.GPU.Count != fit.GPUCount {
 			t.Errorf("%s: serving %+v scaling %+v resources %+v, want aggregated on %d GPUs", md.Metadata.Name, s.Serving, s.Scaling, s.Resources, fit.GPUCount)

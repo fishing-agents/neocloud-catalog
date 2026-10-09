@@ -160,28 +160,34 @@ type QuantSupport struct {
 
 // FlagTable maps engine-neutral preset fields to one backend version's flags.
 // An empty flag means the field is not expressible on that version. The parser,
-// template and KV cache dtype maps translate neutral names to the engine's.
-// SeparateValues renders "flag value" as two arguments for engines that reject
-// "--flag=value".
+// template, KV cache dtype, speculative method and KV transfer maps translate
+// neutral names to the engine's; ChatTemplates maps a template to its path per
+// image vendor, as each vendor's image lays out its files differently.
+// Speculative, Disaggregation and MultiNode name how the engine takes the
+// setting: "json:<flag>" is vLLM's JSON-valued flag, "vllm" and "sglang" their
+// fixed flag sets. SeparateValues renders "flag value" as two arguments for
+// engines that reject "--flag=value".
 type FlagTable struct {
-	Context          string            `json:"context"`
-	TensorParallel   string            `json:"tensor_parallel,omitempty"`
-	PipelineParallel string            `json:"pipeline_parallel,omitempty"`
-	KVCacheDType     string            `json:"kv_cache_dtype,omitempty"`
-	KVCacheDTypes    map[string]string `json:"kv_cache_dtypes,omitempty"`
-	PrefixCachingOn  string            `json:"prefix_caching_on,omitempty"`
-	PrefixCachingOff string            `json:"prefix_caching_off,omitempty"`
-	ToolParser       string            `json:"tool_parser,omitempty"`
-	ToolParserNeeds  []string          `json:"tool_parser_needs,omitempty"`
-	ToolParsers      map[string]string `json:"tool_parsers,omitempty"`
-	ReasoningParser  string            `json:"reasoning_parser,omitempty"`
-	ReasoningParsers map[string]string `json:"reasoning_parsers,omitempty"`
-	ChatTemplate     string            `json:"chat_template,omitempty"`
-	ChatTemplates    map[string]string `json:"chat_templates,omitempty"`
-	Speculative      string            `json:"speculative,omitempty"`
-	Disaggregation   string            `json:"disaggregation,omitempty"`
-	MultiNode        string            `json:"multi_node,omitempty"`
-	SeparateValues   bool              `json:"separate_values,omitempty"`
+	Context            string                       `json:"context"`
+	TensorParallel     string                       `json:"tensor_parallel,omitempty"`
+	PipelineParallel   string                       `json:"pipeline_parallel,omitempty"`
+	KVCacheDType       string                       `json:"kv_cache_dtype,omitempty"`
+	KVCacheDTypes      map[string]string            `json:"kv_cache_dtypes,omitempty"`
+	PrefixCachingOn    string                       `json:"prefix_caching_on,omitempty"`
+	PrefixCachingOff   string                       `json:"prefix_caching_off,omitempty"`
+	ToolParser         string                       `json:"tool_parser,omitempty"`
+	ToolParserNeeds    []string                     `json:"tool_parser_needs,omitempty"`
+	ToolParsers        map[string]string            `json:"tool_parsers,omitempty"`
+	ReasoningParser    string                       `json:"reasoning_parser,omitempty"`
+	ReasoningParsers   map[string]string            `json:"reasoning_parsers,omitempty"`
+	ChatTemplate       string                       `json:"chat_template,omitempty"`
+	ChatTemplates      map[string]map[string]string `json:"chat_templates,omitempty"`
+	Speculative        string                       `json:"speculative,omitempty"`
+	SpeculativeMethods map[string]string            `json:"speculative_methods,omitempty"`
+	Disaggregation     string                       `json:"disaggregation,omitempty"`
+	KVTransfers        map[string]string            `json:"kv_transfers,omitempty"`
+	MultiNode          string                       `json:"multi_node,omitempty"`
+	SeparateValues     bool                         `json:"separate_values,omitempty"`
 }
 
 // Architecture is the subset of a model's config that sizes its KV cache and

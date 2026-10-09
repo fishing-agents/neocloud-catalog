@@ -260,7 +260,7 @@ func render(t target, rt runtime) (args map[string]string, extra []string, ok bo
 		fit = catalog.ModelFit{}
 	}
 	if p.Topology.Kind != "disaggregated" {
-		tokens, err := catalog.Render(t.Model, p, t.release, fit, t.draft)
+		tokens, err := catalog.Render(t.Model, p, t.release, fit, t.draft, gpuVendor)
 		if err != nil {
 			return nil, nil, false, err
 		}
@@ -270,7 +270,7 @@ func render(t target, rt runtime) (args map[string]string, extra []string, ok bo
 	var roleArgs [2]map[string]string
 	var roleExtra [2][]string
 	for i, role := range []string{"prefill", "decode"} {
-		tokens, err := catalog.RenderRole(t.Model, p, t.release, fit, t.draft, role, 0)
+		tokens, err := catalog.RenderRole(t.Model, p, t.release, fit, t.draft, gpuVendor, role, 0)
 		if err != nil {
 			return nil, nil, false, err
 		}

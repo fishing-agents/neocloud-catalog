@@ -142,7 +142,7 @@ func newRecipe(snap catalog.CatalogSnapshot, t target, group []target) (recipe, 
 	org, _, _ := strings.Cut(base.source.Repo, "/")
 	// The Direct vLLM provider a recipe resolves to derives tensor parallelism
 	// from the GPU count, so no fit sets it.
-	args, err := catalog.Render(t.Model, t.Preset, t.release, catalog.ModelFit{}, t.draft)
+	args, err := catalog.Render(t.Model, t.Preset, t.release, catalog.ModelFit{}, t.draft, gpuVendor)
 	if err != nil {
 		return recipe{}, err
 	}

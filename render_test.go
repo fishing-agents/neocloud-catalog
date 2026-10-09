@@ -8,7 +8,10 @@ import (
 	"testing"
 )
 
-const llama31ToolTemplate = "/vllm-workspace/examples/tool_chat_template_llama3.1_json.jinja"
+const (
+	llama31ToolTemplate     = "/vllm-workspace/examples/tool_chat_template_llama3.1_json.jinja"
+	llama31ToolTemplateROCm = "/app/vllm/examples/tool_chat_template_llama3.1_json.jinja"
+)
 
 var (
 	vllmEagle3 = &DraftModel{Slug: "eagle3-llama-3.1-8b-redhat", Method: "eagle3",
@@ -137,9 +140,9 @@ func TestRender(t *testing.T) {
 		var got []string
 		var err error
 		if c.role == "" && c.rank == 0 {
-			got, err = Render(m, c.preset, bv, fit, c.draft)
+			got, err = Render(m, c.preset, bv, fit, c.draft, "nvidia")
 		} else {
-			got, err = RenderRole(m, c.preset, bv, fit, c.draft, c.role, c.rank)
+			got, err = RenderRole(m, c.preset, bv, fit, c.draft, "nvidia", c.role, c.rank)
 		}
 		if err != nil || !slices.Equal(got, c.want) {
 			t.Errorf("%s: got %q, %v\nwant %q", c.name, got, err, c.want)
@@ -191,10 +194,68 @@ func TestRenderRefusesWhatTheBackendCannotExpress(t *testing.T) {
 	for _, c := range cases {
 		bv := bvs[c.backend]
 		c.preset.Name, c.preset.Backend, c.preset.BackendVersion = "bad-preset", c.backend, bv.Version
-		got, err := RenderRole(ModelTemplate{Slug: "llama"}, c.preset, bv, ModelFit{GPUCount: 1}, c.draft, c.role, c.rank)
+		got, err := RenderRole(ModelTemplate{Slug: "llama"}, c.preset, bv, ModelFit{GPUCount: 1}, c.draft, "nvidia", c.role, c.rank)
 		version := c.backend + " " + bv.Version
 		if err == nil || !strings.Contains(err.Error(), "llama/bad-preset") || !strings.Contains(err.Error(), version) || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("got %q, %v; want an error naming llama/bad-preset and %s: %s", got, err, version, c.want)
+		}
+	}
+}
+
+// A chat template is a file inside the image, so its path is per vendor image.
+func TestRenderTemplatePerVendor(t *testing.T) {
+	bv := curatedBackends(t)["vllm"]
+	m := ModelTemplate{Slug: "llama"}
+	p := Preset{Name: "tools", Backend: "vllm", BackendVersion: bv.Version, ChatTemplate: "llama3.1-tools"}
+	for vendor, path := range map[string]string{"nvidia": llama31ToolTemplate, "amd": llama31ToolTemplateROCm} {
+		got, err := Render(m, p, bv, ModelFit{GPUCount: 1}, nil, vendor)
+		if want := []string{"--chat-template=" + path}; err != nil || !slices.Equal(got, want) {
+			t.Errorf("%s: got %q, %v, want %q", vendor, got, err, want)
+		}
+	}
+	_, err := Render(m, p, bv, ModelFit{GPUCount: 1}, nil, "cpu")
+	if want := `llama/tools on vllm v0.31.0: has no chat template "llama3.1-tools" for vendor "cpu"`; err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("cpu: err = %v, want %q", err, want)
+	}
+}
+
+func TestRenderSpeculativeFromData(t *testing.T) {
+	bv := curatedBackends(t)["vllm"]
+	bv.Flags.SpeculativeMethods = map[string]string{"eagle3": "eagle3-engine"}
+	p := Preset{Name: "spec", Backend: "vllm", BackendVersion: bv.Version,
+		Speculative: &Speculative{Method: "eagle3", DraftModel: localEagle3.Slug, Tokens: 3}}
+	got, err := Render(ModelTemplate{Slug: "m"}, p, bv, ModelFit{GPUCount: 1}, localEagle3, "nvidia")
+	want := []string{`--speculative-config={"method":"eagle3-engine","model":"/models/eagle3","num_speculative_tokens":3}`}
+	if err != nil || !slices.Equal(got, want) {
+		t.Errorf("got %q, %v, want %q", got, err, want)
+	}
+	p.Speculative.Method = "eagle"
+	if _, err := Render(ModelTemplate{Slug: "m"}, p, bv, ModelFit{GPUCount: 1}, localEagle3, "nvidia"); err == nil ||
+		!strings.Contains(err.Error(), `has no speculative method "eagle"`) {
+		t.Errorf("unmapped method: err = %v", err)
+	}
+}
+
+func TestRenderKVTransferFromData(t *testing.T) {
+	bvs := curatedBackends(t)
+	pd := Topology{Kind: "disaggregated", Prefill: 1, Decode: 1, Transfer: "mooncake"}
+	transfers := map[string]map[string]string{"vllm": {"mooncake": "MooncakeConnector"}, "sglang": {"mooncake": "mooncake-engine"}}
+	want := map[string]string{
+		"vllm":   `--kv-transfer-config={"kv_connector":"MooncakeConnector","kv_role":"kv_consumer"}`,
+		"sglang": "--disaggregation-transfer-backend=mooncake-engine",
+	}
+	for backend, kv := range transfers {
+		bv := bvs[backend]
+		bv.Flags.KVTransfers = kv
+		p := Preset{Name: "pd", Backend: backend, BackendVersion: bv.Version, Topology: pd}
+		got, err := RenderRole(ModelTemplate{Slug: "m"}, p, bv, ModelFit{GPUCount: 1}, nil, "nvidia", "decode", 0)
+		if err != nil || !slices.Contains(got, want[backend]) {
+			t.Errorf("%s: got %q, %v, want %q", backend, got, err, want[backend])
+		}
+		p.Topology.Transfer = "nixl"
+		if _, err := RenderRole(ModelTemplate{Slug: "m"}, p, bv, ModelFit{GPUCount: 1}, nil, "nvidia", "decode", 0); err == nil ||
+			!strings.Contains(err.Error(), `has no kv transfer "nixl"`) {
+			t.Errorf("%s: unmapped transfer: err = %v", backend, err)
 		}
 	}
 }
