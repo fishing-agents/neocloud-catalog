@@ -176,8 +176,8 @@
       "tools",
       "long-context"
     ],
-    "params_b": 70,
-    "params_active_b": 70,
+    "params_b": 70.6,
+    "params_active_b": 70.6,
     "release_date": "2024-07-23",
     "home": "https://huggingface.co/meta-llama/Llama-3.1-70B-Instruct",
     "aliases": [
@@ -309,7 +309,7 @@
     "family": "mixtral",
     "description": "Instruction-tuned Mixtral-8x7B, a pretrained generative sparse mixture of experts.",
     "task": "chat",
-    "params_b": 47,
+    "params_b": 46.7,
     "params_active_b": 12.9,
     "release_date": "2023-12-11",
     "home": "https://huggingface.co/mistralai/Mixtral-8x7B-Instruct-v0.1",
@@ -407,8 +407,8 @@
     "family": "gemma",
     "description": "Instruction-tuned Gemma 2 9B, a lightweight text-to-text, decoder-only open model from Google.",
     "task": "chat",
-    "params_b": 9,
-    "params_active_b": 9,
+    "params_b": 9.2,
+    "params_active_b": 9.2,
     "release_date": "2024-06-27",
     "home": "https://huggingface.co/google/gemma-2-9b-it",
     "aliases": [
@@ -503,14 +503,13 @@
     "slug": "qwen-2.5-14b",
     "name": "Qwen 2.5 14B",
     "family": "qwen",
-    "description": "Instruction-tuned 14B Qwen2.5 model with long-context support up to 128K tokens.",
+    "description": "Instruction-tuned 14B Qwen2.5 model.",
     "task": "chat",
     "capabilities": [
-      "tools",
-      "long-context"
+      "tools"
     ],
-    "params_b": 14,
-    "params_active_b": 14,
+    "params_b": 14.8,
+    "params_active_b": 14.8,
     "release_date": "2024-09-19",
     "home": "https://huggingface.co/Qwen/Qwen2.5-14B-Instruct",
     "aliases": [
@@ -519,7 +518,7 @@
       "bartowski/Qwen2.5-14B-Instruct-GGUF"
     ],
     "default_context": 32768,
-    "context_max": 131072,
+    "context_max": 32768,
     "license": "apache-2.0",
     "gated": false,
     "quantizations": [

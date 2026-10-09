@@ -291,7 +291,7 @@
       "name": "Llama 3.1 70B",
       "description": "Llama 3.1 instruction-tuned 70B text model, optimized for multilingual dialogue use cases.",
       "home": "https://huggingface.co/meta-llama/Llama-3.1-70B-Instruct",
-      "size": 70,
+      "size": 70.6,
       "categories": [
         "llm"
       ],
@@ -458,7 +458,7 @@
       "name": "Mixtral 8x7B",
       "description": "Instruction-tuned Mixtral-8x7B, a pretrained generative sparse mixture of experts.",
       "home": "https://huggingface.co/mistralai/Mixtral-8x7B-Instruct-v0.1",
-      "size": 47,
+      "size": 46.7,
       "activated_size": 12.9,
       "categories": [
         "llm"
@@ -609,7 +609,7 @@
       "name": "Gemma 2 9B",
       "description": "Instruction-tuned Gemma 2 9B, a lightweight text-to-text, decoder-only open model from Google.",
       "home": "https://huggingface.co/google/gemma-2-9b-it",
-      "size": 9,
+      "size": 9.2,
       "categories": [
         "llm"
       ],
@@ -757,14 +757,14 @@
     },
     {
       "name": "Qwen 2.5 14B",
-      "description": "Instruction-tuned 14B Qwen2.5 model with long-context support up to 128K tokens.",
+      "description": "Instruction-tuned 14B Qwen2.5 model.",
       "home": "https://huggingface.co/Qwen/Qwen2.5-14B-Instruct",
-      "size": 14,
+      "size": 14.8,
       "categories": [
         "llm"
       ],
       "capabilities": [
-        "context/128K",
+        "context/32K",
         "tools"
       ],
       "licenses": [

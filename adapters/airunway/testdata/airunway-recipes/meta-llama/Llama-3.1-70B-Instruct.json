@@ -32,7 +32,7 @@
   "model": {
     "model_id": "meta-llama/Llama-3.1-70B-Instruct",
     "min_vllm_version": "0.31.0",
-    "parameter_count": "70B",
+    "parameter_count": "70.6B",
     "context_length": 131072
   },
   "variants": {

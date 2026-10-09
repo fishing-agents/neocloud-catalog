@@ -29,7 +29,7 @@
   "model": {
     "model_id": "mistralai/Mixtral-8x7B-Instruct-v0.1",
     "min_vllm_version": "0.31.0",
-    "parameter_count": "47B",
+    "parameter_count": "46.7B",
     "context_length": 32768
   },
   "variants": {

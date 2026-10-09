@@ -226,7 +226,7 @@ func TestModelSets(t *testing.T) {
 			Home: "https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct", Size: 8, Categories: []string{"llm"},
 			Capabilities: []string{"context/128K", "tools"}, Licenses: []string{"llama3.1"}, ReleaseDate: "2024-07-23"},
 		"Mixtral 8x7B": {Description: "Instruction-tuned Mixtral-8x7B, a pretrained generative sparse mixture of experts.",
-			Home: "https://huggingface.co/mistralai/Mixtral-8x7B-Instruct-v0.1", Size: 47, ActivatedSize: 12.9, Categories: []string{"llm"},
+			Home: "https://huggingface.co/mistralai/Mixtral-8x7B-Instruct-v0.1", Size: 46.7, ActivatedSize: 12.9, Categories: []string{"llm"},
 			Capabilities: []string{"context/32K"}, Licenses: []string{"apache-2.0"}, ReleaseDate: "2023-12-11"},
 	}
 	for _, set := range doc.ModelSets {

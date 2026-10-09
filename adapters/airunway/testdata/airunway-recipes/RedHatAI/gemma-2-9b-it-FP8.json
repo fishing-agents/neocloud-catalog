@@ -31,7 +31,7 @@
   "model": {
     "model_id": "RedHatAI/gemma-2-9b-it-FP8",
     "min_vllm_version": "0.31.0",
-    "parameter_count": "9B",
+    "parameter_count": "9.2B",
     "context_length": 8192
   },
   "variants": {
