@@ -103,11 +103,22 @@ func (sc scope) column(table string) (string, bool) {
 	return "", false
 }
 
-// stamp is the provenance a write gives the rows it changes.
+// stamp is the provenance a write gives the rows it changes; the value
+// columns curated take curation from curationURL instead.
 type stamp struct {
 	layer, source, sourceURL string
 	asOf                     time.Time
 	run                      *uuid.UUID
+	curated                  []string
+	curationURL              string
+}
+
+// of is the stamp of the value column col.
+func (st stamp) of(col string) stamp {
+	if slices.Contains(st.curated, col) {
+		st.source, st.sourceURL = model.SourceCuration, st.curationURL
+	}
+	return st
 }
 
 func (st stamp) field() model.FieldSource {
@@ -155,7 +166,7 @@ func (s *Store) ReplaceLayer(ctx context.Context, layer string, run uuid.UUID, i
 		if err != nil {
 			return err
 		}
-		changes, err = apply(tx, stamp{layer, r.Source, r.SourceURL, r.StartedAt, &r.ID}, have, want)
+		changes, err = apply(tx, stamp{layer: layer, source: r.Source, sourceURL: r.SourceURL, asOf: r.StartedAt, run: &r.ID}, have, want)
 		return err
 	})
 	if err != nil {
@@ -703,7 +714,8 @@ func stampRow[T any](tx *gorm.DB, st stamp, w, o *T) (bool, error) {
 
 // fieldProvenance is the provenance per value column of w: a value equal to
 // the one in o keeps its provenance, a curated value of o survives an
-// importer run (and is copied back into w), any other value is st's.
+// importer run's value that is not curated (and is copied back into w), any
+// other value is st's.
 func fieldProvenance[T any](tx *gorm.DB, st stamp, w, o *T) (model.FieldProvenance, error) {
 	cols, err := valueColumns(tx, w)
 	if err != nil {
@@ -718,14 +730,15 @@ func fieldProvenance[T any](tx *gorm.DB, st stamp, w, o *T) (model.FieldProvenan
 	fp := make(model.FieldProvenance, len(cols))
 	for _, c := range cols {
 		p, had := prev[c.db]
+		cs := st.of(c.db)
 		switch {
 		case had && reflect.DeepEqual(wv.FieldByName(c.name).Interface(), ov.FieldByName(c.name).Interface()):
 			fp[c.db] = p
-		case had && p.Source == model.SourceCuration && st.source != model.SourceCuration:
+		case had && p.Source == model.SourceCuration && cs.source != model.SourceCuration:
 			wv.FieldByName(c.name).Set(ov.FieldByName(c.name))
 			fp[c.db] = p
 		default:
-			fp[c.db] = st.field()
+			fp[c.db] = cs.field()
 		}
 	}
 	return fp, nil

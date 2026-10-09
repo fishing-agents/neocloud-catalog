@@ -13,6 +13,7 @@ import (
 	"maps"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"slices"
 	"strings"
 	"syscall"
@@ -28,6 +29,7 @@ import (
 	"github.com/fishman/neocloud-catalog/service/internal/httpapi"
 	"github.com/fishman/neocloud-catalog/service/internal/importers"
 	"github.com/fishman/neocloud-catalog/service/internal/importers/bootstrap"
+	"github.com/fishman/neocloud-catalog/service/internal/importers/epoch"
 	"github.com/fishman/neocloud-catalog/service/internal/importers/huggingface"
 	"github.com/fishman/neocloud-catalog/service/internal/jobs"
 	"github.com/fishman/neocloud-catalog/service/internal/model"
@@ -75,9 +77,12 @@ commands:
                     the versioned Atlas migrations (make migrate-apply)
   import <importer> run an importer as a job on the catalog queue and print its
                     run: bootstrap-from-json (bootstrap.data_dir into the
-                    upstream layer) or huggingface (manifests, weights and
-                    model facts of the upstream sources at their pinned
-                    revisions; gated repositories need huggingface.token_file)
+                    upstream layer), epoch (family hardware facts from Epoch
+                    AI's ML hardware data and the curated
+                    families.overlay.json in bootstrap.data_dir) or
+                    huggingface (manifests, weights and model facts of the
+                    upstream sources at their pinned revisions; gated
+                    repositories need huggingface.token_file)
   generate          run the generator over the effective catalog as a job on
                     the catalog queue, and print its run
   release create <generator-run-id>
@@ -193,7 +198,11 @@ func registry(cfg *config.Config) importers.Registry {
 		}
 		token = strings.TrimSpace(string(b))
 	}
-	return importers.NewRegistry(boot, huggingface.New(huggingface.Endpoint, token))
+	hardware, err := epoch.New(epoch.CSV, filepath.Join(cfg.Bootstrap.DataDir, "families.overlay.json"))
+	if err != nil {
+		log.Fatalf("bootstrap.data_dir: %v", err)
+	}
+	return importers.NewRegistry(boot, hardware, huggingface.New(huggingface.Endpoint, token))
 }
 
 // runJob enqueues args and works the catalog queue until the job finished,

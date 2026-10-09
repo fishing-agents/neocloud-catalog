@@ -19,17 +19,21 @@ import (
 )
 
 // Patch is what an importer read about objects of its run's layer: values of
-// their value columns and the file manifests of their sources.
+// their value columns and the file manifests of their sources. CurationURL is
+// where the importer read the values it marks curated.
 type Patch struct {
-	Values    []Values
-	Manifests []Manifest
+	Values      []Values
+	Manifests   []Manifest
+	CurationURL string
 }
 
-// Values are imported values by column name of the object Kind (KindModel,
-// KindQuantization or KindDraft) keyed Key.
+// Values are imported values by column name of the object Kind (KindFamily,
+// KindModel, KindQuantization or KindDraft) keyed Key. Curated names the
+// columns whose value the importer read from curation rather than its source.
 type Values struct {
 	Kind, Key string
 	Columns   map[string]any
+	Curated   []string
 }
 
 // Manifest is the files of a source read at Revision; the source belongs to a
@@ -53,14 +57,21 @@ type Conflict struct {
 
 // Patch writes p into the layer of the running import run run, in one
 // transaction, and touches no other row or column: a value sets one column of
-// an existing row, whose row provenance stays its origin; a manifest replaces
-// the files of its source, which must still be pinned at the manifest's
-// revision. As in ReplaceLayer an unchanged value keeps its provenance and an
-// importer run keeps a curated value; a source with curated files keeps them
-// all. It returns the changes and the kept curated values that differ from
-// the imported ones.
+// an existing row, whose row provenance stays its origin; values of a family
+// the layer lacks give all its columns and add it, last, as the run's row; a
+// manifest replaces the files of its source, which must still be pinned at
+// the manifest's revision. As in ReplaceLayer an unchanged value keeps its
+// provenance and an importer run keeps a curated value, unless the value is
+// curated too; a source with curated files keeps them all. It returns the
+// changes and the kept curated values that differ from the imported ones.
 func (s *Store) Patch(ctx context.Context, run uuid.UUID, p Patch) (Changes, []Conflict, error) {
 	changes := Changes{}
+	count := func(table string, c Change) {
+		if c != (Change{}) {
+			t := changes[table]
+			changes[table] = Change{t.Inserted + c.Inserted, t.Updated + c.Updated, t.Deleted + c.Deleted}
+		}
+	}
 	var conflicts []Conflict
 	err := s.write(ctx, func(tx *gorm.DB) error {
 		var r model.ImportRun
@@ -70,31 +81,30 @@ func (s *Store) Patch(ctx context.Context, run uuid.UUID, p Patch) (Changes, []C
 		if r.Status != model.RunRunning || r.Layer == model.LayerOverlay {
 			return fmt.Errorf("import run %s is %s in layer %s, not running in a core layer", run, r.Status, r.Layer)
 		}
-		st := stamp{r.Layer, r.Source, r.SourceURL, r.StartedAt, &r.ID}
+		st := stamp{layer: r.Layer, source: r.Source, sourceURL: r.SourceURL, asOf: r.StartedAt, run: &r.ID}
 		for _, v := range p.Values {
-			var changed bool
+			vs := st
+			vs.curated, vs.curationURL = v.Curated, p.CurationURL
+			var c Change
 			var kept []Conflict
 			var err error
 			switch v.Kind {
+			case KindFamily:
+				c, kept, err = patchRow(tx, vs, v, addFamily, "name = ?", v.Key)
 			case KindModel:
-				changed, kept, err = patchRow[model.Model](tx, st, v, "slug = ?", v.Key)
+				c, kept, err = patchRow[model.Model](tx, vs, v, nil, "slug = ?", v.Key)
 			case KindQuantization:
 				slug, name, _ := strings.Cut(v.Key, "/")
-				changed, kept, err = patchRow[model.ModelQuantization](tx, st, v, "model_slug = ? AND name = ?", slug, name)
+				c, kept, err = patchRow[model.ModelQuantization](tx, vs, v, nil, "model_slug = ? AND name = ?", slug, name)
 			case KindDraft:
-				changed, kept, err = patchRow[model.DraftModel](tx, st, v, "slug = ?", v.Key)
+				c, kept, err = patchRow[model.DraftModel](tx, vs, v, nil, "slug = ?", v.Key)
 			default:
 				err = fmt.Errorf("%w: cannot patch a %s", ErrInvalid, v.Kind)
 			}
 			if err != nil {
 				return err
 			}
-			if changed {
-				table := provenanceKinds[v.Kind].table
-				c := changes[table]
-				c.Updated++
-				changes[table] = c
-			}
+			count(provenanceKinds[v.Kind].table, c)
 			conflicts = append(conflicts, kept...)
 		}
 		for _, m := range p.Manifests {
@@ -102,10 +112,7 @@ func (s *Store) Patch(ctx context.Context, run uuid.UUID, p Patch) (Changes, []C
 			if err != nil {
 				return err
 			}
-			if c != (Change{}) {
-				total := changes["model_files"]
-				changes["model_files"] = Change{total.Inserted + c.Inserted, total.Updated + c.Updated, total.Deleted + c.Deleted}
-			}
+			count("model_files", c)
 			conflicts = append(conflicts, kept...)
 		}
 		return nil
@@ -116,39 +123,68 @@ func (s *Store) Patch(ctx context.Context, run uuid.UUID, p Patch) (Changes, []C
 	return changes, conflicts, nil
 }
 
+// addFamily makes f the new family key, last.
+func addFamily(tx *gorm.DB, f *model.Family, key string) error {
+	f.Name = key
+	return tx.Raw(`SELECT COALESCE(MAX(position) + 1, 0) FROM families`).Scan(&f.Position).Error
+}
+
 // patchRow sets the columns of v on the row of st's layer that where selects.
-func patchRow[T any](tx *gorm.DB, st stamp, v Values, where string, args ...any) (bool, []Conflict, error) {
+// Without one, add (nil: none) prepares a new row of v's key.
+func patchRow[T any](tx *gorm.DB, st stamp, v Values, add func(*gorm.DB, *T, string) error, where string, args ...any) (Change, []Conflict, error) {
 	var o T
-	if err := tx.Where("layer = ?", st.layer).Where(where, args...).Take(&o).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			err = ErrNotFound
-		}
-		return false, nil, fmt.Errorf("%s %s %q: %w", st.layer, v.Kind, v.Key, err)
+	found := tx.Where("layer = ?", st.layer).Where(where, args...).Limit(1).Find(&o)
+	if found.Error != nil {
+		return Change{}, nil, found.Error
+	}
+	isNew := found.RowsAffected == 0
+	if isNew && add == nil {
+		return Change{}, nil, fmt.Errorf("%s %s %q: %w", st.layer, v.Kind, v.Key, ErrNotFound)
 	}
 	cols, err := valueColumns(tx, &o)
 	if err != nil {
-		return false, nil, err
+		return Change{}, nil, err
 	}
-	w := o
+	w, old := o, &o
+	if isNew {
+		if len(v.Columns) != len(cols) {
+			return Change{}, nil, fmt.Errorf("%w: new %s %q: %d of its %d value columns given", ErrInvalid, v.Kind, v.Key, len(v.Columns), len(cols))
+		}
+		if err := add(tx, &w, v.Key); err != nil {
+			return Change{}, nil, err
+		}
+		old = nil
+	}
 	wv := reflect.ValueOf(&w).Elem()
 	names := slices.Sorted(maps.Keys(v.Columns))
 	fields, imported := make([]reflect.Value, len(names)), make([]any, len(names))
 	for i, name := range names {
 		c := slices.IndexFunc(cols, func(c column) bool { return c.db == name })
 		if c < 0 {
-			return false, nil, fmt.Errorf("%w: %s %q: no value column %s", ErrInvalid, v.Kind, v.Key, name)
+			return Change{}, nil, fmt.Errorf("%w: %s %q: no value column %s", ErrInvalid, v.Kind, v.Key, name)
 		}
 		f, x := wv.FieldByName(cols[c].name), reflect.ValueOf(v.Columns[name])
-		if x.IsValid() && x.Type().AssignableTo(f.Type()) {
-			f.Set(x)
-		} else if b, err := json.Marshal(v.Columns[name]); !x.IsValid() || err != nil || json.Unmarshal(b, f.Addr().Interface()) != nil {
-			return false, nil, fmt.Errorf("%w: %s %q: %s takes no %T", ErrInvalid, v.Kind, v.Key, name, v.Columns[name])
+		if !x.IsValid() || !x.Type().AssignableTo(f.Type()) {
+			// A fresh value: json.Unmarshal merges into the map or struct the
+			// row holds.
+			n := reflect.New(f.Type())
+			if b, err := json.Marshal(v.Columns[name]); !x.IsValid() || err != nil || json.Unmarshal(b, n.Interface()) != nil {
+				return Change{}, nil, fmt.Errorf("%w: %s %q: %s takes no %T", ErrInvalid, v.Kind, v.Key, name, v.Columns[name])
+			}
+			x = n.Elem()
 		}
+		f.Set(x)
 		fields[i], imported[i] = f, f.Interface()
 	}
-	fp, err := fieldProvenance(tx, st, &w, &o)
+	fp, err := fieldProvenance(tx, st, &w, old)
 	if err != nil {
-		return false, nil, err
+		return Change{}, nil, err
+	}
+	wm := meta(&w)
+	if isNew {
+		*wm.prov = model.Provenance{Layer: st.layer, Source: st.source, SourceURL: st.sourceURL, AsOf: st.asOf, ImportRunID: st.run}
+		*wm.fields = datatypes.NewJSONType(fp)
+		return Change{Inserted: 1}, nil, tx.Create(&w).Error
 	}
 	// fieldProvenance stamps a column without provenance even when its value
 	// is unchanged; a patch stamps only the columns it sets.
@@ -169,12 +205,11 @@ func patchRow[T any](tx *gorm.DB, st stamp, v Values, where string, args ...any)
 			kept = append(kept, Conflict{Kind: v.Kind, Key: v.Key, Field: names[i], Curated: got, Imported: imported[i]})
 		}
 	}
-	wm := meta(&w)
 	if reflect.DeepEqual(fp, wm.fields.Data()) && sameContent(&w, &o) {
-		return false, kept, nil
+		return Change{}, kept, nil
 	}
 	*wm.fields = datatypes.NewJSONType(fp)
-	return true, kept, tx.Save(&w).Error
+	return Change{Updated: 1}, kept, tx.Save(&w).Error
 }
 
 // patchFiles replaces the files of m's source in st's layer, unless the

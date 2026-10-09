@@ -195,15 +195,16 @@ func TestPatchRefuses(t *testing.T) {
 		patch store.Patch
 		want  error
 	}{
-		"unknown run":          {uuid.New(), store.Patch{Values: []store.Values{valid}}, nil},
-		"finished run":         {finished.ID, store.Patch{Values: []store.Values{valid}}, nil},
-		"unknown model":        {run, store.Patch{Values: []store.Values{valid, {Kind: store.KindModel, Key: "nope", Columns: map[string]any{"context_max": 1}}}}, store.ErrNotFound},
-		"unknown column":       {run, store.Patch{Values: []store.Values{valid, {Kind: store.KindModel, Key: llama.Slug, Columns: map[string]any{"slug": "x"}}}}, store.ErrInvalid},
-		"wrong value type":     {run, store.Patch{Values: []store.Values{valid, {Kind: store.KindModel, Key: llama.Slug, Columns: map[string]any{"context_max": "long"}}}}, store.ErrInvalid},
-		"unpatchable kind":     {run, store.Patch{Values: []store.Values{valid, {Kind: store.KindBackend, Key: "vllm", Columns: map[string]any{"position": 1}}}}, store.ErrInvalid},
-		"source pinned anew":   {run, store.Patch{Values: []store.Values{valid}, Manifests: []store.Manifest{moved}}, store.ErrConflict},
-		"duplicate file path":  {run, store.Patch{Values: []store.Values{valid}, Manifests: []store.Manifest{dup}}, store.ErrInvalid},
-		"unknown source owner": {run, store.Patch{Values: []store.Values{valid}, Manifests: []store.Manifest{{ModelSlug: llama.Slug, Quantization: "int4", Type: "huggingface", Repo: "x/y"}}}, store.ErrNotFound},
+		"unknown run":             {uuid.New(), store.Patch{Values: []store.Values{valid}}, nil},
+		"finished run":            {finished.ID, store.Patch{Values: []store.Values{valid}}, nil},
+		"unknown model":           {run, store.Patch{Values: []store.Values{valid, {Kind: store.KindModel, Key: "nope", Columns: map[string]any{"context_max": 1}}}}, store.ErrNotFound},
+		"unknown column":          {run, store.Patch{Values: []store.Values{valid, {Kind: store.KindModel, Key: llama.Slug, Columns: map[string]any{"slug": "x"}}}}, store.ErrInvalid},
+		"wrong value type":        {run, store.Patch{Values: []store.Values{valid, {Kind: store.KindModel, Key: llama.Slug, Columns: map[string]any{"context_max": "long"}}}}, store.ErrInvalid},
+		"unpatchable kind":        {run, store.Patch{Values: []store.Values{valid, {Kind: store.KindBackend, Key: "vllm", Columns: map[string]any{"position": 1}}}}, store.ErrInvalid},
+		"new family partly given": {run, store.Patch{Values: []store.Values{valid, {Kind: store.KindFamily, Key: "X100", Columns: map[string]any{"memory_gb": 80.0}}}}, store.ErrInvalid},
+		"source pinned anew":      {run, store.Patch{Values: []store.Values{valid}, Manifests: []store.Manifest{moved}}, store.ErrConflict},
+		"duplicate file path":     {run, store.Patch{Values: []store.Values{valid}, Manifests: []store.Manifest{dup}}, store.ErrInvalid},
+		"unknown source owner":    {run, store.Patch{Values: []store.Values{valid}, Manifests: []store.Manifest{{ModelSlug: llama.Slug, Quantization: "int4", Type: "huggingface", Repo: "x/y"}}}, store.ErrNotFound},
 	} {
 		_, _, err := s.Patch(ctx, c.run, c.patch)
 		if err == nil || c.want != nil && !errors.Is(err, c.want) {

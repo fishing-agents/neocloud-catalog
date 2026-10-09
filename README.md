@@ -43,8 +43,8 @@ does not curate models itself.
   the backends that load them; `backends.json` the inference servers (vLLM,
   SGLang, llama.cpp) with a pinned image per vendor, command templates
   (`{{model_path}}`, `{{model}}`, `{{port}}`), the quantization kinds they run
-  and their flag tables; `families.json` the per-family hardware facts
-  (generated, see Regenerate) and `families.overlay.json` their curated part;
+  and their flag tables; `families.json` the per-family hardware facts and
+  `families.overlay.json` their curated part (see Regenerate);
   `node_types.json` the cloud instances of the node-type vocabulary.
 - `generate.go` - the outsourced generation. `Generate` validates the input
   (`CatalogSnapshot.Validate`: every source has a known type and repo, and
@@ -93,12 +93,13 @@ does not curate models itself.
   embeds (schema 4.1.0). `SnapshotV4()` returns it.
 - `cmd/catalog-generate` - the pipeline CLI: reads `data/` and writes the
   snapshot.
-- `cmd/families-import` - writes `data/families.json` from Epoch AI's ML
-  hardware data (vendor, memory, bandwidth, dense tensor TFLOPS, NVLink-class
-  bandwidth) and `data/families.overlay.json` (the SKU each family name stands
-  for, its Epoch row, architecture, compute capability or gfx target, native
-  dtypes, interconnect, and Epoch gaps or corrections), every value with its
-  source URL.
+- `service/internal/importers/epoch` (catalog service module) - imports the
+  family hardware facts: Epoch AI's ML hardware data (vendor, memory,
+  bandwidth, dense tensor TFLOPS, NVLink-class bandwidth) merged with
+  `data/families.overlay.json` (the SKU each family name stands for, its Epoch
+  row, architecture, compute capability or gfx target, native dtypes,
+  interconnect, and Epoch gaps or corrections), every value with its source
+  URL. The core holds no network code.
 - `runrecord/` - the run-record contract: one serving configuration observed
   over one window with its outcome (Go types, `schema/run-record.v1.json`,
   strict `Decode`, `Validate`, the launch-flag allowlist `FilterArgs`).
@@ -285,12 +286,17 @@ licence-accepted account.
 
 ## Regenerate
 
-Hardware facts come from the overlay plus Epoch's CSV (downloaded by default;
-`-csv` reads a local copy). After editing `data/families.overlay.json`:
+Hardware facts come from Epoch's CSV plus the overlay, imported by the catalog
+service, from `service/`:
 
 ```sh
-go run ./cmd/families-import
+go run ./cmd/catalog-service import epoch
 ```
+
+Until the cutover `data/families.json` stays the bootstrap and file-release
+input: edit it together with `data/families.overlay.json`. From `service/`,
+`NEOCLOUD_CATALOG_LIVE=1 go test ./internal/importers/epoch -run TestLive`
+fails until both agree with Epoch's live data.
 
 After editing `data/`, from the module root:
 

@@ -217,7 +217,7 @@ type ImportConflict = store.Conflict
 
 // ImportCreate defines model for ImportCreate.
 type ImportCreate struct {
-	// Importer the importer's name (bootstrap-from-json, huggingface)
+	// Importer the importer's name (bootstrap-from-json, epoch, huggingface)
 	Importer string `json:"importer"`
 }
 

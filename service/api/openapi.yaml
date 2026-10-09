@@ -863,7 +863,7 @@ components:
       properties:
         importer:
           type: string
-          description: the importer's name (bootstrap-from-json, huggingface)
+          description: the importer's name (bootstrap-from-json, epoch, huggingface)
     ReleaseCreate:
       type: object
       required: [generator_run]
