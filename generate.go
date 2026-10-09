@@ -377,7 +377,8 @@ func exampleNodeTypes(vocab []NodeType, family string, gpus int) []string {
 	return out
 }
 
-// Validate checks that every model source has a known type and is pinned, that
+// Validate checks that every model source has a known type, is pinned and
+// lists each manifest file with a size and a sha256 or git-oid digest, that
 // every draft model is pinned on a repository and targets known models, that
 // model tasks, capabilities and preset purposes are in their closed
 // vocabularies, and that every preset names a quantization of its model whose
@@ -625,6 +626,29 @@ func (src ModelSource) validate() error {
 		return fmt.Errorf("%s source: repo required", src.Type)
 	case src.Revision == "" && src.Type != SourceLocal:
 		return fmt.Errorf("%s source %q: revision required", src.Type, src.Repo)
+	}
+	var errs []error
+	for _, f := range src.Files {
+		if err := f.validate(); err != nil {
+			errs = append(errs, fmt.Errorf("%s source %q: %w", src.Type, src.Repo, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// digestHexLen is the hex length of each digest algorithm: git-oid is SHA-1 or,
+// in SHA-256 repositories, SHA-256.
+var digestHexLen = map[string][]int{"sha256": {64}, "git-oid": {40, 64}}
+
+func (f ModelFile) validate() error {
+	alg, sum, _ := strings.Cut(f.Digest, ":")
+	switch {
+	case f.Path == "":
+		return errors.New("file path required")
+	case f.Size <= 0:
+		return fmt.Errorf("file %q: size %d, want > 0", f.Path, f.Size)
+	case !slices.Contains(digestHexLen[alg], len(sum)) || strings.Trim(sum, "0123456789abcdef") != "":
+		return fmt.Errorf("file %q: digest %q, want sha256:<hex> or git-oid:<hex>", f.Path, f.Digest)
 	}
 	return nil
 }

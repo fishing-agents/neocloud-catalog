@@ -71,7 +71,11 @@
             "repo": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
             "revision": "bf5b95e96dac0462e2a09145ec66cae9a3f12067",
             "files": [
-              "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf"
+              {
+                "path": "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+                "size": 4920739232,
+                "digest": "sha256:7b064f5842bf9532c91456deda288a1b672397a54fa729aa665952863033557c"
+              }
             ]
           }
         ]
@@ -566,7 +570,11 @@
             "repo": "bartowski/Qwen2.5-14B-Instruct-GGUF",
             "revision": "05244aa5d871c661c80082a15d3bce44714d068d",
             "files": [
-              "Qwen2.5-14B-Instruct-Q4_K_M.gguf"
+              {
+                "path": "Qwen2.5-14B-Instruct-Q4_K_M.gguf",
+                "size": 8988110976,
+                "digest": "sha256:e47ad95dad6ff848b431053b375adb5d39321290ea2c638682577dafca87c008"
+              }
             ]
           }
         ]

@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"encoding/json"
 	"testing"
 )
 
@@ -86,5 +87,35 @@ func TestVRAMRequiredUsesStoredKVWithoutArchitecture(t *testing.T) {
 	m := ModelTemplate{Quantizations: []Quantization{{Name: "bf16", WeightsGB: 10}}, KVBytesPerToken: 1e6}
 	if vram, _ := VRAMRequired(m, "bf16", 1000); vram != 11 {
 		t.Fatalf("vram = %v, want 11 from stored kv_bytes_per_token", vram)
+	}
+}
+
+// A 4.0.0 snapshot without the fields 4.1.0 reshaped (file lists, chat template
+// paths) decodes and validates, and a 4.0.0 overlay merges: only the major gates.
+func TestDecodesSchema40Snapshot(t *testing.T) {
+	const doc = `{"schema_version": "4.0.0", "version": "2026-10-01T00:00:00Z", "generated_at": "2026-10-01T00:00:00Z",
+		"families": [{"name": "L4", "vendor": "nvidia", "architecture": "ada", "compute_capability": "8.9", "dtypes": ["bf16"],
+			"memory_gb": 24, "memory_bandwidth_gbs": 300, "sources": []}],
+		"node_types": [], "draft_models": [], "backends": [],
+		"models": [{"slug": "m", "name": "M", "family": "llama", "task": "chat", "params_b": 8, "params_active_b": 8,
+			"default_context": 8192, "context_max": 8192, "kv_bytes_per_token": 131072,
+			"architecture": {"layers": 32, "attention_heads": 32, "kv_heads": 8, "head_dim": 128},
+			"quantizations": [{"name": "bf16", "kind": "float", "requires_dtype": "bf16", "weights_gb": 16.1,
+				"sources": [{"type": "huggingface", "repo": "org/m", "revision": "abc123"}]}]}],
+		"fits": [{"model_slug": "m", "device_family": "L4", "quantization": "bf16", "kv_cache_dtype": "auto", "mode": "native",
+			"gpu_count": 1, "nodes": 1, "max_context": 8192, "vram_required_gb": 17.18}]}`
+	var snap CatalogSnapshot
+	if err := json.Unmarshal([]byte(doc), &snap); err != nil {
+		t.Fatal(err)
+	}
+	if src := snap.Models[0].Quantizations[0].Sources[0]; src.Repo != "org/m" || src.Revision != "abc123" || src.Files != nil {
+		t.Fatalf("source = %+v", src)
+	}
+	if err := snap.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	o := Overlay{SchemaVersion: "4.0.0", SnapshotDigest: snap.Digest(), Models: map[string]Extensions{"m": {"x.io/a": okPayload}}}
+	if _, err := Merge(snap, o); err != nil {
+		t.Fatalf("merge a 4.0.0 overlay: %v", err)
 	}
 }

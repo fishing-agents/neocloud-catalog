@@ -12,9 +12,9 @@ import (
 	"time"
 )
 
-// SchemaVersion is the versioned wire format. Bump it on any breaking change to
-// the snapshot shape so embedders can gate on it.
-const SchemaVersion = "4.0.0"
+// SchemaVersion is the versioned wire format. Embedders gate on the major: bump
+// it on a breaking change to the snapshot shape, the minor on an addition.
+const SchemaVersion = "4.1.0"
 
 // Extensions holds payloads of registered extensions keyed by their namespaced
 // name (e.g. "neocloud.io/interruption"). The core never interprets them; it
@@ -60,13 +60,22 @@ const (
 // ModelSource locates a checkpoint's weights. Repo is the repository id
 // (huggingface, modelscope), the OCI reference without tag or digest (oci), or
 // a path on the nodes (local). Revision pins the content: a commit or tag
-// (huggingface, modelscope) or a manifest digest (oci). Files optionally limits
-// the download to these paths.
+// (huggingface, modelscope) or a manifest digest (oci). Files is the manifest
+// of the files to fetch at that revision; without one the whole revision is.
 type ModelSource struct {
-	Type     string   `json:"type"`
-	Repo     string   `json:"repo"`
-	Revision string   `json:"revision,omitempty"`
-	Files    []string `json:"files,omitempty"`
+	Type     string      `json:"type"`
+	Repo     string      `json:"repo"`
+	Revision string      `json:"revision,omitempty"`
+	Files    []ModelFile `json:"files,omitempty"`
+}
+
+// ModelFile is one manifest entry: a path in the source, its size in bytes and
+// its digest, "sha256:<hex>" of the content (Git LFS oid) or "git-oid:<hex>",
+// the Git blob id of a file stored in Git itself.
+type ModelFile struct {
+	Path   string `json:"path"`
+	Size   int64  `json:"size"`
+	Digest string `json:"digest"`
 }
 
 // Preset is a deployable template: a model at one quantization served by one

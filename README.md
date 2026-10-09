@@ -18,7 +18,8 @@ does not curate models itself.
   `ModelTemplate` (metadata, weights and sources per quantization with its kind
   and required dtype, architecture, derived KV bytes/token, context limits,
   license, gated, presets, deployment guidance), `ModelSource` (huggingface,
-  modelscope, oci or local; pinned revision; optional `files`), `Preset`,
+  modelscope, oci or local; pinned revision; optional `files` manifest of
+  `ModelFile` path, size and `sha256:` or `git-oid:` digest), `Preset`,
   `DraftModel`, `Backend` and `BackendVersion` (image per vendor, command
   template, health path, quantization kinds, flag table), `ModelFit` (model x
   family x quantization x KV cache dtype -> native or emulated, GPU count,
@@ -89,7 +90,7 @@ does not curate models itself.
   `EstimateMemoryUtilization` 0.92 of memory for weights and KV, and
   `DecentDecodeTokensPerSec` 20.
 - `snapshots/v4/catalog.json` - the committed, generated snapshot the module
-  embeds (schema 4.0.0). `SnapshotV4()` returns it.
+  embeds (schema 4.1.0). `SnapshotV4()` returns it.
 - `cmd/catalog-generate` - the pipeline CLI: reads `data/` and writes the
   snapshot.
 - `cmd/families-import` - writes `data/families.json` from Epoch AI's ML
@@ -110,10 +111,12 @@ does not curate models itself.
 ## Snapshot contract
 
 The snapshot is the sellable/embeddable artifact. `SchemaVersion` is the wire
-format (bump on a breaking shape change); `Version` changes when the content
-changes; `Digest` is the content hash clients pin and the ETag for conditional
-gets. The `/v1/model-catalog` endpoint in neocloud serves the same shape and
-semantics.
+format (bump the major on a breaking shape change; clients gate on the major).
+4.1.0 replaced the never-published 4.0.0's file lists with file manifests and
+its chat template paths with paths per image vendor. `Version` changes when the
+content changes; `Digest` is the content hash clients pin and the ETag for
+conditional gets. The `/v1/model-catalog` endpoint in neocloud serves the same
+shape and semantics.
 
 Upstream refresh: the snapshot is published as a single-layer OCI artifact
 (`application/vnd.neocloud.catalog.v4+json`, version in the

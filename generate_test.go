@@ -462,6 +462,28 @@ func TestGenerateRejectsUnresolvedPresetsAndUnpinnedSources(t *testing.T) {
 		{"duplicate preset", func(m *ModelTemplate) { m.Presets = append(m.Presets, m.Presets[0]) }, `duplicate preset "vllm-bf16"`},
 		{"huggingface source without revision", func(m *ModelTemplate) { m.Quantizations[0].Sources[0].Revision = "" }, "revision required"},
 		{"unknown source type", func(m *ModelTemplate) { m.Quantizations[0].Sources[0].Type = "s3" }, `unknown type "s3"`},
+		{"file manifest", func(m *ModelTemplate) {
+			m.Quantizations[0].Sources[0].Files = []ModelFile{{Path: "m.gguf", Size: 4920739232, Digest: "sha256:" + strings.Repeat("7b", 32)},
+				{Path: "config.json", Size: 1, Digest: "git-oid:" + strings.Repeat("a1", 20)}}
+		}, ""},
+		{"file without size", func(m *ModelTemplate) {
+			m.Quantizations[0].Sources[0].Files = []ModelFile{{Path: "m.gguf", Digest: "sha256:" + strings.Repeat("7b", 32)}}
+		}, `file "m.gguf": size 0`},
+		{"file without path", func(m *ModelTemplate) {
+			m.Quantizations[0].Sources[0].Files = []ModelFile{{Size: 1, Digest: "sha256:" + strings.Repeat("7b", 32)}}
+		}, "file path required"},
+		{"bare digest", func(m *ModelTemplate) {
+			m.Quantizations[0].Sources[0].Files = []ModelFile{{Path: "m.gguf", Size: 1, Digest: strings.Repeat("7b", 32)}}
+		}, `file "m.gguf": digest`},
+		{"unknown digest algorithm", func(m *ModelTemplate) {
+			m.Quantizations[0].Sources[0].Files = []ModelFile{{Path: "m.gguf", Size: 1, Digest: "md5:" + strings.Repeat("7b", 16)}}
+		}, `file "m.gguf": digest`},
+		{"short sha256", func(m *ModelTemplate) {
+			m.Quantizations[0].Sources[0].Files = []ModelFile{{Path: "m.gguf", Size: 1, Digest: "sha256:" + strings.Repeat("7b", 20)}}
+		}, `file "m.gguf": digest`},
+		{"non-hex digest", func(m *ModelTemplate) {
+			m.Quantizations[0].Sources[0].Files = []ModelFile{{Path: "m.gguf", Size: 1, Digest: "sha256:" + strings.Repeat("7g", 32)}}
+		}, `file "m.gguf": digest`},
 	}
 	for _, c := range cases {
 		m := llama8b()

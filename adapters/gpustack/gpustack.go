@@ -205,7 +205,7 @@ func (a adapter) specs(snap catalog.CatalogSnapshot, r adapters.Ref) ([]spec, st
 	}
 	var file string
 	if len(src.Files) == 1 {
-		file = src.Files[0]
+		file = src.Files[0].Path
 	}
 	if src.Type == catalog.SourceHuggingFace {
 		base.Source, base.HuggingFaceRepoID, base.HuggingFaceFilename = "huggingface", src.Repo, file
