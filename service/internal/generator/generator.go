@@ -10,18 +10,20 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/google/uuid"
+
 	catalog "github.com/fishman/neocloud-catalog"
 	"github.com/fishman/neocloud-catalog/service/internal/model"
 	"github.com/fishman/neocloud-catalog/service/internal/store"
 )
 
-// Run generates the snapshot of the effective catalog as a new generator run
-// and stores the run: its inputs' digest and import runs, the report, the
+// Run generates the snapshot of the effective catalog as the new generator run
+// id and stores the run: its inputs' digest and import runs, the report, the
 // snapshot generated at the run's start (its version is a release's to set)
 // and the fits, estimates and guidance it derives. A failed generation is
 // stored as a failed run and returned with its error, which names the run.
-func Run(ctx context.Context, s *store.Store) (model.GeneratorRun, error) {
-	run, err := s.StartGeneratorRun(ctx)
+func Run(ctx context.Context, s *store.Store, id uuid.UUID) (model.GeneratorRun, error) {
+	run, err := s.StartGeneratorRun(ctx, id)
 	if err != nil {
 		return run, fmt.Errorf("start generator run: %w", err)
 	}

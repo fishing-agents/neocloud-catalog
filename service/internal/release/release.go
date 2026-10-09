@@ -54,11 +54,11 @@ func Create(ctx context.Context, s *store.Store, generatorRunID uuid.UUID) (Rele
 		return Release{}, err
 	}
 	if run.Status != model.RunSucceeded || run.Snapshot == nil {
-		return Release{}, fmt.Errorf("generator run %s is %s, not succeeded", run.ID, run.Status)
+		return Release{}, fmt.Errorf("%w: generator run %s is %s, not succeeded", store.ErrConflict, run.ID, run.Status)
 	}
 	snap := *run.Snapshot
 	if snap.SchemaVersion != catalog.SchemaVersion {
-		return Release{}, fmt.Errorf("generator run %s has schema %s; this build releases %s", run.ID, snap.SchemaVersion, catalog.SchemaVersion)
+		return Release{}, fmt.Errorf("%w: generator run %s has schema %s; this build releases %s", store.ErrConflict, run.ID, snap.SchemaVersion, catalog.SchemaVersion)
 	}
 	snap.Version = snap.GeneratedAt.UTC().Format(catalog.VersionLayout)
 	overlay, err := s.Overlay(ctx)
@@ -67,7 +67,7 @@ func Create(ctx context.Context, s *store.Store, generatorRunID uuid.UUID) (Rele
 	}
 	overlay.SnapshotDigest = snap.Digest()
 	if _, err := catalog.Merge(snap, overlay); err != nil {
-		return Release{}, fmt.Errorf("generator run %s: %w", run.ID, err)
+		return Release{}, fmt.Errorf("%w: generator run %s: %w", store.ErrConflict, run.ID, err)
 	}
 	rel := model.Release{Version: snap.Version, Digest: overlay.SnapshotDigest, SchemaVersion: snap.SchemaVersion,
 		GeneratorRunID: run.ID, Overlay: overlay}
@@ -144,7 +144,7 @@ func Publish(ctx context.Context, rel Release, t Target) error {
 	at := repo.Digest(a.desc.Digest.String()).String()
 	if cur.PublishedAt != nil {
 		if cur.ArtifactRef != at {
-			return fmt.Errorf("release %s is published as %s, not %s", cur.Version, cur.ArtifactRef, at)
+			return fmt.Errorf("%w: release %s is published as %s, not %s", store.ErrConflict, cur.Version, cur.ArtifactRef, at)
 		}
 		return nil
 	}
@@ -153,7 +153,7 @@ func Publish(ctx context.Context, rel Release, t Target) error {
 		return err
 	}
 	if newer != "" {
-		return fmt.Errorf("release %s is older than the published release %s", cur.Version, newer)
+		return fmt.Errorf("%w: release %s is older than the published release %s", store.ErrConflict, cur.Version, newer)
 	}
 	opts := remoteOptions(ctx)
 	if err := a.push(repo, opts); err != nil {

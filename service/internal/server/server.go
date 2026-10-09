@@ -1,5 +1,5 @@
-// Package server runs the catalog service's HTTP servers: the API port (probes
-// now, the catalog API later) and a separate Prometheus metrics port.
+// Package server runs the catalog service's HTTP servers: the API port
+// (probes and the catalog API) and a separate Prometheus metrics port.
 package server
 
 import (
@@ -17,10 +17,11 @@ import (
 
 const readyTimeout = 2 * time.Second
 
-// Handler serves /healthz (the process is up) and /readyz (ping, the database,
-// answers within readyTimeout).
-func Handler(ping func(context.Context) error) http.Handler {
+// Handler serves /healthz (the process is up), /readyz (ping, the database,
+// answers within readyTimeout) and api under /v1/.
+func Handler(ping func(context.Context) error, api http.Handler) http.Handler {
 	mux := http.NewServeMux()
+	mux.Handle("/v1/", api)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})

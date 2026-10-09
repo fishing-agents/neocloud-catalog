@@ -52,11 +52,11 @@ func NewRegistry(imps ...Importer) Registry {
 	return r
 }
 
-// Execute runs imp as a new import run and records how it ended, failed runs
-// included; errors after the run started name it.
-func Execute(ctx context.Context, s *store.Store, imp Importer) (model.ImportRun, error) {
+// Execute runs imp as the new import run id and records how it ended, failed
+// runs included; errors after the run started name it.
+func Execute(ctx context.Context, s *store.Store, imp Importer, id uuid.UUID) (model.ImportRun, error) {
 	o := imp.Origin()
-	run, err := s.StartImport(ctx, imp.Name(), o.Layer, o.Source, o.SourceURL)
+	run, err := s.StartImport(ctx, id, imp.Name(), o.Layer, o.Source, o.SourceURL)
 	if err != nil {
 		return run, fmt.Errorf("start %s import run: %w", imp.Name(), err)
 	}

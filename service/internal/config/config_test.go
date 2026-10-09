@@ -33,9 +33,14 @@ func TestLoadLayersOverlayThenEnv(t *testing.T) {
 
 func TestLoadRefusesInvalidConfig(t *testing.T) {
 	cases := map[string]struct{ env, value, want string }{
-		"no dsn":              {"NEOCLOUD_CATALOG_DATABASE_DSN", "", "database.dsn"},
-		"metrics on api port": {"NEOCLOUD_CATALOG_TELEMETRY_METRICS_ADDR", "0.0.0.0:8080", "telemetry.metrics_addr"},
-		"zero timeout":        {"NEOCLOUD_CATALOG_SERVER_READ_TIMEOUT", "0s", "server.read_timeout"},
+		"no dsn":                {"NEOCLOUD_CATALOG_DATABASE_DSN", "", "database.dsn"},
+		"metrics on api port":   {"NEOCLOUD_CATALOG_TELEMETRY_METRICS_ADDR", "0.0.0.0:8080", "telemetry.metrics_addr"},
+		"zero timeout":          {"NEOCLOUD_CATALOG_SERVER_READ_TIMEOUT", "0s", "server.read_timeout"},
+		"zero job timeout":      {"NEOCLOUD_CATALOG_JOBS_JOB_TIMEOUT", "0s", "jobs.job_timeout"},
+		"rescue before timeout": {"NEOCLOUD_CATALOG_JOBS_RESCUE_AFTER", "1s", "jobs.rescue_after"},
+		"issuer, no audience":   {"NEOCLOUD_CATALOG_AUTH_ISSUER_URL", "https://icp.example.com", "auth.audience"},
+		"release ref, no key":   {"NEOCLOUD_CATALOG_RELEASE_REF", "ghcr.io/example/catalog:v4", "release.key"},
+		"release key, no ref":   {"NEOCLOUD_CATALOG_RELEASE_KEY", "/etc/catalog/cosign.key", "release.ref"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {

@@ -1,0 +1,1338 @@
+openapi: 3.0.3
+info:
+  title: neocloud catalog service API
+  version: 0.1.0
+  description: |
+    The catalog service's operator API. internal/httpapi is generated from this
+    file (make generate); catalog objects bind to the core types of
+    github.com/fishman/neocloud-catalog, so they have the shapes of the schema 4
+    export.
+
+    Every /v1 operation needs a bearer token: an API key
+    (neocatalog_<prefix>_<secret>, minted with `catalog-service auth issue`) or,
+    when auth.issuer_url is set, an OIDC JWT from ICP whose aud contains
+    auth.audience. Reads (GET) take any authenticated principal; every other
+    method writes and takes an API key or a JWT whose roles claim contains
+    admin.
+
+    Prices and cost estimates are internal: no release carries them.
+servers:
+  - url: /
+security:
+  - bearerAuth: []
+paths:
+  /v1/catalog:
+    get:
+      operationId: getCatalog
+      summary: The effective catalog
+      description: Per object key the local object, else the upstream one, in curated order, in the export's shapes but without what generator runs derive (version, generated_at, fits, deployment; kv_bytes_per_token is 0) and without extension payloads, which the overlay carries. With provenance, where each object's rows came from.
+      parameters:
+        - name: provenance
+          in: query
+          description: add the provenance of every object
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: the effective catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EffectiveCatalog"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/local/models/{slug}:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getLocalModel
+      summary: The local model of slug
+      responses:
+        "200":
+          description: the local model
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelTemplate"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: putLocalModel
+      summary: Curate the local model of slug
+      description: Replaces the local model of slug with the body, its quantizations, sources and presets included; the local model overrides the upstream one of its slug as a whole. Derived fields are not stored. Extension payloads are refused, the overlay alone carries them.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ModelTemplate"
+      responses:
+        "200":
+          description: the stored local model
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelTemplate"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    delete:
+      operationId: deleteLocalModel
+      summary: Remove the local model of slug, which restores the upstream one
+      responses:
+        "204":
+          description: removed
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/local/models/{slug}/presets/{name}:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getLocalPreset
+      summary: A preset of the local model of slug
+      responses:
+        "200":
+          description: the preset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Preset"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: putLocalPreset
+      summary: Curate a preset of the local model of slug
+      description: Replaces or appends the preset in the local model of slug, which must exist (PUT the model first to override an upstream one). Extension payloads are refused.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Preset"
+      responses:
+        "200":
+          description: the stored preset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Preset"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteLocalPreset
+      summary: Remove a preset from the local model of slug
+      responses:
+        "204":
+          description: removed
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/local/node-types/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: the node type id; escape its slash (azure%2FStandard_ND96isr_H100_v5)
+        schema:
+          type: string
+    get:
+      operationId: getLocalNodeType
+      summary: The local node type of id
+      responses:
+        "200":
+          description: the local node type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeType"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: putLocalNodeType
+      summary: Curate the local node type of id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeType"
+      responses:
+        "200":
+          description: the stored local node type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeType"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    delete:
+      operationId: deleteLocalNodeType
+      summary: Remove the local node type of id, which restores the upstream one
+      responses:
+        "204":
+          description: removed
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/local/prices:
+    get:
+      operationId: listLocalPrices
+      summary: The local node type prices (internal)
+      responses:
+        "200":
+          description: the local prices by node type, region and billing
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Price"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      operationId: putLocalPrices
+      summary: Replace the local node type prices (internal)
+      description: The local layer then holds exactly these prices; an unchanged price keeps its as_of.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/Price"
+      responses:
+        "200":
+          description: the stored local prices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Price"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    delete:
+      operationId: deleteLocalPrices
+      summary: Remove every local node type price (internal)
+      responses:
+        "204":
+          description: removed
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /v1/imports:
+    get:
+      operationId: listImports
+      summary: Import runs, newest first, after the queued ones
+      parameters:
+        - name: importer
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: the most recorded runs to list
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+      responses:
+        "200":
+          description: import runs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ImportRun"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/imports/{id}:
+    post:
+      operationId: startImport
+      summary: Queue a run of the importer id
+      description: Enqueues the importer named id on the catalog queue; the response is the queued run, whose id GET /v1/imports/{id} follows.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: the importer's name (bootstrap-from-json, ...)
+          schema:
+            type: string
+      responses:
+        "202":
+          description: the queued run
+          headers:
+            Location:
+              description: the run
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportRun"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    get:
+      operationId: getImport
+      summary: The import run id
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: the import run's id
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: the import run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportRun"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/generator-runs:
+    post:
+      operationId: startGeneratorRun
+      summary: Queue a generator run over the effective catalog
+      responses:
+        "202":
+          description: the queued run
+          headers:
+            Location:
+              description: the run
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeneratorRun"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /v1/generator-runs/{id}:
+    get:
+      operationId: getGeneratorRun
+      summary: The generator run id
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: the generator run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeneratorRun"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/releases:
+    get:
+      operationId: listReleases
+      summary: Releases, newest first
+      responses:
+        "200":
+          description: releases
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Release"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createRelease
+      summary: Freeze a succeeded generator run as a release
+      description: The release's version is the run's generation time; the overlay layer's payloads now are pinned to its digest.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReleaseCreate"
+      responses:
+        "201":
+          description: the release
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Release"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /v1/releases/{version}/publish:
+    post:
+      operationId: publishRelease
+      summary: Publish a release to release.ref, signed with release.key
+      description: Pushes the release's snapshot as the signed catalog artifact and points release.ref's tag at it, once; again with identical content changes nothing. A release older than a published one is refused.
+      parameters:
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: the published release
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Release"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          description: publishing is not configured (release.ref, release.key)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/cost-estimates:
+    get:
+      operationId: listCostEstimates
+      summary: Cost estimates of the newest succeeded generator run (internal)
+      parameters:
+        - name: model
+          in: query
+          schema:
+            type: string
+        - name: billing
+          in: query
+          schema:
+            $ref: "#/components/schemas/Billing"
+        - name: region
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: cost estimates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CostEstimate"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  responses:
+    BadRequest:
+      description: invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: no valid bearer token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: the principal may only read (an OIDC token without the admin role)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: no such object
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: the request conflicts with the current state
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: stable, machine-readable (invalid_request, unauthorized, forbidden, not_found, conflict, not_configured, internal_error)
+        message:
+          type: string
+    Layer:
+      type: string
+      enum: [upstream, local, overlay]
+    Billing:
+      type: string
+      enum: [on_demand, spot, reserved_1y]
+    RunStatus:
+      type: string
+      description: queued until a worker starts the run
+      enum: [queued, running, succeeded, failed]
+    EffectiveCatalog:
+      type: object
+      required: [schema_version, families, node_types, models, draft_models, backends]
+      properties:
+        schema_version:
+          type: string
+        families:
+          type: array
+          items:
+            $ref: "#/components/schemas/Family"
+        node_types:
+          type: array
+          items:
+            $ref: "#/components/schemas/NodeType"
+        models:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelTemplate"
+        draft_models:
+          type: array
+          items:
+            $ref: "#/components/schemas/DraftModel"
+        backends:
+          type: array
+          items:
+            $ref: "#/components/schemas/Backend"
+        provenance:
+          $ref: "#/components/schemas/CatalogProvenance"
+    CatalogProvenance:
+      type: object
+      description: Per object kind and key (a quantization's is <model slug>/<name>) the object's local and upstream rows, local first.
+      required: [families, node_types, models, quantizations, draft_models, backends]
+      properties:
+        families:
+          $ref: "#/components/schemas/ProvenanceByKey"
+        node_types:
+          $ref: "#/components/schemas/ProvenanceByKey"
+        models:
+          $ref: "#/components/schemas/ProvenanceByKey"
+        quantizations:
+          $ref: "#/components/schemas/ProvenanceByKey"
+        draft_models:
+          $ref: "#/components/schemas/ProvenanceByKey"
+        backends:
+          $ref: "#/components/schemas/ProvenanceByKey"
+    ProvenanceByKey:
+      type: object
+      additionalProperties:
+        type: array
+        items:
+          $ref: "#/components/schemas/Provenance"
+    Provenance:
+      type: object
+      required: [layer, source, source_url, as_of, effective]
+      description: Where one layer's row of an object came from; effective marks the row the effective catalog uses.
+      properties:
+        layer:
+          $ref: "#/components/schemas/Layer"
+        source:
+          type: string
+          description: the importer's source, or curation
+        source_url:
+          type: string
+        as_of:
+          type: string
+          format: date-time
+        import_run_id:
+          type: string
+          format: uuid
+        effective:
+          type: boolean
+        fields:
+          x-go-type-skip-optional-pointer: true
+          type: object
+          description: per field, where its value came from (not kept for backends)
+          additionalProperties:
+            $ref: "#/components/schemas/FieldSource"
+    FieldSource:
+      x-go-type: model.FieldSource
+      x-go-type-import:
+        name: model
+        path: github.com/fishman/neocloud-catalog/service/internal/model
+      type: object
+      required: [source, as_of]
+      properties:
+        source:
+          type: string
+        source_url:
+          type: string
+        as_of:
+          type: string
+          format: date-time
+        import_run_id:
+          type: string
+          format: uuid
+    Price:
+      type: object
+      required: [node_type_id, region, billing, usd_per_hour]
+      description: What a node type costs per hour in a region at a billing type.
+      properties:
+        node_type_id:
+          type: string
+        region:
+          type: string
+        billing:
+          $ref: "#/components/schemas/Billing"
+        usd_per_hour:
+          type: number
+          format: double
+          minimum: 0
+        as_of:
+          type: string
+          format: date-time
+          readOnly: true
+    ImportRun:
+      type: object
+      required: [id, importer, layer, source, source_url, status, input_version, summary, error]
+      properties:
+        id:
+          type: string
+          format: uuid
+        importer:
+          type: string
+        layer:
+          $ref: "#/components/schemas/Layer"
+        source:
+          type: string
+        source_url:
+          type: string
+        status:
+          $ref: "#/components/schemas/RunStatus"
+        input_version:
+          type: string
+          description: the version of the input it read
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        summary:
+          $ref: "#/components/schemas/ImportSummary"
+        error:
+          type: string
+    ImportSummary:
+      type: object
+      description: the importer's result; changes counts the rows it changed per table
+      required: [changes]
+      properties:
+        changes:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/Change"
+      additionalProperties: true
+    Change:
+      x-go-type: store.Change
+      x-go-type-import:
+        name: store
+        path: github.com/fishman/neocloud-catalog/service/internal/store
+      type: object
+      properties:
+        inserted:
+          type: integer
+        updated:
+          type: integer
+        deleted:
+          type: integer
+    GeneratorRun:
+      type: object
+      required: [id, status, input_digest, input_import_runs, schema_version, report, error]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/RunStatus"
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        input_digest:
+          type: string
+          description: sha256 of the curated inputs it read
+        input_import_runs:
+          type: array
+          description: the import runs that wrote its inputs
+          items:
+            type: string
+            format: uuid
+        schema_version:
+          type: string
+        report:
+          type: array
+          description: what the generator reported
+          items:
+            type: string
+        error:
+          type: string
+    ReleaseCreate:
+      type: object
+      required: [generator_run]
+      properties:
+        generator_run:
+          type: string
+          format: uuid
+    Release:
+      type: object
+      required: [id, version, digest, schema_version, generator_run, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        version:
+          type: string
+          description: the generation time of its generator run
+        digest:
+          type: string
+          description: the digest of its public snapshot
+        schema_version:
+          type: string
+        generator_run:
+          type: string
+          format: uuid
+        artifact_ref:
+          x-go-type-skip-optional-pointer: true
+          type: string
+          description: repository@digest it was published as
+        published_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    CostEstimate:
+      type: object
+      required: [model, setup, fit_key, node_type_id, region, billing, instances, usd_per_hour, usd_per_month, price_source, price_source_url, price_as_of, generator_run]
+      description: What a fit or a guidance setup of a model costs on a cloud node type in a region at a billing type.
+      properties:
+        model:
+          type: string
+        setup:
+          type: string
+          enum: [fit, minimum, optimal]
+        fit_key:
+          type: string
+          description: the fit's key for setup fit, else empty
+        node_type_id:
+          type: string
+        region:
+          type: string
+        billing:
+          $ref: "#/components/schemas/Billing"
+        instances:
+          type: integer
+        usd_per_hour:
+          type: number
+          format: double
+        usd_per_month:
+          type: number
+          format: double
+        price_source:
+          type: string
+        price_source_url:
+          type: string
+        price_as_of:
+          type: string
+          format: date-time
+        generator_run:
+          type: string
+          format: uuid
+    Extensions:
+      x-go-type: catalog.Extensions
+      x-go-type-import:
+        name: catalog
+        path: github.com/fishman/neocloud-catalog
+      type: object
+      description: Extension payloads keyed by namespace. The API never takes them on local writes; the signed overlay alone carries them.
+      additionalProperties: true
+    Family:
+      x-go-type: catalog.Family
+      x-go-type-import:
+        name: catalog
+        path: github.com/fishman/neocloud-catalog
+      type: object
+      required: [name, vendor, architecture, compute_capability, dtypes, memory_gb, memory_bandwidth_gbs, sources]
+      description: A device family (a GPU model, or CPU) with the hardware facts fits and estimates derive from.
+      properties:
+        name:
+          type: string
+        vendor:
+          type: string
+          description: nvidia, amd, intel or cpu
+        architecture:
+          type: string
+        compute_capability:
+          type: string
+          description: NVIDIA compute capability (9.0) or AMD gfx target (gfx942)
+        dtypes:
+          type: array
+          items:
+            type: string
+        memory_gb:
+          type: number
+          format: double
+        memory_bandwidth_gbs:
+          type: number
+          format: double
+        tflops:
+          type: object
+          description: dense TFLOPS per dtype
+          additionalProperties:
+            type: number
+            format: double
+        interconnect:
+          type: string
+        interconnect_gbs:
+          type: number
+          format: double
+        sources:
+          type: array
+          description: URLs backing the values
+          items:
+            type: string
+        extensions:
+          $ref: "#/components/schemas/Extensions"
+    NodeType:
+      x-go-type: catalog.NodeType
+      x-go-type-import:
+        name: catalog
+        path: github.com/fishman/neocloud-catalog
+      type: object
+      required: [id, family, gpus]
+      description: An entry of the closed node vocabulary - a cloud instance id (azure/Standard_ND96isr_H100_v5) or the fallback other/<family>x<gpus>.
+      properties:
+        id:
+          type: string
+        family:
+          type: string
+        gpus:
+          type: integer
+        source:
+          type: string
+          description: the page documenting the node type
+    ModelTemplate:
+      x-go-type: catalog.ModelTemplate
+      x-go-type-import:
+        name: catalog
+        path: github.com/fishman/neocloud-catalog
+      type: object
+      required: [slug, name, family, task, params_b, params_active_b, default_context, context_max, quantizations, architecture, kv_bytes_per_token]
+      properties:
+        slug:
+          type: string
+        name:
+          type: string
+        family:
+          type: string
+        description:
+          type: string
+        task:
+          type: string
+          description: chat, completion, embedding, rerank or vision-chat
+        capabilities:
+          type: array
+          items:
+            type: string
+        params_b:
+          type: number
+          format: double
+        params_active_b:
+          type: number
+          format: double
+        release_date:
+          type: string
+          description: YYYY-MM-DD
+        home:
+          type: string
+        icon:
+          type: string
+        aliases:
+          type: array
+          items:
+            type: string
+        default_context:
+          type: integer
+        context_max:
+          type: integer
+        quantizations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Quantization"
+        architecture:
+          $ref: "#/components/schemas/Architecture"
+        kv_bytes_per_token:
+          type: number
+          format: double
+          description: derived by generator runs; 0 in the effective catalog and ignored on writes
+        license:
+          type: string
+        gated:
+          type: boolean
+        presets:
+          type: array
+          items:
+            $ref: "#/components/schemas/Preset"
+        deployment:
+          $ref: "#/components/schemas/Deployment"
+        extensions:
+          $ref: "#/components/schemas/Extensions"
+    Architecture:
+      x-go-type: catalog.Architecture
+      x-go-type-import:
+        name: catalog
+        path: github.com/fishman/neocloud-catalog
+      type: object
+      required: [layers, attention_heads, kv_heads, head_dim]
+      properties:
+        layers:
+          type: integer
+        attention_heads:
+          type: integer
+        kv_heads:
+          type: integer
+        head_dim:
+          type: integer
+    Quantization:
+      x-go-type: catalog.Quantization
+      x-go-type-import:
+        name: catalog
+        path: github.com/fishman/neocloud-catalog
+      type: object
+      required: [name, kind, requires_dtype, weights_gb]
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+          description: checkpoint format (float, fp8, int4-awq, int4-gptq, gguf)
+        requires_dtype:
+          type: string
+        weights_gb:
+          type: number
+          format: double
+        sources:
+          type: array
+          description: where the weights can be fetched, in preference order
+          items:
+            $ref: "#/components/schemas/ModelSource"
+    ModelSource:
+      x-go-type: catalog.ModelSource
+      x-go-type-import:
+        name: catalog
+        path: github.com/fishman/neocloud-catalog
+      type: object
+      required: [type, repo]
+      properties:
+        type:
+          type: string
+          enum: [huggingface, modelscope, oci, local]
+        repo:
+          type: string
+        revision:
+          type: string
+          description: pinned commit or tag (huggingface, modelscope) or manifest digest (oci)
+        files:
+          type: array
+          description: manifest of the files to fetch at the revision
+          items:
+            $ref: "#/components/schemas/ModelFile"
+    ModelFile:
+      x-go-type: catalog.ModelFile
+      x-go-type-import:
+        name: catalog
+        path: github.com/fishman/neocloud-catalog
+      type: object
+      required: [path, size, digest]
+      properties:
+        path:
+          type: string
+        size:
+          type: integer
+          format: int64
+          description: bytes
+        digest:
+          type: string
+          description: sha256:<hex> or git-oid:<hex>
+    Preset:
+      x-go-type: catalog.Preset
+      x-go-type-import:
+        name: catalog
+        path: github.com/fishman/neocloud-catalog
+      type: object
+      required: [name, quantization, backend, backend_version, purpose, context]
+      description: The model at one quantization served by one backend version, in engine-neutral fields the backend version's flag table renders.
+      properties:
+        name:
+          type: string
+        quantization:
+          type: string
+        backend:
+          type: string
+        backend_version:
+          type: string
+        min_backend_version:
+          type: string
+        purpose:
+          type: string
+          description: standard, throughput, latency or long-context
+        context:
+          type: integer
+        tensor_parallel:
+          type: integer
+        kv_cache_dtype:
+          type: string
+        prefix_caching:
+          type: boolean
+        tool_parser:
+          type: string
+        reasoning_parser:
+          type: string
+        chat_template:
+          type: string
+        speculative:
+          $ref: "#/components/schemas/Speculative"
+        topology:
+          $ref: "#/components/schemas/Topology"
+        env:
+          type: object
+          additionalProperties:
+            type: string
+        extra_args:
+          type: array
+          items:
+            type: string
+        vendors:
+          type: array
+          items:
+            type: string
+        extensions:
+          $ref: "#/components/schemas/Extensions"
+    Speculative:
+      x-go-type: catalog.Speculative
+      x-go-type-import:
+        name: catalog
+        path: github.com/fishman/neocloud-catalog
+      type: object
+      required: [method, tokens]
+      properties:
+        method:
+          type: string
+        draft_model:
+          type: string
+        tokens:
+          type: integer
+    Topology:
+      x-go-type: catalog.Topology
+      x-go-type-import:
+        name: catalog
+        path: github.com/fishman/neocloud-catalog
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          description: single, multi-node or disaggregated
+        nodes:
+          type: integer
+        pipeline:
+          type: integer
+        prefill_gpus:
+          type: integer
+        decode_gpus:
+          type: integer
+        transfer:
+          type: string
+    Deployment:
+      x-go-type: catalog.Deployment
+      x-go-type-import:
+        name: catalog
+        path: github.com/fishman/neocloud-catalog
+      type: object
+      properties:
+        minimum:
+          $ref: "#/components/schemas/Recommendation"
+        optimal:
+          $ref: "#/components/schemas/Recommendation"
+    Recommendation:
+      x-go-type: catalog.Recommendation
+      x-go-type-import:
+        name: catalog
+        path: github.com/fishman/neocloud-catalog
+      type: object
+      required: [family, gpus, nodes, quantization, preset, context, decode_tokens_per_sec, aggregate_tokens_per_sec, source, confidence, fit_keys]
+      properties:
+        family:
+          type: string
+        gpus:
+          type: integer
+        nodes:
+          type: integer
+        quantization:
+          type: string
+        preset:
+          type: string
+        context:
+          type: integer
+        node_types:
+          type: array
+          items:
+            type: string
+        decode_tokens_per_sec:
+          type: number
+          format: double
+        aggregate_tokens_per_sec:
+          type: number
+          format: double
+        source:
+          type: string
+        confidence:
+          type: string
+        fit_keys:
+          type: array
+          items:
+            type: string
+    DraftModel:
+      x-go-type: catalog.DraftModel
+      x-go-type-import:
+        name: catalog
+        path: github.com/fishman/neocloud-catalog
+      type: object
+      required: [slug, method, targets, source, weights_gb, backends]
+      properties:
+        slug:
+          type: string
+        method:
+          type: string
+        targets:
+          type: array
+          items:
+            type: string
+        source:
+          $ref: "#/components/schemas/ModelSource"
+        weights_gb:
+          type: number
+          format: double
+        backends:
+          type: array
+          items:
+            type: string
+    Backend:
+      x-go-type: catalog.Backend
+      x-go-type-import:
+        name: catalog
+        path: github.com/fishman/neocloud-catalog
+      type: object
+      required: [name, versions]
+      properties:
+        name:
+          type: string
+        versions:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackendVersion"
+    BackendVersion:
+      x-go-type: catalog.BackendVersion
+      x-go-type-import:
+        name: catalog
+        path: github.com/fishman/neocloud-catalog
+      type: object
+      required: [version, images, command, health_path, quantizations, flags]
+      properties:
+        version:
+          type: string
+        images:
+          type: object
+          description: the container image per vendor
+          additionalProperties:
+            type: string
+        command:
+          type: array
+          items:
+            type: string
+        health_path:
+          type: string
+        min_compute_capability:
+          type: string
+        quantizations:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/QuantSupport"
+        flags:
+          $ref: "#/components/schemas/FlagTable"
+        defaults:
+          type: object
+          additionalProperties:
+            type: string
+        extensions:
+          $ref: "#/components/schemas/Extensions"
+    QuantSupport:
+      x-go-type: catalog.QuantSupport
+      x-go-type-import:
+        name: catalog
+        path: github.com/fishman/neocloud-catalog
+      type: object
+      required: [native_dtype]
+      properties:
+        native_dtype:
+          type: string
+        emulated_from:
+          type: string
+    FlagTable:
+      x-go-type: catalog.FlagTable
+      x-go-type-import:
+        name: catalog
+        path: github.com/fishman/neocloud-catalog
+      type: object
+      required: [context]
+      description: The backend version's flags for the engine-neutral preset fields; the maps translate neutral names to the engine's.
+      properties:
+        context:
+          type: string
+        tensor_parallel:
+          type: string
+        pipeline_parallel:
+          type: string
+        kv_cache_dtype:
+          type: string
+        kv_cache_dtypes:
+          type: object
+          additionalProperties:
+            type: string
+        prefix_caching_on:
+          type: string
+        prefix_caching_off:
+          type: string
+        tool_parser:
+          type: string
+        tool_parser_needs:
+          type: array
+          items:
+            type: string
+        tool_parsers:
+          type: object
+          additionalProperties:
+            type: string
+        reasoning_parser:
+          type: string
+        reasoning_parsers:
+          type: object
+          additionalProperties:
+            type: string
+        chat_template:
+          type: string
+        chat_templates:
+          type: object
+          description: template name to its path per image vendor
+          additionalProperties:
+            type: object
+            additionalProperties:
+              type: string
+        speculative:
+          type: string
+        speculative_methods:
+          type: object
+          additionalProperties:
+            type: string
+        disaggregation:
+          type: string
+        kv_transfers:
+          type: object
+          additionalProperties:
+            type: string
+        multi_node:
+          type: string
+        separate_values:
+          type: boolean

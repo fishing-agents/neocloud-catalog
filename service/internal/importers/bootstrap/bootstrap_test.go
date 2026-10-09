@@ -77,7 +77,7 @@ func TestImporterIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	first, err := importers.Execute(ctx, s, imp)
+	first, err := importers.Execute(ctx, s, imp, uuid.New())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestImporterIdempotent(t *testing.T) {
 	}
 
 	before := curatedRows(t, db)
-	second, err := importers.Execute(ctx, s, imp)
+	second, err := importers.Execute(ctx, s, imp, uuid.New())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestFailedImportIsRecorded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := importers.Execute(ctx, s, imp)
+	run, err := importers.Execute(ctx, s, imp, uuid.New())
 	if err == nil {
 		t.Fatal("import of an empty directory succeeded")
 	}

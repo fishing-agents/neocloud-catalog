@@ -29,6 +29,13 @@ import (
 // ErrNotFound reports an object no layer holds.
 var ErrNotFound = errors.New("not found")
 
+// ErrInvalid reports objects a write refuses; ErrConflict a change the
+// current state refuses.
+var (
+	ErrInvalid  = errors.New("invalid")
+	ErrConflict = errors.New("conflict")
+)
+
 // Object kinds of Delete and Provenance, keyed by name, id or slug. A
 // quantization is keyed "<model slug>/<name>"; only Provenance takes it, as it
 // is curated with its model.
@@ -162,6 +169,11 @@ func (s *Store) ReplaceLayer(ctx context.Context, layer string, run uuid.UUID, i
 // DraftModel or Backend. It keeps the position of its key's local or upstream
 // row; a new key goes last.
 func (s *Store) Upsert(ctx context.Context, object any) error {
+	return s.write(ctx, func(tx *gorm.DB) error { return upsert(tx, object) })
+}
+
+// upsert is Upsert in tx.
+func upsert(tx *gorm.DB, object any) error {
 	var in Inputs
 	var sc scope
 	switch o := object.(type) {
@@ -193,22 +205,20 @@ func (s *Store) Upsert(ctx context.Context, object any) error {
 	case KindBackend:
 		pos = &want.backends[0].Position
 	}
-	return s.write(ctx, func(tx *gorm.DB) error {
-		if pos != nil {
-			t := objectTables[sc.kind][0]
-			err := tx.Raw(`SELECT COALESCE((SELECT position FROM `+t.table+` WHERE `+t.key+` = ? ORDER BY layer LIMIT 1), `+
-				`(SELECT MAX(position) + 1 FROM `+t.table+`), 0)`, sc.key).Scan(pos).Error
-			if err != nil {
-				return err
-			}
-		}
-		have, err := load(tx, model.LayerLocal, sc)
+	if pos != nil {
+		t := objectTables[sc.kind][0]
+		err := tx.Raw(`SELECT COALESCE((SELECT position FROM `+t.table+` WHERE `+t.key+` = ? ORDER BY layer LIMIT 1), `+
+			`(SELECT MAX(position) + 1 FROM `+t.table+`), 0)`, sc.key).Scan(pos).Error
 		if err != nil {
 			return err
 		}
-		_, err = apply(tx, stamp{layer: model.LayerLocal, source: model.SourceCuration, asOf: time.Now()}, have, want)
+	}
+	have, err := load(tx, model.LayerLocal, sc)
+	if err != nil {
 		return err
-	})
+	}
+	_, err = apply(tx, stamp{layer: model.LayerLocal, source: model.SourceCuration, asOf: time.Now()}, have, want)
+	return err
 }
 
 // Delete removes the local object kind/key with its children, which restores
@@ -247,54 +257,92 @@ var provenanceKinds = map[string]struct {
 
 type provenanceRow struct {
 	model.Provenance
+	ObjectKey       string
+	Local           bool
 	FieldProvenance datatypes.JSONType[model.FieldProvenance]
 }
 
 // Provenance lists the local and upstream rows of an object, local first. A
 // quantization's effective row is the one in its effective model's layer.
 func (s *Store) Provenance(ctx context.Context, kind, key string) ([]ProvenanceEntry, error) {
-	k, ok := provenanceKinds[kind]
-	if !ok {
+	if _, ok := provenanceKinds[kind]; !ok {
 		return nil, fmt.Errorf("store: no provenance of a %s", kind)
 	}
-	parts := []string{key}
-	top := objectTables[kind]
-	if kind == KindQuantization {
-		slug, name, _ := strings.Cut(key, "/")
-		parts, top = []string{slug, name}, objectTables[KindModel]
-	}
-	cols := "layer, source, source_url, as_of, import_run_id"
-	if k.fields {
-		cols += ", field_provenance"
-	}
-	var rows []provenanceRow
-	var local int64
+	var byKey map[string][]ProvenanceEntry
 	err := s.read(ctx, func(tx *gorm.DB) error {
-		q := tx.Table(k.table).Select(cols)
-		for i, c := range k.keys {
-			q = q.Where(c+" = ?", parts[i])
-		}
-		if err := q.Order("layer").Find(&rows).Error; err != nil {
-			return err
-		}
-		return tx.Table(top[0].table).Where(top[0].key+" = ? AND layer = ?", parts[0], model.LayerLocal).Count(&local).Error
+		var err error
+		byKey, err = provenance(tx, kind, key)
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
-	if len(rows) == 0 {
+	if len(byKey[key]) == 0 {
 		return nil, fmt.Errorf("%s %q: %w", kind, key, ErrNotFound)
 	}
-	effective := model.LayerUpstream
-	if local > 0 {
-		effective = model.LayerLocal
+	return byKey[key], nil
+}
+
+// Provenances are the provenance entries of objects by kind and key.
+type Provenances map[string]map[string][]ProvenanceEntry
+
+// EffectiveProvenance is Effective plus the provenance of every object, read
+// on one snapshot.
+func (s *Store) EffectiveProvenance(ctx context.Context) (Inputs, Provenances, error) {
+	var in Inputs
+	all := Provenances{}
+	err := s.read(ctx, func(tx *gorm.DB) error {
+		var err error
+		if in, err = effective(tx); err != nil {
+			return err
+		}
+		for kind := range provenanceKinds {
+			if all[kind], err = provenance(tx, kind, ""); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return in, all, err
+}
+
+// provenance reads the local and upstream rows of kind, of the object key or
+// of every object when key is "", by key, local first.
+func provenance(tx *gorm.DB, kind, key string) (map[string][]ProvenanceEntry, error) {
+	k := provenanceKinds[kind]
+	top := objectTables[kind]
+	if kind == KindQuantization {
+		top = objectTables[KindModel]
 	}
-	entries := make([]ProvenanceEntry, len(rows))
-	for i, r := range rows {
-		entries[i] = ProvenanceEntry{Layer: r.Layer, Source: r.Source, SourceURL: r.SourceURL, AsOf: r.AsOf,
-			ImportRunID: r.ImportRunID, Effective: r.Layer == effective, Fields: r.FieldProvenance.Data()}
+	cols := "t." + strings.Join(k.keys, " || '/' || t.") + " AS object_key, t.layer, t.source, t.source_url, t.as_of, t.import_run_id, " +
+		"EXISTS (SELECT 1 FROM " + top[0].table + " o WHERE o." + top[0].key + " = t." + k.keys[0] + " AND o.layer = 'local') AS local"
+	if k.fields {
+		cols += ", t.field_provenance"
 	}
-	return entries, nil
+	q := tx.Table(k.table+" t").Select(cols).Where("t.layer IN ?", []string{model.LayerLocal, model.LayerUpstream})
+	if key != "" {
+		parts := strings.SplitN(key, "/", len(k.keys))
+		if len(parts) != len(k.keys) {
+			return nil, nil
+		}
+		for i, c := range k.keys {
+			q = q.Where("t."+c+" = ?", parts[i])
+		}
+	}
+	var rows []provenanceRow
+	if err := q.Order("object_key, t.layer").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	byKey := map[string][]ProvenanceEntry{}
+	for _, r := range rows {
+		effective := r.Layer == model.LayerUpstream
+		if r.Local {
+			effective = r.Layer == model.LayerLocal
+		}
+		byKey[r.ObjectKey] = append(byKey[r.ObjectKey], ProvenanceEntry{Layer: r.Layer, Source: r.Source, SourceURL: r.SourceURL,
+			AsOf: r.AsOf, ImportRunID: r.ImportRunID, Effective: effective, Fields: r.FieldProvenance.Data()})
+	}
+	return byKey, nil
 }
 
 // write runs fn in a transaction holding the catalog's write lock.
@@ -414,7 +462,10 @@ func toRows(layer string, in Inputs) (rowSet, error) {
 	case layer != model.LayerOverlay && len(rs.payloads) > 0:
 		errs = append(errs, fmt.Errorf("extension payloads belong to the overlay layer, not %s", layer))
 	}
-	return rs, errors.Join(errs...)
+	if len(errs) > 0 {
+		return rs, fmt.Errorf("%w: %w", ErrInvalid, errors.Join(errs...))
+	}
+	return rs, nil
 }
 
 // checkPayloadIDs refuses payloads of objects the effective catalog lacks. Fits

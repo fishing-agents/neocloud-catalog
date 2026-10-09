@@ -429,6 +429,18 @@ type GeneratorRun struct {
 	Error           string                         `gorm:"not null"`
 }
 
+// APIKey is an operator API key, as neocloud-api keeps them: only the SHA-256
+// of the key is stored; Prefix is the label in neocatalog_<prefix>_<secret>.
+// A key past ExpiresAt no longer authenticates.
+type APIKey struct {
+	Base
+	Timestamps
+	Name      string `gorm:"not null"`
+	Prefix    string `gorm:"not null"`
+	KeyHash   string `gorm:"not null;uniqueIndex"`
+	ExpiresAt *time.Time
+}
+
 // All lists every model, referenced tables first, for the schema dump and
 // AutoMigrate.
 func All() []any {
@@ -453,5 +465,6 @@ func All() []any {
 		&CostEstimate{},
 		&ExtensionPayload{},
 		&Release{},
+		&APIKey{},
 	}
 }

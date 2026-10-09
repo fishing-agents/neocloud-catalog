@@ -561,3 +561,60 @@ func TestEffectiveWithRunsListsRunsOfEffectiveValues(t *testing.T) {
 	}
 	runsOf(all, added, updated)
 }
+
+// Runs left running past olderThan by a worker that exited are failed; fresh
+// and finished runs are left alone.
+func TestFailAbandonedRuns(t *testing.T) {
+	s, db := newStore(t, "store_abandoned")
+	oldImport, err := s.StartImport(ctx, uuid.New(), "test", model.LayerUpstream, "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldGen, err := s.StartGeneratorRun(ctx, uuid.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	finished, err := s.StartImport(ctx, uuid.New(), "test", model.LayerUpstream, "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.FinishImport(ctx, finished.ID, "v1", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range []string{"import_runs", "generator_runs"} {
+		if err := db.Exec(`UPDATE ` + table + ` SET started_at = now() - interval '2 hours'`).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	fresh, err := s.StartImport(ctx, uuid.New(), "test", model.LayerUpstream, "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := s.FailAbandonedRuns(ctx, time.Hour)
+	if err != nil || n != 2 {
+		t.Fatalf("FailAbandonedRuns = %d, %v; want 2", n, err)
+	}
+	for id, want := range map[uuid.UUID]string{oldImport.ID: model.RunFailed, finished.ID: model.RunSucceeded, fresh.ID: model.RunRunning} {
+		var r model.ImportRun
+		if err := db.Take(&r, "id = ?", id).Error; err != nil {
+			t.Fatal(err)
+		}
+		if r.Status != want || (want == model.RunFailed) != (r.Error == store.AbandonedError && r.FinishedAt != nil) {
+			t.Errorf("import run %s: %s %q, want %s", id, r.Status, r.Error, want)
+		}
+	}
+	var g model.GeneratorRun
+	if err := db.Take(&g, "id = ?", oldGen.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if g.Status != model.RunFailed || g.Error != store.AbandonedError || g.FinishedAt == nil {
+		t.Errorf("generator run: %s %q", g.Status, g.Error)
+	}
+	if _, err := s.FinishImport(ctx, oldImport.ID, "v1", nil, nil); err == nil {
+		t.Error("the worker finished a run already failed as abandoned")
+	}
+	if n, err := s.FailAbandonedRuns(ctx, time.Hour); err != nil || n != 0 {
+		t.Errorf("second FailAbandonedRuns = %d, %v; want 0", n, err)
+	}
+}

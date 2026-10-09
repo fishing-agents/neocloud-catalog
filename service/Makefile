@@ -3,12 +3,15 @@ ATLAS ?= atlas
 NAME ?= change
 TEST_DSN ?= postgres://neocloud:neocloud@localhost:5432/catalog_service_test?sslmode=disable
 
-.PHONY: all build vet fmt lint test test-unit test-integration migrate migrate-diff migrate-apply serve
+.PHONY: all build generate vet fmt lint test test-unit test-integration migrate migrate-diff migrate-apply serve
 
 all: build
 
 build:
 	$(GO) build ./...
+
+generate:
+	$(GO) run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest -config api/codegen.yaml api/openapi.yaml
 
 vet:
 	$(GO) vet ./...

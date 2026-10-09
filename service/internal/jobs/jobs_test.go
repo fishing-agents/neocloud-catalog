@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/riverqueue/river"
+	"gorm.io/gorm"
 
 	"github.com/fishman/neocloud-catalog/service/internal/dbtest"
 	"github.com/fishman/neocloud-catalog/service/internal/importers"
@@ -18,7 +20,8 @@ import (
 )
 
 // Import and generate jobs on the catalog queue run the importer and the
-// generator and record their runs; a job that fails reports its error.
+// generator as the runs their arguments name and record them; a job that
+// fails reports its error.
 func TestImportAndGenerateJobs(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -31,7 +34,7 @@ func TestImportAndGenerateJobs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := jobs.New(sqlDB, store.New(db), importers.NewRegistry(imp))
+	c, err := jobs.New(sqlDB, store.New(db), importers.NewRegistry(imp), config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,8 +63,12 @@ func TestImportAndGenerateJobs(t *testing.T) {
 	}
 
 	var imported jobs.ImportOutput
-	if err := run(jobs.ImportArgs{Importer: "bootstrap-from-json"}, &imported); err != nil {
+	importID := uuid.New()
+	if err := run(jobs.ImportArgs{Importer: "bootstrap-from-json", Run: importID}, &imported); err != nil {
 		t.Fatal(err)
+	}
+	if imported.Run != importID {
+		t.Errorf("import job ran as run %s, not its argument's %s", imported.Run, importID)
 	}
 	var importRun model.ImportRun
 	if err := db.Take(&importRun, "id = ?", imported.Run).Error; err != nil {
@@ -72,20 +79,128 @@ func TestImportAndGenerateJobs(t *testing.T) {
 	}
 
 	var generated jobs.GenerateOutput
-	if err := run(jobs.GenerateArgs{}, &generated); err != nil {
+	genID := uuid.New()
+	if err := run(jobs.GenerateArgs{Run: genID}, &generated); err != nil {
 		t.Fatal(err)
 	}
 	var genRun model.GeneratorRun
 	if err := db.Take(&genRun, "id = ?", generated.Run).Error; err != nil {
 		t.Fatal(err)
 	}
-	if genRun.Status != model.RunSucceeded || genRun.Snapshot.Digest() != generated.Digest ||
+	if genRun.Status != model.RunSucceeded || genRun.Snapshot.Digest() != generated.Digest || generated.Run != genID ||
 		len(generated.InputImportRuns) != 1 || generated.InputImportRuns[0] != imported.Run {
 		t.Errorf("generate job recorded %+v for run %s (%s)", generated, genRun.ID, genRun.Status)
 	}
 
-	err = run(jobs.ImportArgs{Importer: "nope"}, new(jobs.ImportOutput))
+	err = run(jobs.ImportArgs{Importer: "nope", Run: uuid.New()}, new(jobs.ImportOutput))
 	if err == nil || !strings.Contains(err.Error(), `"nope"`) {
 		t.Errorf("job of an unknown importer: %v, want its error", err)
+	}
+}
+
+var config = jobs.Config{JobTimeout: time.Minute, RescueAfter: time.Hour}
+
+// abandon records a running import run that started past config.RescueAfter.
+func abandon(t *testing.T, s *store.Store, db *gorm.DB) uuid.UUID {
+	t.Helper()
+	run, err := s.StartImport(context.Background(), uuid.New(), "test", model.LayerUpstream, "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`UPDATE import_runs SET started_at = ? WHERE id = ?`, time.Now().Add(-config.RescueAfter-time.Minute), run.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	return run.ID
+}
+
+func statusOf(t *testing.T, db *gorm.DB, id uuid.UUID) model.ImportRun {
+	t.Helper()
+	var r model.ImportRun
+	if err := db.Take(&r, "id = ?", id).Error; err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+// A worker fails the runs a worker that exited left running, when it starts
+// and in its periodic sweep job.
+func TestWorkersFailAbandonedRuns(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	sqlDB, db := dbtest.Fresh(t, "jobs_abandoned")
+	dbtest.Migrate(t, sqlDB)
+	if err := jobs.Migrate(ctx, sqlDB); err != nil {
+		t.Fatal(err)
+	}
+	s := store.New(db)
+	atStart := abandon(t, s, db)
+	c, err := jobs.New(sqlDB, s, importers.NewRegistry(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.Stop(context.Background()) })
+	if r := statusOf(t, db, atStart); r.Status != model.RunFailed || r.Error != store.AbandonedError {
+		t.Errorf("abandoned run after worker start: %s %q", r.Status, r.Error)
+	}
+
+	later := abandon(t, s, db)
+	res, err := c.Insert(ctx, jobs.FailAbandonedArgs{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Job.Queue != jobs.Queue || res.Job.MaxAttempts != 1 {
+		t.Errorf("sweep job on queue %q with %d attempts", res.Job.Queue, res.Job.MaxAttempts)
+	}
+	if _, err := jobs.Wait(ctx, c, res.Job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if r := statusOf(t, db, later); r.Status != model.RunFailed || r.Error != store.AbandonedError {
+		t.Errorf("abandoned run after the sweep job: %s %q", r.Status, r.Error)
+	}
+}
+
+// blocking is an importer that runs until its context ends.
+type blocking struct{}
+
+func (blocking) Name() string { return "blocking" }
+func (blocking) Origin() importers.Origin {
+	return importers.Origin{Layer: model.LayerUpstream, Source: "blocking"}
+}
+func (blocking) Run(ctx context.Context, _ *store.Store, _ uuid.UUID) (importers.Summary, error) {
+	<-ctx.Done()
+	return importers.Summary{}, ctx.Err()
+}
+
+// A job running past Config.JobTimeout is cancelled and its run recorded as
+// failed, not retried.
+func TestJobTimeoutFailsTheRun(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	sqlDB, db := dbtest.Fresh(t, "jobs_timeout")
+	dbtest.Migrate(t, sqlDB)
+	if err := jobs.Migrate(ctx, sqlDB); err != nil {
+		t.Fatal(err)
+	}
+	c, err := jobs.New(sqlDB, store.New(db), importers.NewRegistry(blocking{}), jobs.Config{JobTimeout: 300 * time.Millisecond, RescueAfter: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.Stop(context.Background()) })
+	id := uuid.New()
+	res, err := c.Insert(ctx, jobs.ImportArgs{Importer: "blocking", Run: id}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := jobs.Wait(ctx, c, res.Job.ID); err == nil || !strings.Contains(err.Error(), "deadline exceeded") {
+		t.Fatalf("job past its timeout: %v, want deadline exceeded", err)
+	}
+	if r := statusOf(t, db, id); r.Status != model.RunFailed || !strings.Contains(r.Error, "deadline exceeded") {
+		t.Errorf("run of the timed-out job: %s %q", r.Status, r.Error)
 	}
 }

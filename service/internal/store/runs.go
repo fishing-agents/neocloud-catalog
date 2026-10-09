@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -21,11 +22,56 @@ import (
 // run's start reads back as written.
 func now() time.Time { return time.Now().UTC().Truncate(time.Microsecond) }
 
-// StartImport records a running import run of importer, started now, that
-// writes layer with source and sourceURL.
-func (s *Store) StartImport(ctx context.Context, importer, layer, source, sourceURL string) (model.ImportRun, error) {
-	run := model.ImportRun{Importer: importer, Layer: layer, Source: source, SourceURL: sourceURL, Status: model.RunRunning, StartedAt: now()}
+// StartImport records the running import run id of importer, started now,
+// that writes layer with source and sourceURL.
+func (s *Store) StartImport(ctx context.Context, id uuid.UUID, importer, layer, source, sourceURL string) (model.ImportRun, error) {
+	run := model.ImportRun{Base: model.Base{ID: id}, Importer: importer, Layer: layer, Source: source, SourceURL: sourceURL,
+		Status: model.RunRunning, StartedAt: now()}
 	return run, s.db.WithContext(ctx).Create(&run).Error
+}
+
+// ImportRun returns the import run id.
+func (s *Store) ImportRun(ctx context.Context, id uuid.UUID) (model.ImportRun, error) {
+	var run model.ImportRun
+	err := s.db.WithContext(ctx).Take(&run, "id = ?", id).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return run, fmt.Errorf("import run %s: %w", id, ErrNotFound)
+	}
+	return run, err
+}
+
+// ImportRuns returns the newest limit import runs, of importer unless it is
+// "".
+func (s *Store) ImportRuns(ctx context.Context, importer string, limit int) ([]model.ImportRun, error) {
+	q := s.db.WithContext(ctx).Order("started_at DESC, id").Limit(limit)
+	if importer != "" {
+		q = q.Where("importer = ?", importer)
+	}
+	var runs []model.ImportRun
+	return runs, q.Find(&runs).Error
+}
+
+// AbandonedError is the error of a run its worker left running.
+const AbandonedError = "abandoned: worker exited"
+
+// FailAbandonedRuns fails the import and generator runs still running that
+// started more than olderThan ago, and returns how many: their worker exited
+// without finishing them, and their jobs are never retried.
+func (s *Store) FailAbandonedRuns(ctx context.Context, olderThan time.Duration) (int64, error) {
+	t := now()
+	var n int64
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, table := range []any{&model.ImportRun{}, &model.GeneratorRun{}} {
+			res := tx.Model(table).Where("status = ? AND started_at < ?", model.RunRunning, t.Add(-olderThan)).
+				Updates(map[string]any{"status": model.RunFailed, "finished_at": t, "error": AbandonedError})
+			if res.Error != nil {
+				return res.Error
+			}
+			n += res.RowsAffected
+		}
+		return nil
+	})
+	return n, err
 }
 
 // FinishImport ends the running import run run with the version of the input
@@ -142,11 +188,28 @@ func (rs rowSet) each(fn func(object string, row any)) {
 	}
 }
 
-// StartGeneratorRun records a running generator run of the core's schema
+// StartGeneratorRun records the running generator run id of the core's schema
 // version, started now.
-func (s *Store) StartGeneratorRun(ctx context.Context) (model.GeneratorRun, error) {
-	run := model.GeneratorRun{Status: model.RunRunning, StartedAt: now(), SchemaVersion: catalog.SchemaVersion}
+func (s *Store) StartGeneratorRun(ctx context.Context, id uuid.UUID) (model.GeneratorRun, error) {
+	run := model.GeneratorRun{Base: model.Base{ID: id}, Status: model.RunRunning, StartedAt: now(), SchemaVersion: catalog.SchemaVersion}
 	return run, s.db.WithContext(ctx).Create(&run).Error
+}
+
+// CostFilter narrows CostEstimates; an empty field matches all.
+type CostFilter struct{ Model, Billing, Region string }
+
+// CostEstimates returns the cost estimates of the newest succeeded generator
+// run that f matches.
+func (s *Store) CostEstimates(ctx context.Context, f CostFilter) ([]model.CostEstimate, error) {
+	newest := s.db.Model(&model.GeneratorRun{}).Select("id").Where("status = ?", model.RunSucceeded).Order("started_at DESC").Limit(1)
+	q := s.db.WithContext(ctx).Where("generator_run_id = (?)", newest)
+	for col, v := range map[string]string{"model_slug": f.Model, "billing": f.Billing, "region": f.Region} {
+		if v != "" {
+			q = q.Where(col+" = ?", v)
+		}
+	}
+	estimates := []model.CostEstimate{}
+	return estimates, q.Order("model_slug, setup, fit_key, node_type_id, region, billing").Find(&estimates).Error
 }
 
 // FinishGeneratorRun stores the running generator run run as it ended, now,

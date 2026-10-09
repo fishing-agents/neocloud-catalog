@@ -22,8 +22,10 @@ import (
 	"github.com/riverqueue/river"
 	"gorm.io/gorm"
 
+	"github.com/fishman/neocloud-catalog/service/internal/auth"
 	"github.com/fishman/neocloud-catalog/service/internal/config"
 	"github.com/fishman/neocloud-catalog/service/internal/db"
+	"github.com/fishman/neocloud-catalog/service/internal/httpapi"
 	"github.com/fishman/neocloud-catalog/service/internal/importers"
 	"github.com/fishman/neocloud-catalog/service/internal/importers/bootstrap"
 	"github.com/fishman/neocloud-catalog/service/internal/jobs"
@@ -52,6 +54,8 @@ func main() {
 		cmdReleaseCreate(os.Args[3:])
 	case cmd == "release" && len(os.Args) >= 3 && os.Args[2] == "publish":
 		cmdReleasePublish(os.Args[3:])
+	case cmd == "auth" && len(os.Args) >= 3 && os.Args[2] == "issue":
+		cmdAuthIssue(os.Args[3:])
 	default:
 		usage()
 		os.Exit(2)
@@ -62,8 +66,9 @@ func usage() {
 	fmt.Fprintln(os.Stderr, `catalog-service <command>
 
 commands:
-  serve             serve /healthz and /readyz on server.addr and Prometheus
-                    metrics on telemetry.metrics_addr
+  serve             serve the /v1 API, /healthz and /readyz on server.addr and
+                    Prometheus metrics on telemetry.metrics_addr, and work the
+                    catalog queue
   migrate           apply the schema with GORM AutoMigrate plus the releases
                     immutability trigger (dev and tests); production applies
                     the versioned Atlas migrations (make migrate-apply)
@@ -83,6 +88,9 @@ commands:
                     with a cosign key pair (password in COSIGN_PASSWORD),
                     -keyless runs cosign's keyless flow (CI); -exports also
                     writes the adapter exports and a signed SHA256SUMS to dir
+  auth issue [-name <name>] [-prefix <prefix>] [-expires <duration>]
+                    mint an API key for the /v1 API (neocatalog_<prefix>_...);
+                    it is printed once and stored only as its SHA-256
 
 import and generate work the queue themselves until their job finished.
 
@@ -103,13 +111,40 @@ func open() (*config.Config, *sql.DB, *gorm.DB) {
 }
 
 func cmdServe() {
-	cfg, sqlDB, _ := open()
+	cfg, sqlDB, gormDB := open()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	var publish *release.Target
+	if cfg.Release.Ref != "" {
+		signer, err := releaseSigner(cfg.Release.Key, false)
+		if err != nil {
+			log.Fatalf("release.key: %v", err)
+		}
+		publish = &release.Target{Ref: cfg.Release.Ref, Signer: signer}
+	}
+	s := store.New(gormDB)
+	reg := registry(cfg)
+	if err := jobs.Migrate(ctx, sqlDB); err != nil {
+		log.Fatalf("river migrate: %v", err)
+	}
+	c, err := jobs.New(sqlDB, s, reg, jobsConfig(cfg))
+	if err != nil {
+		log.Fatalf("jobs: %v", err)
+	}
+	if err := c.Start(ctx); err != nil {
+		log.Fatalf("jobs: %v", err)
+	}
+	defer c.Stop(context.WithoutCancel(ctx))
+	api := httpapi.New(httpapi.Config{Store: s, Jobs: c, Importers: reg, Publish: publish,
+		Auth: auth.New(gormDB, auth.OIDCConfig{IssuerURL: cfg.Auth.IssuerURL, Audience: cfg.Auth.Audience})})
 	log.Printf("serving on %s (metrics %s)", cfg.Server.Addr, cfg.Telemetry.MetricsAddr)
-	if err := server.Serve(ctx, cfg, server.Handler(sqlDB.PingContext)); err != nil {
+	if err := server.Serve(ctx, cfg, server.Handler(sqlDB.PingContext, api)); err != nil {
 		log.Fatalf("serve: %v", err)
 	}
+}
+
+func jobsConfig(cfg *config.Config) jobs.Config {
+	return jobs.Config{JobTimeout: cfg.Jobs.JobTimeout, RescueAfter: cfg.Jobs.RescueAfter}
 }
 
 func cmdMigrate() {
@@ -132,12 +167,12 @@ func cmdImport(name string) {
 	if reg[name] == nil {
 		log.Fatalf("no importer %q; importers: %s", name, strings.Join(slices.Sorted(maps.Keys(reg)), ", "))
 	}
-	runJob(sqlDB, store.New(gormDB), reg, jobs.ImportArgs{Importer: name})
+	runJob(cfg, sqlDB, store.New(gormDB), reg, jobs.ImportArgs{Importer: name, Run: uuid.New()})
 }
 
 func cmdGenerate() {
 	cfg, sqlDB, gormDB := open()
-	runJob(sqlDB, store.New(gormDB), registry(cfg), jobs.GenerateArgs{})
+	runJob(cfg, sqlDB, store.New(gormDB), registry(cfg), jobs.GenerateArgs{Run: uuid.New()})
 }
 
 func registry(cfg *config.Config) importers.Registry {
@@ -150,10 +185,10 @@ func registry(cfg *config.Config) importers.Registry {
 
 // runJob enqueues args and works the catalog queue until the job finished,
 // then prints the output it recorded.
-func runJob(sqlDB *sql.DB, s *store.Store, reg importers.Registry, args river.JobArgs) {
+func runJob(cfg *config.Config, sqlDB *sql.DB, s *store.Store, reg importers.Registry, args river.JobArgs) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	out, err := work(ctx, sqlDB, s, reg, args)
+	out, err := work(ctx, cfg, sqlDB, s, reg, args)
 	if err != nil {
 		log.Fatalf("%s: %v", args.Kind(), err)
 	}
@@ -164,11 +199,11 @@ func runJob(sqlDB *sql.DB, s *store.Store, reg importers.Registry, args river.Jo
 	fmt.Println(b.String())
 }
 
-func work(ctx context.Context, sqlDB *sql.DB, s *store.Store, reg importers.Registry, args river.JobArgs) ([]byte, error) {
+func work(ctx context.Context, cfg *config.Config, sqlDB *sql.DB, s *store.Store, reg importers.Registry, args river.JobArgs) ([]byte, error) {
 	if err := jobs.Migrate(ctx, sqlDB); err != nil {
 		return nil, fmt.Errorf("river migrate: %w", err)
 	}
-	c, err := jobs.New(sqlDB, s, reg)
+	c, err := jobs.New(sqlDB, s, reg, jobsConfig(cfg))
 	if err != nil {
 		return nil, err
 	}
@@ -237,6 +272,29 @@ func cmdReleasePublish(args []string) {
 		log.Fatalf("release publish: %v", err)
 	}
 	printRelease(rel)
+}
+
+func cmdAuthIssue(args []string) {
+	fs := flag.NewFlagSet("auth issue", flag.ExitOnError)
+	name := fs.String("name", "cli-issued", "what the key is for, recorded with it")
+	prefix := fs.String("prefix", "key", "label in the key: neocatalog_<prefix>_<secret>")
+	expires := fs.Duration("expires", 0, "lifetime of the key; 0 never expires")
+	_ = fs.Parse(args)
+	if fs.NArg() != 0 {
+		usage()
+		os.Exit(2)
+	}
+	var expiresAt *time.Time
+	if *expires > 0 {
+		expiresAt = new(time.Now().Add(*expires))
+	}
+	_, _, gormDB := open()
+	key, _, err := auth.Issue(context.Background(), gormDB, *name, *prefix, expiresAt)
+	if err != nil {
+		log.Fatalf("auth issue: %v", err)
+	}
+	fmt.Printf("key: %s\n", key)
+	fmt.Println("copy it now - it is shown once and stored only as a hash")
 }
 
 func releaseSigner(key string, keyless bool) (release.Signer, error) {

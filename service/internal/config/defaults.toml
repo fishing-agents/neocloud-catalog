@@ -12,3 +12,24 @@ metrics_addr = "0.0.0.0:8081"
 
 [bootstrap]
 data_dir = "../data"
+
+[auth]
+# API keys (catalog-service auth issue) always work. An issuer_url (ICP) also
+# accepts its OIDC JWTs whose aud contains audience; their roles claim must
+# contain admin to write.
+issuer_url = ""
+audience = ""
+
+[jobs]
+# job_timeout cancels a run on the catalog queue that takes longer (jobs are
+# never retried); a run still running after rescue_after (> job_timeout) was
+# left by a worker that exited and is failed.
+job_timeout = "30m"
+rescue_after = "1h"
+
+[release]
+# POST /v1/releases/{version}/publish pushes to ref (repository:tag), signed
+# with the cosign.key at key (its password in COSIGN_PASSWORD). Empty: the
+# API does not publish.
+ref = ""
+key = ""

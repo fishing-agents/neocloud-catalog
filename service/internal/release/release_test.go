@@ -24,6 +24,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/registry"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/uuid"
 	"github.com/sigstore/sigstore-go/pkg/bundle"
 	"github.com/sigstore/sigstore-go/pkg/root"
 	"github.com/sigstore/sigstore-go/pkg/verify"
@@ -56,10 +57,10 @@ func generated(t *testing.T, suffix string) (*store.Store, *gorm.DB, model.Gener
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := importers.Execute(ctx, s, imp); err != nil {
+	if _, err := importers.Execute(ctx, s, imp, uuid.New()); err != nil {
 		t.Fatal(err)
 	}
-	run, err := generator.Run(ctx, s)
+	run, err := generator.Run(ctx, s, uuid.New())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -339,7 +340,7 @@ func TestPublishRefusesOlderRelease(t *testing.T) {
 	if err := db.Exec(`UPDATE generator_runs SET snapshot = jsonb_set(snapshot, '{generated_at}', '"2026-01-01T00:00:00Z"') WHERE id = ?`, older.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	newer, err := generator.Run(ctx, s)
+	newer, err := generator.Run(ctx, s, uuid.New())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -414,7 +415,7 @@ func TestKeylessRunsCosign(t *testing.T) {
 // replaceOverlay makes ov the overlay layer.
 func replaceOverlay(t *testing.T, s *store.Store, ov catalog.Overlay) {
 	t.Helper()
-	run, err := s.StartImport(ctx, "overlay-test", model.LayerOverlay, "overlay-test", "")
+	run, err := s.StartImport(ctx, uuid.New(), "overlay-test", model.LayerOverlay, "overlay-test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -522,7 +523,7 @@ func TestReleaseExportHasNoPricesOrCosts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := importers.Execute(ctx, s, imp); err != nil {
+	if _, err := importers.Execute(ctx, s, imp, uuid.New()); err != nil {
 		t.Fatal(err)
 	}
 	const usd = 98.7654
@@ -534,7 +535,7 @@ func TestReleaseExportHasNoPricesOrCosts(t *testing.T) {
 	if err := db.Create(&price).Error; err != nil {
 		t.Fatal(err)
 	}
-	run, err := generator.Run(ctx, s)
+	run, err := generator.Run(ctx, s, uuid.New())
 	if err != nil {
 		t.Fatal(err)
 	}

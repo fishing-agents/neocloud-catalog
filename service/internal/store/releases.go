@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -22,9 +23,20 @@ func (s *Store) GeneratorRun(ctx context.Context, id uuid.UUID) (model.Generator
 	return run, err
 }
 
-// CreateRelease stores rel.
+// CreateRelease stores rel; a release of its version already stored is
+// ErrConflict.
 func (s *Store) CreateRelease(ctx context.Context, rel *model.Release) error {
-	return s.db.WithContext(ctx).Create(rel).Error
+	err := s.db.WithContext(ctx).Create(rel).Error
+	if pgErr := (*pgconn.PgError)(nil); errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return fmt.Errorf("%w: a release of version %s exists", ErrConflict, rel.Version)
+	}
+	return err
+}
+
+// Releases returns every release, newest first, without its overlay.
+func (s *Store) Releases(ctx context.Context) ([]model.Release, error) {
+	releases := []model.Release{}
+	return releases, s.db.WithContext(ctx).Omit("overlay").Order("version DESC").Find(&releases).Error
 }
 
 // Release returns the release of version.

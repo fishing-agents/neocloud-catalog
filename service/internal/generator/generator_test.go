@@ -35,7 +35,7 @@ func bootstrapped(t *testing.T, suffix string) (*store.Store, *gorm.DB, model.Im
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := importers.Execute(ctx, s, imp)
+	run, err := importers.Execute(ctx, s, imp, uuid.New())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func count(t *testing.T, db *gorm.DB, row any, run uuid.UUID) int {
 // acceptance: digest-equal export).
 func TestBootstrapRoundTripDigest(t *testing.T) {
 	s, db, imp := bootstrapped(t, "gen_digest")
-	run, err := generator.Run(ctx, s)
+	run, err := generator.Run(ctx, s, uuid.New())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestGeneratorRunStoresReport(t *testing.T) {
 		t.Fatalf("report %q lacks the huge model", report)
 	}
 
-	run, err := generator.Run(ctx, s)
+	run, err := generator.Run(ctx, s, uuid.New())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestGeneratorRunStoresReport(t *testing.T) {
 	if err := s.Upsert(ctx, bad); err != nil {
 		t.Fatal(err)
 	}
-	failed, err := generator.Run(ctx, s)
+	failed, err := generator.Run(ctx, s, uuid.New())
 	if err == nil || !strings.Contains(err.Error(), "dance") {
 		t.Fatalf("generation with an unknown task: %v, want its error", err)
 	}
@@ -230,11 +230,11 @@ func TestGeneratorRunStoresReport(t *testing.T) {
 // digest, each with derived rows of its own.
 func TestGeneratorRunsAreReproducible(t *testing.T) {
 	s, db, _ := bootstrapped(t, "gen_repro")
-	first, err := generator.Run(ctx, s)
+	first, err := generator.Run(ctx, s, uuid.New())
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := generator.Run(ctx, s)
+	second, err := generator.Run(ctx, s, uuid.New())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +255,7 @@ func TestGeneratorRunsAreReproducible(t *testing.T) {
 	if err := s.Upsert(ctx, f); err != nil {
 		t.Fatal(err)
 	}
-	third, err := generator.Run(ctx, s)
+	third, err := generator.Run(ctx, s, uuid.New())
 	if err != nil {
 		t.Fatal(err)
 	}

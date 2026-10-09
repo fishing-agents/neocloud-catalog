@@ -30,6 +30,9 @@ type Config struct {
 	Database  DatabaseConfig  `koanf:"database"`
 	Telemetry TelemetryConfig `koanf:"telemetry"`
 	Bootstrap BootstrapConfig `koanf:"bootstrap"`
+	Auth      AuthConfig      `koanf:"auth"`
+	Jobs      JobsConfig      `koanf:"jobs"`
+	Release   ReleaseConfig   `koanf:"release"`
 }
 
 type ServerConfig struct {
@@ -51,6 +54,29 @@ type TelemetryConfig struct {
 // importer reads; relative to the working directory.
 type BootstrapConfig struct {
 	DataDir string `koanf:"data_dir"`
+}
+
+// AuthConfig: API keys always work; an issuer_url (ICP) also enables OIDC
+// JWTs whose aud must contain audience.
+type AuthConfig struct {
+	IssuerURL string `koanf:"issuer_url"`
+	Audience  string `koanf:"audience"`
+}
+
+// JobsConfig bounds runs on the catalog queue: JobTimeout cancels a run that
+// takes longer; RescueAfter (> JobTimeout) is when a run left running by a
+// worker that exited is failed and its job rescued.
+type JobsConfig struct {
+	JobTimeout  time.Duration `koanf:"job_timeout"`
+	RescueAfter time.Duration `koanf:"rescue_after"`
+}
+
+// ReleaseConfig is where the API publishes releases: Ref names the
+// repository and tag, Key the cosign.key signing them (its password in
+// COSIGN_PASSWORD). Both empty: the API does not publish.
+type ReleaseConfig struct {
+	Ref string `koanf:"ref"`
+	Key string `koanf:"key"`
 }
 
 // applyEnv sets NEOCLOUD_CATALOG_<NAME> on the known key whose path, with "."
@@ -144,10 +170,19 @@ func (c *Config) Validate() error {
 	for _, d := range []struct {
 		key string
 		d   time.Duration
-	}{{"server.read_timeout", c.Server.ReadTimeout}, {"server.write_timeout", c.Server.WriteTimeout}} {
+	}{{"server.read_timeout", c.Server.ReadTimeout}, {"server.write_timeout", c.Server.WriteTimeout}, {"jobs.job_timeout", c.Jobs.JobTimeout}} {
 		if d.d <= 0 {
 			return fmt.Errorf("%s must be a positive duration, got %s", d.key, d.d)
 		}
+	}
+	if c.Jobs.RescueAfter <= c.Jobs.JobTimeout {
+		return fmt.Errorf("jobs.rescue_after (%s) must exceed jobs.job_timeout (%s)", c.Jobs.RescueAfter, c.Jobs.JobTimeout)
+	}
+	if c.Auth.IssuerURL != "" && c.Auth.Audience == "" {
+		return errors.New("auth.audience is required when auth.issuer_url is set")
+	}
+	if (c.Release.Ref == "") != (c.Release.Key == "") {
+		return errors.New("release.ref and release.key are set together: release.ref names where the API publishes, release.key signs")
 	}
 	return nil
 }
