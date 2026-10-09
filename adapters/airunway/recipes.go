@@ -166,7 +166,7 @@ func newRecipe(snap catalog.CatalogSnapshot, t target, group []target) (recipe, 
 	}
 	for _, f := range snap.Fits {
 		nvidia := slices.ContainsFunc(snap.Families, func(fam catalog.Family) bool { return fam.Name == f.DeviceFamily && fam.Vendor == gpuVendor })
-		if f.ModelSlug == t.Model.Slug && f.Quantization == t.Preset.Quantization && f.KVCacheDType == t.fit.KVCacheDType && f.Profile == nil && nvidia {
+		if f.ModelSlug == t.Model.Slug && f.Quantization == t.Preset.Quantization && f.KVCacheDType == t.fit.KVCacheDType && f.Profile == nil && f.Nodes <= 1 && nvidia {
 			rc.Meta.Hardware[hardwareID(f.DeviceFamily)] = fitStatus
 		}
 	}

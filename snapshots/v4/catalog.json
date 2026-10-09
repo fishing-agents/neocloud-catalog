@@ -1,7 +1,7 @@
 {
   "schema_version": "4.0.0",
-  "version": "2026-10-09T03:02:45Z",
-  "generated_at": "2026-10-09T03:02:45.913313813Z",
+  "version": "2026-10-09T03:18:12Z",
+  "generated_at": "2026-10-09T03:18:12.794911369Z",
   "families": [
     {
       "name": "A100",
@@ -1538,6 +1538,24 @@
     {
       "model_slug": "llama-3.1-70b",
       "device_family": "A100",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 16,
+      "nodes": 2,
+      "max_context": 131072,
+      "vram_required_gb": 184.05,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 115.7,
+        "concurrent_sequences": 257,
+        "aggregate_tokens_per_sec": 5145.8,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "A100",
       "quantization": "fp8",
       "kv_cache_dtype": "auto",
       "mode": "emulated",
@@ -1568,6 +1586,24 @@
         "decode_tokens_per_sec": 20,
         "concurrent_sequences": 1,
         "aggregate_tokens_per_sec": 20,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "A10G",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 16,
+      "nodes": 2,
+      "max_context": 131072,
+      "vram_required_gb": 184.05,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 34.1,
+        "concurrent_sequences": 38,
+        "aggregate_tokens_per_sec": 765.3,
         "context": 8192
       }
     },
@@ -1610,6 +1646,24 @@
     {
       "model_slug": "llama-3.1-70b",
       "device_family": "H100",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 16,
+      "nodes": 2,
+      "max_context": 131072,
+      "vram_required_gb": 184.05,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 190.1,
+        "concurrent_sequences": 386,
+        "aggregate_tokens_per_sec": 8962.9,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "H100",
       "quantization": "fp8",
       "kv_cache_dtype": "auto",
       "mode": "native",
@@ -1646,6 +1700,24 @@
     {
       "model_slug": "llama-3.1-70b",
       "device_family": "H200",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 16,
+      "nodes": 2,
+      "max_context": 131072,
+      "vram_required_gb": 184.05,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 272.4,
+        "concurrent_sequences": 676,
+        "aggregate_tokens_per_sec": 13538.5,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "H200",
       "quantization": "fp8",
       "kv_cache_dtype": "auto",
       "mode": "native",
@@ -1674,6 +1746,24 @@
       "performance": {
         "source": "estimate",
         "decode_tokens_per_sec": 10,
+        "concurrent_sequences": 0,
+        "aggregate_tokens_per_sec": 0,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "L4",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 16,
+      "nodes": 2,
+      "max_context": 131072,
+      "vram_required_gb": 184.05,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 17,
         "concurrent_sequences": 0,
         "aggregate_tokens_per_sec": 0,
         "context": 8192
@@ -1718,6 +1808,24 @@
     {
       "model_slug": "llama-3.1-70b",
       "device_family": "MI300X",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 16,
+      "nodes": 2,
+      "max_context": 131072,
+      "vram_required_gb": 184.05,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 300.8,
+        "concurrent_sequences": 752,
+        "aggregate_tokens_per_sec": 15058.6,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "MI300X",
       "quantization": "fp8",
       "kv_cache_dtype": "auto",
       "mode": "native",
@@ -1748,6 +1856,24 @@
         "decode_tokens_per_sec": 33.7,
         "concurrent_sequences": 13,
         "aggregate_tokens_per_sec": 357.4,
+        "context": 8192
+      }
+    },
+    {
+      "model_slug": "llama-3.1-70b",
+      "device_family": "RTX-4090",
+      "quantization": "bf16",
+      "kv_cache_dtype": "auto",
+      "mode": "native",
+      "gpu_count": 16,
+      "nodes": 2,
+      "max_context": 131072,
+      "vram_required_gb": 184.05,
+      "performance": {
+        "source": "estimate",
+        "decode_tokens_per_sec": 57.2,
+        "concurrent_sequences": 79,
+        "aggregate_tokens_per_sec": 1839.9,
         "context": 8192
       }
     },

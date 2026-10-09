@@ -53,6 +53,7 @@ func TestReferenceFit(t *testing.T) {
 	snap := catalog.CatalogSnapshot{
 		Families: []catalog.Family{{Name: "A100", Vendor: "nvidia"}, {Name: "L4", Vendor: "nvidia"}, {Name: "A10G", Vendor: "nvidia"}, {Name: "MI300X", Vendor: "amd"}},
 		Fits: []catalog.ModelFit{
+			{ModelSlug: "m", Quantization: "fp8", KVCacheDType: "auto", DeviceFamily: "A100", Mode: catalog.FitNative, GPUCount: 16, Nodes: 2, MaxContext: 131072},
 			fit("A100", 2, 8192, catalog.FitEmulated),
 			fit("A10G", 1, 4096, catalog.FitEmulated),
 			fit("L4", 4, 2048, catalog.FitNative),
@@ -79,7 +80,7 @@ func TestReferenceFit(t *testing.T) {
 		"the preset's KV cache dtype":                 {ref("fp8"), nvidia, Options{}, "A10G"},
 	} {
 		f, ok := ReferenceFit(snap, c.r, c.vendors, c.opts)
-		if !ok || f.DeviceFamily != c.family || f.Profile != nil || f.KVCacheDType != cmp.Or(c.r.Preset.KVCacheDType, "auto") {
+		if !ok || f.DeviceFamily != c.family || f.Profile != nil || f.Nodes > 1 || f.KVCacheDType != cmp.Or(c.r.Preset.KVCacheDType, "auto") {
 			t.Errorf("%s: fit = %+v %v, want %s", name, f, ok, c.family)
 		}
 	}

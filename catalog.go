@@ -106,8 +106,8 @@ type Speculative struct {
 }
 
 // Topology is how a preset spreads over nodes: single (the default), multi-node
-// (Nodes, each with Pipeline stages) or disaggregated (Prefill and Decode GPUs
-// exchanging KV cache over Transfer).
+// (Nodes, in Pipeline pipeline-parallel stages, default one per node) or
+// disaggregated (Prefill and Decode GPUs exchanging KV cache over Transfer).
 type Topology struct {
 	Kind     string `json:"kind"`
 	Nodes    int    `json:"nodes,omitempty"`

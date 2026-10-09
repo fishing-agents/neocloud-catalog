@@ -258,10 +258,11 @@ func Draft(snap catalog.CatalogSnapshot, p catalog.Preset) *catalog.DraftModel {
 	return &snap.DraftModels[i]
 }
 
-// ReferenceFit returns the whole-GPU fit of a preset's checkpoint at its KV
-// cache dtype on a family of one of vendors: the reference family's, else the
-// best of the others, native before emulated, then the fewest GPUs, the
-// largest context and the family name, for a stable choice.
+// ReferenceFit returns the single-node whole-GPU fit of a preset's checkpoint
+// at its KV cache dtype on a family of one of vendors: the reference family's,
+// else the best of the others, native before emulated, then the fewest GPUs,
+// the largest context and the family name, for a stable choice. Adapters skip
+// multi-node presets, so multi-node fits never size one.
 func ReferenceFit(snap catalog.CatalogSnapshot, r Ref, vendors []string, opts Options) (catalog.ModelFit, bool) {
 	family := cmp.Or(opts.ReferenceFamily, DefaultReferenceFamily)
 	vendor := map[string]string{}
@@ -271,7 +272,7 @@ func ReferenceFit(snap catalog.CatalogSnapshot, r Ref, vendors []string, opts Op
 	kv := cmp.Or(r.Preset.KVCacheDType, "auto")
 	var fits []catalog.ModelFit
 	for _, f := range snap.Fits {
-		if f.ModelSlug == r.Model.Slug && f.Quantization == r.Preset.Quantization && f.KVCacheDType == kv && f.Profile == nil &&
+		if f.ModelSlug == r.Model.Slug && f.Quantization == r.Preset.Quantization && f.KVCacheDType == kv && f.Profile == nil && f.Nodes <= 1 &&
 			slices.Contains(vendors, vendor[f.DeviceFamily]) {
 			if f.DeviceFamily == family {
 				return f, true

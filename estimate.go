@@ -7,12 +7,15 @@ import "math"
 // active weights once and every sequence's KV cache.
 //
 //	step(c) = (active weights + c x KV at the context) /
-//	    (BandwidthEfficiency x bandwidth x gpus x tpEfficiency(gpus)) seconds
+//	    (BandwidthEfficiency x bandwidth x gpus x tpEfficiency(tensor parallel)
+//	    x CrossNodeEfficiency^(pipeline stages - 1)) seconds
 //	per-sequence decode(c) = 1 / step(c) tokens/s
 //	aggregate(c) = c / step(c) tokens/s
 //	capacity = floor((EstimateMemoryUtilization x memory x gpus - weights) /
 //	    KV at the context)
 //
+// A multi-node fit runs tensor parallel within a node and pipeline parallel
+// across nodes; a single-node fit is one stage of tensor parallel gpus.
 // DecodeTokensPerSec is decode(1). ConcurrentSequences is the largest c within
 // capacity whose decode(c) is at least DecentDecodeTokensPerSec (0 when decode(1)
 // is below it), AggregateTokensPerSec aggregate at that c. Active weights are
@@ -29,6 +32,9 @@ const (
 	// guidance and concurrent sequences require, comfortably above reading
 	// speed.
 	DecentDecodeTokensPerSec = 20
+	// CrossNodeEfficiency is the share of throughput kept per pipeline stage
+	// boundary, where activations cross nodes.
+	CrossNodeEfficiency = 0.85
 )
 
 // tpEfficiency is the share of the summed bandwidth tensor parallelism keeps.
@@ -45,12 +51,18 @@ func tpEfficiency(gpus int) float64 {
 // Estimate is the performance of model m at quantization q on gpus GPUs of
 // family f, at context tokens per sequence with a KV cache of kvDType.
 func Estimate(m ModelTemplate, q Quantization, f Family, gpus int, context int, kvDType string) Performance {
+	return estimate(m, q, f, gpus, 1, context, kvDType)
+}
+
+// estimate is Estimate with gpus split into stages pipeline stages of
+// gpus/stages tensor-parallel GPUs each.
+func estimate(m ModelTemplate, q Quantization, f Family, gpus, stages int, context int, kvDType string) Performance {
 	kv := kvGB(m, kvDType, context)
 	active := q.WeightsGB
 	if m.ParamsB > 0 && m.ParamsActiveB > 0 {
 		active *= m.ParamsActiveB / m.ParamsB
 	}
-	rate := BandwidthEfficiency * f.MemoryBandwidthGBs * float64(gpus) * tpEfficiency(gpus)
+	rate := BandwidthEfficiency * f.MemoryBandwidthGBs * float64(gpus) * tpEfficiency(gpus/stages) * math.Pow(CrossNodeEfficiency, float64(stages-1))
 	decode := func(c int) float64 { return rate / (active + float64(c)*kv) }
 	c := 0
 	if kv > 0 {

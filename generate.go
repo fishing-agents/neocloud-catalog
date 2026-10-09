@@ -38,16 +38,17 @@ var (
 // the node-type vocabulary of the cloud node types plus generated fallbacks,
 // models with their deployment guidance, draft models, backends and the fit
 // matrix, then runs the registered extensions. A fit exists for a model,
-// quantization, KV cache dtype and family where some preset with that
-// quantization and KV cache dtype runs on the family (presetMode). It is the
-// smallest layout (GPUs, then nodes) such a preset needs to hold the weights
-// plus the KV cache of its context in the memory budget, with the largest
-// context that layout holds, capped at the model's ceiling, and the estimate at
-// that preset's context. A preset whose quantization fits families its backend
-// version runs on none of, or an unparsable NVIDIA compute capability, fails
-// generation. The report lists the models without a deployment minimum and the
-// presets whose quantization fits no family. Pure and deterministic, so the
-// snapshot digest is stable for identical input.
+// quantization, KV cache dtype, family and node count where some preset with
+// that quantization, KV cache dtype and node count runs on the family
+// (presetMode). It is the smallest layout (GPUs) such a preset needs to hold
+// the weights plus the KV cache of its context in the memory budget, with the
+// largest context that layout holds, capped at the model's ceiling, and the
+// estimate at that preset's context. A multi-node preset spans whole nodes of
+// the family's largest node type. A preset whose quantization fits families its
+// backend version runs on none of, or an unparsable NVIDIA compute capability,
+// fails generation. The report lists the models without a deployment minimum
+// and the presets whose quantization fits no family. Pure and deterministic, so
+// the snapshot digest is stable for identical input.
 func Generate(families []Family, nodeTypes []NodeType, templates []ModelTemplate, drafts []DraftModel, backends []Backend) (CatalogSnapshot, []string, error) {
 	vocab, err := NodeTypeVocabulary(families, nodeTypes)
 	if err != nil {
@@ -65,6 +66,10 @@ func Generate(families []Family, nodeTypes []NodeType, templates []ModelTemplate
 	snap := CatalogSnapshot{SchemaVersion: SchemaVersion, Families: families, NodeTypes: vocab, Models: make([]ModelTemplate, len(templates)),
 		DraftModels: drafts, Fits: []ModelFit{}, Backends: backends}
 	versions := map[[2]string]BackendVersion{}
+	perNode := map[string]int{}
+	for _, nt := range vocab {
+		perNode[nt.Family] = max(perNode[nt.Family], nt.GPUs)
+	}
 	for _, b := range backends {
 		for _, v := range b.Versions {
 			versions[[2]string{b.Name, v.Version}] = v
@@ -77,7 +82,7 @@ func Generate(families []Family, nodeTypes []NodeType, templates []ModelTemplate
 		var fits []candidate
 		if t.KVBytesPerToken > 0 {
 			var unfit []string
-			fits, unfit, err = modelFits(t, families, versions)
+			fits, unfit, err = modelFits(t, families, perNode, versions)
 			errs = append(errs, err)
 			for _, p := range unfit {
 				report = append(report, fmt.Sprintf("%s/%s: fits no family", t.Slug, p))
@@ -97,7 +102,7 @@ func Generate(families []Family, nodeTypes []NodeType, templates []ModelTemplate
 	}
 	slices.SortFunc(snap.Fits, func(a, b ModelFit) int {
 		return cmp.Or(strings.Compare(a.ModelSlug, b.ModelSlug), strings.Compare(a.DeviceFamily, b.DeviceFamily),
-			strings.Compare(a.Quantization, b.Quantization), strings.Compare(a.KVCacheDType, b.KVCacheDType))
+			strings.Compare(a.Quantization, b.Quantization), strings.Compare(a.KVCacheDType, b.KVCacheDType), cmp.Compare(a.Nodes, b.Nodes))
 	})
 	// The core alone first: extensions validate once they generated payloads.
 	if err := snap.validate(newRegistry()); err != nil {
@@ -140,14 +145,20 @@ type candidate struct {
 	preset string  // the preset it was sized for
 	memory float64 // total GPU memory
 	rank   int     // quantization order, then auto KV before fp8
-	guides bool    // its quantization kind may drive guidance
+	guides bool    // a single-node fit of a quantization kind that may drive guidance
 }
 
 // modelFits derives t's fits and names the presets whose quantization fits no
-// family. It fails on a preset whose quantization fits families its backend
-// version runs on none of; presets of unknown backend versions or quantization
-// kinds are left to Validate.
-func modelFits(t ModelTemplate, families []Family, versions map[[2]string]BackendVersion) ([]candidate, []string, error) {
+// family. perNode is the GPU count of each family's largest node type. It
+// fails on a preset whose quantization fits families its backend version runs
+// on none of; presets of unknown backend versions or quantization kinds are
+// left to Validate.
+func modelFits(t ModelTemplate, families []Family, perNode map[string]int, versions map[[2]string]BackendVersion) ([]candidate, []string, error) {
+	type choice struct {
+		preset *Preset
+		size   sizing
+		mode   FitMode
+	}
 	var out []candidate
 	sized := map[int]bool{}
 	fitting := map[int][]string{}
@@ -155,9 +166,7 @@ func modelFits(t ModelTemplate, families []Family, versions map[[2]string]Backen
 	for qi, q := range t.Quantizations {
 		for ki, kvd := range kvDTypes {
 			for _, fam := range families {
-				var best *Preset
-				var gpus, nodes int
-				var mode FitMode
+				best := map[int]*choice{} // by node count
 				for pi := range t.Presets {
 					p := &t.Presets[pi]
 					bv, known := versions[[2]string{p.Backend, p.BackendVersion}]
@@ -165,7 +174,7 @@ func modelFits(t ModelTemplate, families []Family, versions map[[2]string]Backen
 						continue
 					}
 					sized[pi] = true
-					g, n, ok := layout(t, q, fam, *p, kvd)
+					s, ok := layout(t, q, fam, *p, kvd, perNode[fam.Name])
 					if !ok {
 						continue
 					}
@@ -175,24 +184,31 @@ func modelFits(t ModelTemplate, families []Family, versions map[[2]string]Backen
 						continue
 					}
 					runs[pi] = true
-					if best == nil || g < gpus || g == gpus && n < nodes {
-						best, gpus, nodes = p, g, n
+					c := best[s.nodes]
+					if c == nil {
+						c = &choice{}
+						best[s.nodes] = c
 					}
-					if mode != FitNative {
-						mode = m
+					if c.preset == nil || s.gpus < c.size.gpus {
+						c.preset, c.size = p, s
+					}
+					if c.mode != FitNative {
+						c.mode = m
 					}
 				}
-				if best == nil {
-					continue
+				for _, nodes := range slices.Sorted(maps.Keys(best)) {
+					c := best[nodes]
+					gpus := c.size.gpus
+					maxCtx := int(min(contextHeld(t, q, fam, gpus, kvd), float64(t.ContextMax)))
+					perf := estimate(t, q, fam, gpus, c.size.stages, presetContext(t, *c.preset), kvd)
+					out = append(out, candidate{
+						fit: ModelFit{ModelSlug: t.Slug, DeviceFamily: fam.Name, Quantization: q.Name, KVCacheDType: kvd, Mode: c.mode,
+							GPUCount: gpus, Nodes: nodes, MaxContext: maxCtx,
+							VRAMRequiredGB: math.Ceil((q.WeightsGB+kvGB(t, kvd, maxCtx))*100) / 100, Performance: &perf},
+						preset: c.preset.Name, memory: fam.MemoryGB * float64(gpus), rank: qi*len(kvDTypes) + ki,
+						guides: nodes == 1 && slices.Contains(guidanceKinds, q.Kind),
+					})
 				}
-				maxCtx := int(min(contextHeld(t, q, fam, gpus, kvd), float64(t.ContextMax)))
-				perf := Estimate(t, q, fam, gpus, presetContext(t, *best), kvd)
-				out = append(out, candidate{
-					fit: ModelFit{ModelSlug: t.Slug, DeviceFamily: fam.Name, Quantization: q.Name, KVCacheDType: kvd, Mode: mode,
-						GPUCount: gpus, Nodes: nodes, MaxContext: maxCtx,
-						VRAMRequiredGB: math.Ceil((q.WeightsGB+kvGB(t, kvd, maxCtx))*100) / 100, Performance: &perf},
-					preset: best.Name, memory: fam.MemoryGB * float64(gpus), rank: qi*len(kvDTypes) + ki, guides: slices.Contains(guidanceKinds, q.Kind),
-				})
 			}
 		}
 	}
@@ -212,39 +228,49 @@ func modelFits(t ModelTemplate, families []Family, versions map[[2]string]Backen
 	return out, unfit, errors.Join(errs...)
 }
 
-// layout is the smallest GPU count, and the nodes it spans, on which preset p
-// holds q's weights plus the KV cache of its context within fam's memory
-// budget: tensor-parallel degrees dividing the attention heads on each of its
-// nodes, else its explicit tensor times pipeline parallel; a disaggregated
-// preset needs the model on each side, so its smaller side.
-func layout(t ModelTemplate, q Quantization, fam Family, p Preset, kvd string) (gpus, nodes int, ok bool) {
+// sizing is a preset's GPU count on a family, the nodes it spans and its
+// pipeline stages, each of gpus/stages tensor-parallel GPUs.
+type sizing struct{ gpus, nodes, stages int }
+
+// layout is the smallest sizing on which preset p holds q's weights plus the
+// KV cache of its context within fam's memory budget. A multi-node preset
+// spans its nodes of perNode GPUs each (none without a node type of fam), in
+// its pipeline stages (default a stage per node) whose tensor-parallel degree
+// divides the attention heads and matches its explicit one. A single-node
+// preset takes the tensor-parallel degrees dividing the attention heads, else
+// its explicit tensor times pipeline parallel as one stage; a disaggregated one
+// needs the model on each side, so its smaller side.
+func layout(t ModelTemplate, q Quantization, fam Family, p Preset, kvd string, perNode int) (sizing, bool) {
 	heads, top := t.Architecture.AttentionHeads, p.Topology
-	nodes = 1
-	if top.Kind == "multi-node" {
-		nodes = top.Nodes
-	}
-	var sizes []int
+	var sizes []sizing
 	switch {
-	case nodes < 1 || heads < 1:
+	case heads < 1:
+	case top.Kind == "multi-node":
+		gpus := top.Nodes * perNode
+		if stages := cmp.Or(top.Pipeline, top.Nodes); top.Nodes > 1 && perNode > 0 && stages > 0 && gpus%stages == 0 {
+			if tp := gpus / stages; heads%tp == 0 && (p.TensorParallel == 0 || p.TensorParallel == tp) {
+				sizes = []sizing{{gpus, top.Nodes, stages}}
+			}
+		}
 	case top.Kind == "disaggregated":
 		if top.Prefill > 0 && top.Decode > 0 && heads%top.Prefill == 0 && heads%top.Decode == 0 {
-			sizes = []int{min(top.Prefill, top.Decode)}
+			sizes = []sizing{{min(top.Prefill, top.Decode), 1, 1}}
 		}
 	case p.TensorParallel > 0:
-		sizes = []int{p.TensorParallel * max(top.Pipeline, 1)}
+		sizes = []sizing{{p.TensorParallel * max(top.Pipeline, 1), 1, 1}}
 	default:
 		for _, d := range tpSizes {
-			if heads%(nodes*d) == 0 {
-				sizes = append(sizes, nodes*d)
+			if heads%d == 0 {
+				sizes = append(sizes, sizing{d, 1, 1})
 			}
 		}
 	}
-	for _, g := range sizes {
-		if contextHeld(t, q, fam, g, kvd) >= float64(presetContext(t, p)) {
-			return g, nodes, true
+	for _, s := range sizes {
+		if contextHeld(t, q, fam, s.gpus, kvd) >= float64(presetContext(t, p)) {
+			return s, true
 		}
 	}
-	return 0, 0, false
+	return sizing{}, false
 }
 
 // contextHeld is the context, in tokens, gpus GPUs of fam hold next to q's
@@ -288,11 +314,11 @@ func atLeast(cc, floor string) bool {
 	return err == nil && c >= 0
 }
 
-// deployment picks a model's minimum and optimal setups among its fits of a
-// guidance kind (spec section 5) whose estimate serves at least one sequence at
-// DecentDecodeTokensPerSec: the minimum is the least total GPU memory (then
-// fewest GPUs, family name, quantization order, auto KV first), the optimal the
-// highest aggregate per GPU at its decent concurrency.
+// deployment picks a model's minimum and optimal setups among its single-node
+// fits of a guidance kind (spec section 5) whose estimate serves at least one
+// sequence at DecentDecodeTokensPerSec: the minimum is the least total GPU
+// memory (then fewest GPUs, family name, quantization order, auto KV first),
+// the optimal the highest aggregate per GPU at its decent concurrency.
 func deployment(cands []candidate, vocab []NodeType) Deployment {
 	smaller := func(a, b *candidate) bool {
 		return cmp.Or(cmp.Compare(a.memory, b.memory), cmp.Compare(a.fit.GPUCount, b.fit.GPUCount),
@@ -359,7 +385,8 @@ func exampleNodeTypes(vocab []NodeType, family string, gpus int) []string {
 // when set), an existing backend version, and a draft model for its backend,
 // model and method that fits next to the model on every fit the preset deploys
 // on, stays within the model's context, spans at least two nodes when
-// multi-node and renders on its backend version for every vendor it runs on.
+// multi-node and renders on its backend version for every vendor it runs on, of
+// which it has at least one; and that no two fits share a FitKey.
 // It then runs Validate of every registered extension. Payloads of namespaces
 // no registered extension owns are preserved and ignored. Embedders can run it
 // on a snapshot fetched from an upstream.
@@ -380,11 +407,17 @@ func (s CatalogSnapshot) validate(reg *registry) error {
 	for _, f := range s.Families {
 		families[f.Name] = f
 	}
+	var errs []error
 	fits := map[string][]ModelFit{}
+	fitKeys := map[string]bool{}
 	for _, f := range s.Fits {
 		fits[f.ModelSlug] = append(fits[f.ModelSlug], f)
+		k := FitKey(f)
+		if fitKeys[k] {
+			errs = append(errs, fmt.Errorf("fit %s: duplicate", k))
+		}
+		fitKeys[k] = true
 	}
-	var errs []error
 	drafts := map[string]*DraftModel{}
 	for i, d := range s.DraftModels {
 		if drafts[d.Slug] != nil {
@@ -497,6 +530,13 @@ func validatePreset(m ModelTemplate, p Preset, q Quantization, bv BackendVersion
 			errs = append(errs, fmt.Errorf("%s: draft model %q is %s, not %s", id, draft.Slug, draft.Method, s.Method))
 		}
 	}
+	images := slices.Sorted(maps.Keys(bv.Images))
+	vendors := slices.DeleteFunc(slices.Clone(images), func(v string) bool {
+		return bv.Images[v] == "" || len(p.Vendors) > 0 && !slices.Contains(p.Vendors, v)
+	})
+	if len(vendors) == 0 {
+		errs = append(errs, fmt.Errorf("%s: runs on no vendor: images for %v, preset vendors %v", id, images, p.Vendors))
+	}
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
@@ -505,10 +545,7 @@ func validatePreset(m ModelTemplate, p Preset, q Quantization, bv BackendVersion
 		roles = []string{"prefill", "decode"}
 	}
 	fit := ModelFit{ModelSlug: m.Slug, Quantization: p.Quantization, GPUCount: cmp.Or(p.TensorParallel, 1)}
-	for _, vendor := range slices.Sorted(maps.Keys(bv.Images)) {
-		if len(p.Vendors) > 0 && !slices.Contains(p.Vendors, vendor) {
-			continue
-		}
+	for _, vendor := range vendors {
 		for _, role := range roles {
 			if _, err := RenderRole(m, p, bv, fit, draft, vendor, role, 0); err != nil {
 				return err
@@ -520,13 +557,16 @@ func validatePreset(m ModelTemplate, p Preset, q Quantization, bv BackendVersion
 
 // draftFits checks that a speculative preset holds its draft's weights next to
 // the model's and the KV cache of its context on every fit it deploys on: same
-// quantization and KV cache dtype, a family it runs on, and its context within
-// the fit's.
+// quantization, KV cache dtype and node count, a family it runs on, and its
+// context within the fit's.
 func draftFits(m ModelTemplate, p Preset, q Quantization, bv BackendVersion, draft *DraftModel, fits []ModelFit, families map[string]Family) error {
-	ctx := presetContext(m, p)
+	ctx, nodes := presetContext(m, p), 1
+	if p.Topology.Kind == "multi-node" {
+		nodes = p.Topology.Nodes
+	}
 	for _, f := range fits {
 		fam, ok := families[f.DeviceFamily]
-		if !ok || f.Quantization != p.Quantization || f.KVCacheDType != kvDType(p) || ctx > f.MaxContext || presetMode(fam, p, q.Kind, bv) == "" {
+		if !ok || f.Quantization != p.Quantization || f.KVCacheDType != kvDType(p) || f.Nodes != nodes || ctx > f.MaxContext || presetMode(fam, p, q.Kind, bv) == "" {
 			continue
 		}
 		if q.WeightsGB+draft.WeightsGB+kvGB(m, f.KVCacheDType, ctx) > fam.MemoryGB*GPUMemoryUtilization*float64(f.GPUCount) {

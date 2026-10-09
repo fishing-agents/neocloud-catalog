@@ -56,31 +56,36 @@ does not curate models itself.
   `requires_dtype`, when set - an existing backend version and a draft for its
   backend, model and method that fits next to the model, stays within the
   model's context, spans at least two nodes when multi-node, and renders on its
-  backend version; preset names are unique per model), derives the fit matrix
-  and deployment guidance, then runs the registered extensions.
+  backend version for at least one vendor; preset names are unique per model;
+  no two fits share a fit key), derives the fit matrix and deployment
+  guidance, then runs the registered extensions.
   KV bytes/token = 2 x layers x KV heads x head dim x 2 bytes (half for an fp8
-  KV cache). A fit exists for a model, quantization, KV cache dtype and family
-  only where some preset with them runs there: its backend version has an image
-  for the family's vendor, the family meets its minimum compute capability
-  (NVIDIA only), and the quantization kind runs `native` (its dtype is native to
-  the family) or `emulated` (NVIDIA from a compute capability). The fit is the
-  smallest layout such a preset needs - tensor-parallel GPU counts (1/2/4/8 per
-  node, dividing the attention heads) across a multi-node preset's nodes, each
-  side of a disaggregated one - whose budget (90% of GPU memory, a conservative
-  budget below vLLM's 0.92 default) holds the weights plus the preset's
-  context; max context is what the rest holds, capped at the model's ceiling. A
-  preset whose quantization fits families its backend runs on none of, or an
-  unparsable NVIDIA compute capability, fails generation. Each model's
-  `deployment` names, among its float and fp8 fits serving one sequence at 20
-  tokens/s, the minimum (least GPU memory) and optimal (highest aggregate per
-  GPU at 20 tokens/s per sequence) with example node types; models without a
-  minimum and presets whose quantization fits no family are reported.
+  KV cache). A fit exists for a model, quantization, KV cache dtype, family and
+  node count only where some preset with them runs there: its backend version
+  has an image for the family's vendor, the family meets its minimum compute
+  capability (NVIDIA only), and the quantization kind runs `native` (its dtype
+  is native to the family) or `emulated` (NVIDIA from a compute capability).
+  The fit is the smallest layout such a preset needs - tensor-parallel GPU
+  counts (1/2/4/8, dividing the attention heads), each side of a disaggregated
+  one, and for a multi-node preset its `nodes` whole nodes of the family's
+  largest node type (cloud or fallback), tensor parallel within a node and
+  pipeline parallel across nodes - whose budget (90% of GPU memory, a
+  conservative budget below vLLM's 0.92 default) holds the weights plus the
+  preset's context; max context is what the rest holds, capped at the model's
+  ceiling. A preset whose quantization fits families its backend runs on none
+  of, or an unparsable NVIDIA compute capability, fails generation. Each
+  model's `deployment` names, among its single-node float and fp8 fits serving
+  one sequence at 20 tokens/s, the minimum (least GPU memory) and optimal
+  (highest aggregate per GPU at 20 tokens/s per sequence) with example node
+  types; models without a minimum and presets whose quantization fits no
+  family are reported.
 - `estimate.go` - `Estimate`, the per-fit performance estimate: a
   memory-bandwidth roofline where each decode step reads the active weights
   once and every concurrent sequence's KV cache; concurrency is the most
   sequences memory holds that each still decode 20 tokens/s. Its constants are
   documented in one place: `BandwidthEfficiency` 0.8 of peak bandwidth,
   tensor-parallel efficiency 0.85 (2 GPUs) and 0.75 (4 or more),
+  `CrossNodeEfficiency` 0.85 per pipeline stage boundary of a multi-node fit,
   `EstimateMemoryUtilization` 0.92 of memory for weights and KV, and
   `DecentDecodeTokensPerSec` 20.
 - `snapshots/v4/catalog.json` - the committed, generated snapshot the module
@@ -146,9 +151,12 @@ preset once per vendor it runs on.
   cannot state). Validate checks that the draft's weights fit next to the
   model's on the GPUs of every fit the preset deploys on, but a fit's
   `vram_required_gb` does not include them.
-- Topology: `single` (default), `multi-node` (`nodes`, `pipeline` stages per
-  node) or `disaggregated` (`prefill_gpus`, `decode_gpus`, KV `transfer`
-  `nixl` or `mooncake`). Fits carry the node count.
+- Topology: `single` (default), `multi-node` (`nodes` and `pipeline`, the
+  pipeline-parallel stages across them, default one per node) or
+  `disaggregated` (`prefill_gpus`, `decode_gpus`, KV `transfer` `nixl` or
+  `mooncake`). Fits carry the node count; a fit key
+  (`<slug>/<family>/<profile|->/<quantization>/<kv dtype>`) ends in
+  `/<n>-node` for a fit across n > 1 nodes.
 - llama.cpp: the `llamacpp` backend runs `gguf` quantizations (e.g. `Q4_K_M`)
   whose source names the file in `files`, from pinned llama-server images for
   nvidia, amd and cpu.
@@ -179,8 +187,9 @@ Each model's `deployment` holds a `minimum` (the least GPU memory serving one
 sequence at `DecentDecodeTokensPerSec`, 20 tokens/s, at the preset's context)
 and an `optimal` setup (the highest aggregate output tokens/s per GPU while each
 sequence keeps 20 tokens/s): family, GPUs, nodes, quantization, preset,
-context, example node types and the fits it derives from. Only float and fp8
-quantizations drive guidance; every fit carries its own `performance` estimate.
+context, example node types and the fits it derives from. Only single-node
+float and fp8 fits drive guidance; every fit carries its own `performance`
+estimate.
 Recommendations are estimates (`source` and `confidence` `estimate`) until
 observed aggregates exist.
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -147,13 +148,18 @@ type Overlay struct {
 	Backends       map[string]Extensions `json:"backends,omitempty"`
 }
 
-// FitKey identifies a fit: "<slug>/<family>/<profile|->/<quant>/<kv dtype>".
+// FitKey identifies a fit: "<slug>/<family>/<profile|->/<quant>/<kv dtype>",
+// with "/<n>-node" appended for a fit across n > 1 nodes.
 func FitKey(f ModelFit) string {
 	profile := "-"
 	if f.Profile != nil {
 		profile = *f.Profile
 	}
-	return strings.Join([]string{f.ModelSlug, f.DeviceFamily, profile, f.Quantization, f.KVCacheDType}, "/")
+	key := strings.Join([]string{f.ModelSlug, f.DeviceFamily, profile, f.Quantization, f.KVCacheDType}, "/")
+	if f.Nodes > 1 {
+		key += "/" + strconv.Itoa(f.Nodes) + "-node"
+	}
+	return key
 }
 
 // Merge returns a copy of public with the overlay's payloads added. It refuses

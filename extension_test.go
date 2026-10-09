@@ -48,7 +48,8 @@ func extSnap() CatalogSnapshot {
 		Families:      []Family{{Name: "L4", Vendor: "nvidia", MemoryGB: 24}},
 		Models:        []ModelTemplate{m},
 		Fits:          []ModelFit{{ModelSlug: "m", DeviceFamily: "L4", Quantization: "bf16", KVCacheDType: "auto", GPUCount: 1}},
-		Backends:      []Backend{{Name: "vllm", Versions: []BackendVersion{{Version: "v1", Quantizations: map[string]QuantSupport{"float": {NativeDType: "bf16"}}}}}},
+		Backends: []Backend{{Name: "vllm", Versions: []BackendVersion{{Version: "v1", Images: map[string]string{"nvidia": "vllm/vllm-openai:v1"},
+			Quantizations: map[string]QuantSupport{"float": {NativeDType: "bf16"}}}}}},
 	}
 }
 

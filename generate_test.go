@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"reflect"
 	"slices"
@@ -48,11 +49,16 @@ func backendOf(name string, bv BackendVersion) []Backend {
 	return []Backend{{Name: name, Versions: []BackendVersion{bv}}}
 }
 
-// fitsByKey indexes fits by "<slug>/<family>/<quantization>/<kv dtype>".
+// fitsByKey indexes fits by "<slug>/<family>/<quantization>/<kv dtype>", with
+// "/<n>-node" appended for a fit across n > 1 nodes.
 func fitsByKey(snap CatalogSnapshot) map[string]ModelFit {
 	out := map[string]ModelFit{}
 	for _, f := range snap.Fits {
-		out[f.ModelSlug+"/"+f.DeviceFamily+"/"+f.Quantization+"/"+f.KVCacheDType] = f
+		k := f.ModelSlug + "/" + f.DeviceFamily + "/" + f.Quantization + "/" + f.KVCacheDType
+		if f.Nodes > 1 {
+			k += fmt.Sprintf("/%d-node", f.Nodes)
+		}
+		out[k] = f
 	}
 	return out
 }
@@ -206,7 +212,7 @@ func TestFitTopology(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := fitsByKey(snap)
-	if f := got["llama-3.1-405b/H100/bf16/auto"]; f.GPUCount != 16 || f.Nodes != 2 {
+	if f := got["llama-3.1-405b/H100/bf16/auto/2-node"]; f.GPUCount != 16 || f.Nodes != 2 {
 		t.Errorf("405b on H100 = %d GPUs on %d nodes, want 16 on 2", f.GPUCount, f.Nodes)
 	}
 	if f := got["llama-3.1-70b/H100/bf16/auto"]; f.GPUCount != 2 || f.Nodes != 1 {
@@ -215,6 +221,100 @@ func TestFitTopology(t *testing.T) {
 	for _, k := range []string{"llama-3.1-405b/L4/bf16/auto", "llama-3.1-70b/L4/bf16/auto"} {
 		if _, ok := got[k]; ok {
 			t.Errorf("fit %s, want none", k)
+		}
+	}
+}
+
+// TestMultiNodeFit: a multi-node preset gets a fit of whole nodes of the
+// family's largest node type next to the single-node fit, never drives
+// guidance, and is reported when it fits no family.
+func TestMultiNodeFit(t *testing.T) {
+	twoNode := vllmPreset("vllm-bf16-2node", "bf16", 8192)
+	twoNode.Topology = Topology{Kind: "multi-node", Nodes: 2}
+	m := llama70b()
+	m.Presets = []Preset{vllmPreset("vllm-bf16", "bf16", 8192), twoNode}
+	// 2000GB exceeds the budget of two nodes of eight H100 (1152GB).
+	huge := llama70b()
+	huge.Slug, huge.Quantizations[0].WeightsGB, huge.Presets = "huge", 2000, []Preset{twoNode}
+	families := curatedFamilies(t, "H100", "L4")
+	vllm := curatedBackends(t)["vllm"]
+	snap, report, err := Generate(families, nil, []ModelTemplate{m, huge}, nil, backendOf("vllm", vllm))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := fitsByKey(snap)
+	// Two nodes of the fallback other/<family>x8: 16 GPUs, whose budget (1152GB
+	// H100, 345.6GB L4) holds the model's whole context.
+	for _, fam := range []string{"H100", "L4"} {
+		f, ok := got["llama-3.1-70b/"+fam+"/bf16/auto/2-node"]
+		if !ok || f.GPUCount != 16 || f.Nodes != 2 || f.MaxContext != 131072 || FitKey(f) != "llama-3.1-70b/"+fam+"/-/bf16/auto/2-node" {
+			t.Errorf("%s 2-node fit = %+v (present %v), want 16 GPUs on 2 nodes, context 131072, key .../2-node", fam, f, ok)
+		}
+	}
+	if f := got["llama-3.1-70b/H100/bf16/auto"]; f.GPUCount != 2 || f.Nodes != 1 {
+		t.Errorf("single-node H100 fit = %d GPUs on %d nodes, want 2 on 1", f.GPUCount, f.Nodes)
+	}
+	// The 2-node fit serves 560 tokens/s per GPU against 31.1 on two H100, but
+	// guidance stays single-node.
+	if d := snap.Models[0].Deployment; d.Minimum == nil || d.Optimal == nil || d.Minimum.Nodes != 1 || d.Optimal.Nodes != 1 {
+		t.Errorf("deployment = %+v, want single-node minimum and optimal", d)
+	}
+	wantReport := []string{"huge/vllm-bf16-2node: fits no family", "huge: no deployment minimum: no float or fp8 fit decodes 20 tokens/s per sequence"}
+	if !slices.Equal(report, wantReport) {
+		t.Errorf("report = %q, want %q", report, wantReport)
+	}
+
+	// Without a node type of L4, the 2-node preset is sized on H100 only.
+	cands, unfit, err := modelFits(m, families, map[string]int{"H100": 8}, map[[2]string]BackendVersion{{"vllm", "v0.31.0"}: vllm})
+	if err != nil || len(unfit) != 0 {
+		t.Fatalf("modelFits: unfit %v, err %v", unfit, err)
+	}
+	var multi []string
+	for _, c := range cands {
+		if c.fit.Nodes > 1 {
+			multi = append(multi, c.fit.DeviceFamily)
+		}
+	}
+	if !slices.Equal(multi, []string{"H100"}) {
+		t.Errorf("multi-node fits on %v, want H100 only", multi)
+	}
+}
+
+// TestMultiNodeEstimate: tensor parallel within a node, pipeline parallel
+// across nodes, 0.85 per stage boundary.
+func TestMultiNodeEstimate(t *testing.T) {
+	// llama-3.1-70b bf16 at 8192 tokens (141.1GB weights, 327680B x 8192 =
+	// 2.68435456GB KV per sequence) on two nodes of eight H100 (80GB, 3350GB/s).
+	// Pipeline 2 (the default, a stage per node), tensor parallel 8:
+	//   rate = 0.8 x 3350 x 16 x 0.75 x 0.85 = 27336 GB/s
+	//   decode(1) = 27336 / 143.78 = 190.1
+	//   capacity = floor((0.92 x 80 x 16 - 141.1) / 2.684) = floor(386.1) = 386,
+	//   where decode(386) = 27336 / 1177.26 = 23.2 still holds 20
+	//   aggregate = 386 x 23.22 = 8962.9
+	// Pipeline 4, tensor parallel 4: rate = 0.8 x 3350 x 16 x 0.75 x 0.85^3 =
+	// 19750.26, decode(1) = 137.4; 20 tokens/s holds up to (987.51 - 141.1) /
+	// 2.684 = 315.3 sequences: 315, aggregate 315 x 20.02 = 6305.4.
+	cases := []struct {
+		name string
+		top  Topology
+		tp   int
+		want Performance
+	}{
+		{"a stage per node", Topology{Kind: "multi-node", Nodes: 2}, 0, Performance{Source: "estimate", DecodeTokensPerSec: 190.1, ConcurrentSequences: 386, AggregateTokensPerSec: 8962.9, Context: 8192}},
+		{"two stages per node", Topology{Kind: "multi-node", Nodes: 2, Pipeline: 4}, 4, Performance{Source: "estimate", DecodeTokensPerSec: 137.4, ConcurrentSequences: 315, AggregateTokensPerSec: 6305.4, Context: 8192}},
+	}
+	for _, c := range cases {
+		p := vllmPreset("vllm-bf16-2node", "bf16", 8192)
+		p.Topology, p.TensorParallel = c.top, c.tp
+		m := llama70b()
+		m.Presets = []Preset{p}
+		snap, _, err := Generate(curatedFamilies(t, "H100"), nil, []ModelTemplate{m}, nil, backendOf("vllm", curatedBackends(t)["vllm"]))
+		if err != nil {
+			t.Fatal(err)
+		}
+		f := fitsByKey(snap)["llama-3.1-70b/H100/bf16/auto/2-node"]
+		if f.GPUCount != 16 || f.Performance == nil || *f.Performance != c.want {
+			t.Errorf("%s: %d GPUs, %+v; want 16, %+v", c.name, f.GPUCount, f.Performance, c.want)
 		}
 	}
 }
@@ -345,7 +445,8 @@ func TestDeploymentGuidance(t *testing.T) {
 }
 
 func TestGenerateRejectsUnresolvedPresetsAndUnpinnedSources(t *testing.T) {
-	backends := []Backend{{Name: "vllm", Versions: []BackendVersion{{Version: "v1", Quantizations: map[string]QuantSupport{"float": {NativeDType: "bf16"}}}}}}
+	backends := []Backend{{Name: "vllm", Versions: []BackendVersion{{Version: "v1", Images: map[string]string{"nvidia": "vllm/vllm-openai:v1"},
+		Quantizations: map[string]QuantSupport{"float": {NativeDType: "bf16"}}}}}}
 	cases := []struct {
 		name string
 		edit func(*ModelTemplate)
@@ -522,6 +623,39 @@ func TestValidateRendersEveryVendor(t *testing.T) {
 	wantValidate(t, "no amd path", snap, `llama-3.1-8b/vllm-bf16 on vllm v0.31.0: has no chat template "llama3.1-tools" for vendor "amd"`)
 	snap.Models[0].Presets[0].Vendors = []string{"nvidia"}
 	wantValidate(t, "nvidia only", snap, "")
+}
+
+// A preset its backend version has no image for, among the vendors it allows,
+// deploys nowhere.
+func TestValidateRejectsPresetWithoutVendor(t *testing.T) {
+	m := llama8b()
+	m.Presets = []Preset{vllmPreset("vllm-bf16", "bf16", 8192)}
+	m.Presets[0].Vendors = []string{"intel"}
+	wantValidate(t, "vendors without an image", curatedSnap(t, m), "llama-3.1-8b/vllm-bf16 on vllm v0.31.0: runs on no vendor")
+	m.Presets[0].Vendors = nil
+	snap := curatedSnap(t, m)
+	wantValidate(t, "any vendor", snap, "")
+	for _, b := range snap.Backends {
+		if b.Name == "vllm" {
+			b.Versions[0].Images = nil
+		}
+	}
+	wantValidate(t, "no images", snap, "llama-3.1-8b/vllm-bf16 on vllm v0.31.0: runs on no vendor")
+}
+
+// FitKey identifies a fit (overlay ids, guidance fit_keys), so a snapshot
+// repeating one fails; fits on other node counts are distinct.
+func TestValidateRejectsDuplicateFits(t *testing.T) {
+	m := llama8b()
+	m.Presets = []Preset{vllmPreset("vllm-bf16", "bf16", 8192)}
+	snap := curatedSnap(t, m)
+	fit := ModelFit{ModelSlug: m.Slug, DeviceFamily: "H100", Quantization: "bf16", KVCacheDType: "auto", Mode: FitNative, GPUCount: 1, Nodes: 1, MaxContext: 8192}
+	twoNode := fit
+	twoNode.GPUCount, twoNode.Nodes = 16, 2
+	snap.Fits = []ModelFit{fit, twoNode}
+	wantValidate(t, "a fit per node count", snap, "")
+	snap.Fits = append(snap.Fits, twoNode)
+	wantValidate(t, "a repeated fit", snap, "fit llama-3.1-8b/H100/-/bf16/auto/2-node: duplicate")
 }
 
 // Regenerating the committed data must reproduce the embedded snapshot: the
