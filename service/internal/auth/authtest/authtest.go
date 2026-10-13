@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package authtest is a test OIDC issuer: discovery, a JWKS and signed tokens.
 package authtest
 

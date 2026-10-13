@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package epoch imports family hardware facts from Epoch AI's CSV merged with
 // the curated overlay into the upstream layer. Overlay values are curation;
 // Epoch figures never replace curated values, they are listed as conflicts.

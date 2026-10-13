@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package bootstrap imports the core repository's data/*.json into the
 // upstream layer as an import, not curation: later importers replace its values.
 package bootstrap

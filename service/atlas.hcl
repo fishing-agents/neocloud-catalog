@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 // Atlas migration env: the GORM models (internal/model) are the schema
 // authority; this env diffs versioned migrations from them. Run
 // `atlas migrate diff <name> --env gorm` (make migrate-diff NAME=<name>).

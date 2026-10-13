@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package azureprices imports Azure Retail Prices (Linux VM on-demand, spot and
 // 1-year reserved, USD/hour) for Azure node types into the upstream layer.
 // A node type with no price in any configured region loses its prices.

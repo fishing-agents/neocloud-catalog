@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package release freezes generator runs as releases and publishes them as the
 // release workflow does: a signed single-layer OCI artifact of the snapshot,
 // and adapter exports with a signed SHA256SUMS.

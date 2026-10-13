@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package generator runs the core generator over the effective catalog and stores the result.
 package generator
 

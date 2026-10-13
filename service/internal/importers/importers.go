@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package importers runs importers, each filling a store layer from one source
 // as a recorded import run.
 package importers

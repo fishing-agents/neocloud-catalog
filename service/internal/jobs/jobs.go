@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package jobs runs import and generator runs as River jobs on the catalog queue.
 package jobs
 

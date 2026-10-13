@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package runrecord is the run-record contract: one serving configuration observed
 // over one window, with its outcome. Records carry no tenant, host or request data:
 // unknown fields are refused and launch args are limited to an allowlist.

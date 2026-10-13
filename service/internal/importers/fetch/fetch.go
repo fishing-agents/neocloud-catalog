@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package fetch reads bounded HTTP bodies, retrying transport errors, 429 and
 // 5xx after Retry-After (capped) or a doubling backoff.
 package fetch

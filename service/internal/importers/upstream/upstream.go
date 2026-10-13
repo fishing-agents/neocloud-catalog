@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package upstream imports an upstream service's signed snapshot into the upstream
 // layer and its pinned overlay into the overlay layer, in one transaction.
 // A release older than the last imported one is refused, so a replay cannot

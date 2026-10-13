@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 GO ?= go
 ATLAS ?= atlas
 NAME ?= change

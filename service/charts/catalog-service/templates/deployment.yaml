@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 {{- $release := .Values.config.release | default dict -}}
 {{- if and $release.ref (not .Values.signing.secretName) -}}
 {{- fail "signing.secretName is required with config.release.ref: release.key signs what the API publishes" -}}

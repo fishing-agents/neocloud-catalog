@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package httpapi serves the /v1 API; api/openapi.yaml is the contract and
 // gen.gen.go is generated from it (make generate).
 package httpapi

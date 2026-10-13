@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package config loads embedded TOML defaults, then an optional directory of
 // *.toml in lexical order, then NEOCLOUD_CATALOG_<KEY> env overrides.
 package config

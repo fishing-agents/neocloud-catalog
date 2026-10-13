@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package store reads and writes the catalog's curated layers. A local object overrides the upstream
 // object of its key whole, children included; layers never mix inside one object. The overlay layer
 // holds extension payloads only.

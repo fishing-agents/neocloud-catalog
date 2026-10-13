@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package tests renders the chart with helm (skipped without it) and checks that
 // the rendered config.toml validates and every file it names is mounted.
 package tests

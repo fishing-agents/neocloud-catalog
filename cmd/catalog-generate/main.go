@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Command catalog-generate validates the curated data/ and writes the snapshot to
 // snapshots/v4/catalog.json. Re-run it after any change to data/.
 package main

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 # Publishes the committed snapshot as a cosign-signed OCI artifact on GHCR, and
 # the platform-adapter exports (GPUStack catalog, AI Runway recipes and
 # deployments) with a cosign-signed SHA256SUMS as release assets and on GitHub

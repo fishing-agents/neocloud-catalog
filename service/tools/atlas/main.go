@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //go:build atlas
 
 // Command atlas dumps the GORM models as DDL, the schema atlas.hcl diffs

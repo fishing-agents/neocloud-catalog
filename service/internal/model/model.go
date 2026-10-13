@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package model holds the GORM models, the schema Atlas diffs migrations from. Objects refer to each
 // other by natural key, never row id, so local overrides upstream per key; only a source's files and
 // derived rows point at rows.

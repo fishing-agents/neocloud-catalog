@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package server runs the API port (probes and /v1) and the metrics port.
 package server
 

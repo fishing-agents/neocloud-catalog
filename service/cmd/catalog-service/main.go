@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Command catalog-service runs the neocloud catalog service.
 package main
 

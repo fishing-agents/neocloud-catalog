@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package upstream_test
 
 // neocloud-api's catalogsrc test cases, run against Source.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package kaito cross-checks catalog architectures and max context against KAITO's
 // model_catalog.yaml at a pinned release. It never writes: KAITO derives from the
 // same config.json, so a mismatch is listed for an operator to review.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package dbtest gives integration tests their own database on NEOCLOUD_CATALOG_TEST_DSN; tests
 // skip without it.
 package dbtest

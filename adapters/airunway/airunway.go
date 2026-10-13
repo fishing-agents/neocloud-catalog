@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package airunway exports the catalog to AI Runway: vLLM recipes (served from
 // VLLM_RECIPES_BASE_URL) and ModelDeployment manifests with POST /api/deployments bodies.
 package airunway

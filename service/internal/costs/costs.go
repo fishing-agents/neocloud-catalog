@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package costs estimates internally what a snapshot's fits and guidance setups cost per priced
 // node type, region and billing type.
 package costs

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Command catalog-export writes the snapshot in every adapter format to
 // <out>/<format>/ plus <out>/SHA256SUMS for the release to sign.
 package main

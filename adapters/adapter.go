@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package adapters exports the neocloud catalog to model-serving platforms, one
 // registered adapter per platform.
 package adapters

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package catalog is the model-template catalog core: stdlib only, no storage or
 // HTTP. The serialized CatalogSnapshot is the artifact clients pull and pin by digest.
 package catalog

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package auth authenticates bearer tokens as neocloud-api does: API keys
 // (neocatalog_ prefix, SHA-256 at rest) or OIDC JWTs from the configured
 // issuer. Tokens are never logged.

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 # An operator deployment: our release and overlay from a private mirror,
 # its own signing key for its re-export, key-based overlay trust.
 image:
