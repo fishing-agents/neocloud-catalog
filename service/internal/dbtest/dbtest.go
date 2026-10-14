@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2026 Reza Jelveh
 // SPDX-License-Identifier: Apache-2.0
 
 // Package dbtest gives integration tests their own database on NEOCLOUD_CATALOG_TEST_DSN; tests

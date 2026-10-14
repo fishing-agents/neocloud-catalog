@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2026 Reza Jelveh
 // SPDX-License-Identifier: Apache-2.0
 
 // Command catalog-generate validates the curated data/ and writes the snapshot to

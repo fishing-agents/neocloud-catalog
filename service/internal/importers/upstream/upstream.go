@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2026 Reza Jelveh
 // SPDX-License-Identifier: Apache-2.0
 
 // Package upstream imports an upstream service's signed snapshot into the upstream

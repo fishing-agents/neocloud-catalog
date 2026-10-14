@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2026 Reza Jelveh
 // SPDX-License-Identifier: Apache-2.0
 
 // Package fetch reads bounded HTTP bodies, retrying transport errors, 429 and

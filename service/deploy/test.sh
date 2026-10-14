@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-FileCopyrightText: 2026 Reza Jelveh
 # SPDX-License-Identifier: Apache-2.0
 # Upstream publishes a signed release to the registry; the operator imports it.
 # Usage: test.sh | test.sh down

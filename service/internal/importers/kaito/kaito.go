@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2026 Reza Jelveh
 // SPDX-License-Identifier: Apache-2.0
 
 // Package kaito cross-checks catalog architectures and max context against KAITO's

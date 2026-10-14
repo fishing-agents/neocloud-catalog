@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2026 Reza Jelveh
 // SPDX-License-Identifier: Apache-2.0
 
 // Package db opens the pgx *sql.DB and GORM handle. The schema comes from the Atlas migrations;

@@ -1,3 +1,4 @@
+{{/* SPDX-FileCopyrightText: 2026 Reza Jelveh */}}
 {{/* SPDX-License-Identifier: Apache-2.0 */}}
 {{- define "catalog-service.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}

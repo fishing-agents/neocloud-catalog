@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2026 Reza Jelveh
 // SPDX-License-Identifier: Apache-2.0
 
 // Package model holds the GORM models, the schema Atlas diffs migrations from. Objects refer to each
