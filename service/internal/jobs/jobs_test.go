@@ -5,6 +5,7 @@ package jobs_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -246,5 +247,83 @@ func TestShutdownCancelsRunningRuns(t *testing.T) {
 	}
 	if r := statusOf(t, db, id); r.Status != model.RunFailed || !strings.Contains(r.Error, "context canceled") {
 		t.Errorf("run cancelled by shutdown: %s %q", r.Status, r.Error)
+	}
+}
+
+// A model import queued with nothing to start it - its job ended without starting it, or a private
+// import with no job - is failed by the sweep once past its grace; a live job keeps it queued.
+func TestSweepFailsOrphanedModelImports(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	sqlDB, db := dbtest.Fresh(t, "jobs_orphaned")
+	dbtest.Migrate(t, sqlDB)
+	if err := jobs.Migrate(ctx, sqlDB); err != nil {
+		t.Fatal(err)
+	}
+	s := store.New(db)
+	c, err := jobs.New(sqlDB, s, importers.NewRegistry(), config) // no broker: model import jobs fail before starting
+	if err != nil {
+		t.Fatal(err)
+	}
+	var jobID int64
+	queue := func(private, old bool) uuid.UUID {
+		t.Helper()
+		mi := model.ModelImport{Base: model.Base{ID: uuid.New()}, Source: "huggingface", Repo: "acme/model", TenantID: "acme", Private: private,
+			State: model.ImportQueued}
+		var enqueue store.Enqueue
+		if !private {
+			enqueue = func(tx *sql.Tx) error {
+				res, err := c.InsertTx(ctx, tx, jobs.ModelImportArgs{Import: mi.ID}, nil)
+				if err == nil {
+					jobID = res.Job.ID
+				}
+				return err
+			}
+		}
+		if err := s.CreateModelImport(ctx, &mi, enqueue); err != nil {
+			t.Fatal(err)
+		}
+		if old {
+			if err := db.Exec(`UPDATE model_imports SET created_at = now() - interval '10 minutes' WHERE id = ?`, mi.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+		return mi.ID
+	}
+	stateOf := func(id uuid.UUID) model.ModelImport {
+		t.Helper()
+		mi, err := s.ModelImport(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return mi
+	}
+	withJob, private, fresh := queue(false, true), queue(true, true), queue(true, false)
+
+	if err := c.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.Stop(context.Background()) })
+	if mi := stateOf(private); mi.State != model.ImportFailed || mi.Error != jobs.OrphanedError || mi.FinishedAt == nil {
+		t.Errorf("old private import without a job after start: %+v", mi)
+	}
+	if mi := stateOf(fresh); mi.State != model.ImportQueued {
+		t.Errorf("fresh private import within its grace: %s", mi.State)
+	}
+	if _, err := jobs.Wait(ctx, c, jobID); err == nil || !strings.Contains(err.Error(), "not configured") {
+		t.Fatalf("model import job without a broker: %v", err)
+	}
+	if mi := stateOf(withJob); mi.State != model.ImportQueued {
+		t.Fatalf("import of the failed job before the sweep: %s", mi.State)
+	}
+	res, err := c.Insert(ctx, jobs.FailAbandonedArgs{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := jobs.Wait(ctx, c, res.Job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if mi := stateOf(withJob); mi.State != model.ImportFailed || mi.Error != jobs.OrphanedError {
+		t.Errorf("import whose job ended without starting it, after the sweep: %+v", mi)
 	}
 }

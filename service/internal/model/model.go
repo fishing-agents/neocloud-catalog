@@ -424,15 +424,15 @@ const (
 
 // ModelImport imports one source repository into the local layer, as the import run of its id, or
 // with Private into its tenant's layer. Revision is as requested, Commit the one imported. A private
-// import's source token is never stored.
+// import's source token is never stored. A tenant has one open request per repository and revision.
 type ModelImport struct {
 	Base
 	Timestamps
 	Source     string                      `gorm:"not null;check:source IN ('huggingface', 'modelscope')"`
-	Repo       string                      `gorm:"not null"`
-	Revision   string                      `gorm:"not null"`
+	Repo       string                      `gorm:"not null;uniqueIndex:idx_model_imports_requested,priority:2"`
+	Revision   string                      `gorm:"not null;uniqueIndex:idx_model_imports_requested,priority:3"`
 	Commit     string                      `gorm:"not null"`
-	TenantID   string                      `gorm:"not null;index"`
+	TenantID   string                      `gorm:"not null;index;uniqueIndex:idx_model_imports_requested,priority:1,where:state = 'requested'"`
 	Private    bool                        `gorm:"not null;check:chk_model_imports_private,NOT private OR tenant_id <> ''"`
 	State      string                      `gorm:"not null;index;check:state IN ('requested', 'queued', 'running', 'succeeded', 'failed', 'rejected')"`
 	ModelSlug  string                      `gorm:"not null"`

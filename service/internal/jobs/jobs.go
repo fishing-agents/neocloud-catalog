@@ -124,11 +124,30 @@ func (w *generateWorker) Work(ctx context.Context, job *river.Job[GenerateArgs])
 type failAbandonedWorker struct {
 	river.WorkerDefaults[FailAbandonedArgs]
 	s         *store.Store
+	db        *sql.DB
 	olderThan time.Duration
 }
 
 func (w *failAbandonedWorker) Work(ctx context.Context, _ *river.Job[FailAbandonedArgs]) error {
-	_, err := w.s.FailAbandonedRuns(ctx, w.olderThan)
+	return failAbandoned(ctx, w.s, w.db, w.olderThan)
+}
+
+// OrphanedError is the error of a model import whose job ended, or vanished, without starting it.
+const OrphanedError = "abandoned: its job ended without starting it"
+
+// orphanGrace outlasts a private import's request (it has no job) and an approval committing its job.
+const orphanGrace = 5 * time.Minute
+
+// failAbandoned fails the runs and model imports left running after olderThan, and the model imports
+// queued for orphanGrace that no live job will start.
+func failAbandoned(ctx context.Context, s *store.Store, db *sql.DB, olderThan time.Duration) error {
+	if _, err := s.FailAbandonedRuns(ctx, olderThan); err != nil {
+		return err
+	}
+	_, err := db.ExecContext(ctx, `UPDATE model_imports SET state = 'failed', finished_at = now(), error = $1
+WHERE state = 'queued' AND COALESCE(decided_at, created_at) < now() - make_interval(secs => $2)
+AND NOT EXISTS (SELECT 1 FROM river_job j WHERE j.kind = $3 AND j.args->>'import' = model_imports.id::text
+	AND j.state IN ('available', 'pending', 'retryable', 'running', 'scheduled'))`, OrphanedError, orphanGrace.Seconds(), ModelImportArgs{}.Kind())
 	return err
 }
 
@@ -159,6 +178,7 @@ type Config struct {
 type Client struct {
 	*river.Client[*sql.Tx]
 	s           *store.Store
+	db          *sql.DB
 	rescueAfter time.Duration
 	webhooks    []Subscriber
 }
@@ -171,7 +191,7 @@ func New(db *sql.DB, s *store.Store, reg importers.Registry, cfg Config) (*Clien
 	river.AddWorker(workers, &generateWorker{s: s})
 	river.AddWorker(workers, &modelImportWorker{b: cfg.Broker})
 	river.AddWorker(workers, newWebhookWorker(cfg.Webhooks, cfg.WebhookBackoff))
-	river.AddWorker(workers, &failAbandonedWorker{s: s, olderThan: cfg.RescueAfter})
+	river.AddWorker(workers, &failAbandonedWorker{s: s, db: db, olderThan: cfg.RescueAfter})
 	c, err := river.NewClient(riverdatabasesql.New(db), &river.Config{
 		Queues:               map[string]river.QueueConfig{Queue: {MaxWorkers: 1}, WebhookQueue: {MaxWorkers: webhookWorkers}},
 		Workers:              workers,
@@ -183,12 +203,12 @@ func New(db *sql.DB, s *store.Store, reg importers.Registry, cfg Config) (*Clien
 	if err != nil {
 		return nil, err
 	}
-	return &Client{Client: c, s: s, rescueAfter: cfg.RescueAfter, webhooks: cfg.Webhooks}, nil
+	return &Client{Client: c, s: s, db: db, rescueAfter: cfg.RescueAfter, webhooks: cfg.Webhooks}, nil
 }
 
-// Start fails abandoned runs, then works the queue.
+// Start fails abandoned runs and model imports, then works the queue.
 func (c *Client) Start(ctx context.Context) error {
-	if _, err := c.s.FailAbandonedRuns(ctx, c.rescueAfter); err != nil {
+	if err := failAbandoned(ctx, c.s, c.db, c.rescueAfter); err != nil {
 		return fmt.Errorf("fail abandoned runs: %w", err)
 	}
 	return c.Client.Start(ctx)

@@ -54,8 +54,8 @@ input version.
 
 `POST /v1/model-imports` imports one Hugging Face repository (`model-import`):
 the operator's import is queued into `local` (operator mode too) as the import
-run of its id; a tenant's request waits as `requested` until
-`.../{id}/approve` or `/reject`; a private one runs within the request with the
+run of its id; a tenant's request waits as `requested` (a repeat answers it)
+until `.../{id}/approve` or `/reject`; a private one runs within the request with the
 tenant's token (never stored or logged) into the tenant layer. The model is the
 repository's weights at the pinned commit, slug `<owner>--<name>`, one preset
 per backend running them, validated and generated before it is written.

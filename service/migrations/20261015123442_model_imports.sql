@@ -22,6 +22,8 @@ CREATE TABLE "model_imports" (
   CONSTRAINT "chk_model_imports_source" CHECK (source = ANY (ARRAY['huggingface'::text, 'modelscope'::text])),
   CONSTRAINT "chk_model_imports_state" CHECK (state = ANY (ARRAY['requested'::text, 'queued'::text, 'running'::text, 'succeeded'::text, 'failed'::text, 'rejected'::text]))
 );
+-- Create index "idx_model_imports_requested" to table: "model_imports"
+CREATE UNIQUE INDEX "idx_model_imports_requested" ON "model_imports" ("tenant_id", "repo", "revision") WHERE (state = 'requested'::text);
 -- Create index "idx_model_imports_state" to table: "model_imports"
 CREATE INDEX "idx_model_imports_state" ON "model_imports" ("state");
 -- Create index "idx_model_imports_tenant_id" to table: "model_imports"

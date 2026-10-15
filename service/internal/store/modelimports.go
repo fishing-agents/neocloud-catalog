@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -41,6 +42,43 @@ func (s *Store) CreateModelImport(ctx context.Context, mi *model.ModelImport, en
 		}
 		return enqueueIn(tx, enqueue)
 	})
+}
+
+// RequestModelImport records the tenant's request mi unless the tenant has an open request of the same
+// repository and revision, which it loads into mi instead; created says which.
+func (s *Store) RequestModelImport(ctx context.Context, mi *model.ModelImport) (created bool, err error) {
+	open := func() (bool, error) {
+		var o model.ModelImport
+		err := s.db.WithContext(ctx).Take(&o, "tenant_id = ? AND repo = ? AND revision = ? AND state = ?", mi.TenantID, mi.Repo, mi.Revision,
+			model.ImportRequested).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		if err == nil {
+			*mi = o
+		}
+		return err == nil, err
+	}
+	if found, err := open(); found || err != nil {
+		return false, err
+	}
+	mi.State = model.ImportRequested
+	err = s.CreateModelImport(ctx, mi, nil)
+	if pe := (*pgconn.PgError)(nil); errors.As(err, &pe) && pe.Code == "23505" && pe.ConstraintName == "idx_model_imports_requested" {
+		// A concurrent request won.
+		found, err := open()
+		if err == nil && !found {
+			err = fmt.Errorf("model import request of %s by %s vanished", mi.Repo, mi.TenantID)
+		}
+		return false, err
+	}
+	return err == nil, err
+}
+
+// FailModelImport fails the queued or running import id with msg, when nothing will run it.
+func (s *Store) FailModelImport(ctx context.Context, id uuid.UUID, msg string) error {
+	return s.db.WithContext(ctx).Model(&model.ModelImport{}).Where("id = ? AND state IN ?", id, []string{model.ImportQueued, model.ImportRunning}).
+		Updates(map[string]any{"state": model.ImportFailed, "finished_at": now(), "error": msg}).Error
 }
 
 // ModelImport returns the model import id.

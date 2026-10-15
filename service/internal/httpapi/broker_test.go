@@ -111,6 +111,11 @@ func TestModelImportApprovalIntoLocalLayer(t *testing.T) {
 		e.header.Get("Location") != "/v1/model-imports/"+requested.Id.String() {
 		t.Errorf("tenant request %+v at %s", requested, e.header.Get("Location"))
 	}
+	var retried httpapi.ModelImport
+	e.must(http.StatusOK, http.MethodPost, "/v1/model-imports", e.operator, request, &retried)
+	if retried.Id != requested.Id || retried.State != httpapi.ImportRequested || e.header.Get("Location") != "/v1/model-imports/"+requested.Id.String() {
+		t.Errorf("retried tenant request %+v, want the open one %s", retried, requested.Id)
+	}
 	request.Revision = new(qwenCommit)
 	e.must(http.StatusAccepted, http.MethodPost, "/v1/model-imports", e.admin, request, &rejected)
 	e.must(http.StatusOK, http.MethodPost, "/v1/model-imports/"+rejected.Id.String()+"/reject", e.admin,
@@ -119,6 +124,12 @@ func TestModelImportApprovalIntoLocalLayer(t *testing.T) {
 		t.Errorf("rejected %+v", rejected)
 	}
 	e.must(http.StatusConflict, http.MethodPost, "/v1/model-imports/"+rejected.Id.String()+"/approve", e.operator, nil, nil)
+	var again httpapi.ModelImport
+	e.must(http.StatusAccepted, http.MethodPost, "/v1/model-imports", e.admin, request, &again)
+	e.must(http.StatusOK, http.MethodPost, "/v1/model-imports/"+again.Id.String()+"/reject", e.admin, nil, nil)
+	if again.Id == rejected.Id {
+		t.Error("a request after a rejected one answered the rejected one")
+	}
 	var waiting []httpapi.ModelImport
 	e.must(http.StatusOK, http.MethodGet, "/v1/model-imports?tenant_id=acme&state=requested", e.reader, nil, &waiting)
 	if len(waiting) != 1 || waiting[0].Id != requested.Id {
@@ -180,11 +191,12 @@ func TestModelImportApprovalIntoLocalLayer(t *testing.T) {
 }
 
 // A private import runs within its request with the tenant's token into the tenant's layer, generated
-// with fits, and never into the catalog; the token is in no table and no log line.
+// with fits, and never into the catalog; the token is in no table and no log line, SQL statements
+// with their values included.
 func TestPrivateImportIntoTenantLayer(t *testing.T) {
 	const repo, token, wrong = "acme-ai/secret-qwen", "hf_tenant_secret_2c9f41", "hf_wrong_secret_77aa03"
 	h := hubtest.New(t, map[string]hubtest.Private{repo: {Recorded: qwenRepo, Token: token}})
-	e := newEnv(t, "api_private_import", false, envOptions{hub: h.URL})
+	e := newEnv(t, "api_private_import", false, envOptions{hub: h.URL, logSQL: true})
 	var logs bytes.Buffer
 	log.SetOutput(&logs)
 	t.Cleanup(func() { log.SetOutput(os.Stderr) })
@@ -232,6 +244,10 @@ func TestPrivateImportIntoTenantLayer(t *testing.T) {
 		t.Errorf("generator snapshot holds the tenant model: %d %v", leaked, err)
 	}
 
+	logged := logs.String() // before the checks below log the tokens they look for
+	if !strings.Contains(logged, `INSERT INTO "tenant_models"`) {
+		t.Fatal("the logs miss the SQL statements")
+	}
 	var tables []string
 	if err := e.db.Raw(`SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`).
 		Scan(&tables).Error; err != nil || !slices.Contains(tables, "river_job") || !slices.Contains(tables, "model_imports") {
@@ -244,8 +260,8 @@ func TestPrivateImportIntoTenantLayer(t *testing.T) {
 				t.Errorf("table %s holds a token in %d rows (%v)", table, n, err)
 			}
 		}
-		if strings.Contains(logs.String(), secret) {
-			t.Errorf("a token is in the logs:\n%s", logs.String())
+		if strings.Contains(logged, secret) {
+			t.Errorf("a token is in the logs:\n%s", logged)
 		}
 	}
 }

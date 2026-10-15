@@ -95,12 +95,23 @@ func (h *handlers) CreateModelImport(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", bad)
 		return
 	}
+	if !mi.Private && mi.TenantID != "" {
+		// A retried request answers the tenant's open request of the repository and revision.
+		created, err := h.Store.RequestModelImport(r.Context(), &mi)
+		if err != nil {
+			fail(w, r, err)
+			return
+		}
+		status := http.StatusOK
+		if created {
+			status = http.StatusAccepted
+		}
+		w.Header().Set("Location", "/v1/model-imports/"+mi.ID.String())
+		writeJSON(w, status, toModelImport(mi))
+		return
+	}
 	var enqueue store.Enqueue
-	switch {
-	case mi.Private:
-	case mi.TenantID != "":
-		mi.State = model.ImportRequested
-	default:
+	if !mi.Private {
 		enqueue = h.enqueueModelImport(r.Context(), mi.ID)
 	}
 	if err := h.Store.CreateModelImport(r.Context(), &mi, enqueue); err != nil {
@@ -119,6 +130,10 @@ func (h *handlers) CreateModelImport(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	out, err := h.Broker.RunPrivate(ctx, mi.ID, token)
 	if err != nil {
+		// Nothing else runs a private import; the sweep fails it if this cannot.
+		if ferr := h.Store.FailModelImport(context.WithoutCancel(ctx), mi.ID, "import failed: "+err.Error()); ferr != nil {
+			err = errors.Join(err, ferr)
+		}
 		fail(w, r, err)
 		return
 	}

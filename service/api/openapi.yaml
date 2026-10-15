@@ -591,7 +591,8 @@ paths:
         Without tenant_id, the operator's import: queued, then run on the catalog queue into the
         local layer (also in an operator deployment), recorded as the import run of the same id.
         With tenant_id, a tenant's request of a public repository: requested until an operator
-        approves or rejects it. With private (tenant_id and token required), the import runs within
+        approves or rejects it; while it is requested, the same tenant, repository and revision
+        answer 200 with it instead of a new request, so a client may retry. With private (tenant_id and token required), the import runs within
         the request with the tenant's token into the tenant's layer and answers in its final state;
         the token is never stored or logged.
       requestBody:
@@ -601,6 +602,17 @@ paths:
             schema:
               $ref: "#/components/schemas/ModelImportCreate"
       responses:
+        "200":
+          description: the tenant's open request of the same repository and revision
+          headers:
+            Location:
+              description: the import
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelImport"
         "201":
           description: the private import, run (succeeded or failed)
           headers:

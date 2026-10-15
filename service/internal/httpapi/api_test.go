@@ -30,6 +30,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/sigstore/sigstore/pkg/cryptoutils"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 
 	"github.com/fishman/neocloud-catalog/service/internal/auth"
 	"github.com/fishman/neocloud-catalog/service/internal/auth/authtest"
@@ -64,12 +65,14 @@ type env struct {
 	header   http.Header // of the last response
 }
 
-// envOptions configure newEnv beyond publishing: the Hub model imports and sources read, and the
-// webhook subscribers with their retry backoff.
+// envOptions configure newEnv beyond publishing: the Hub model imports and sources read, the
+// webhook subscribers with their retry backoff, and logSQL logging every statement with its values
+// through the log package.
 type envOptions struct {
 	hub            string
 	webhooks       []jobs.Subscriber
 	webhookBackoff time.Duration
+	logSQL         bool
 }
 
 // newEnv starts the API; withPublish publishes to an in-memory registry with a fresh cosign key.
@@ -83,6 +86,9 @@ func newEnv(t *testing.T, suffix string, withPublish bool, opts ...envOptions) *
 	dbtest.Migrate(t, sqlDB)
 	if err := jobs.Migrate(ctx, sqlDB); err != nil {
 		t.Fatal(err)
+	}
+	if o.logSQL {
+		db = db.Session(&gorm.Session{Logger: logger.New(log.Default(), logger.Config{LogLevel: logger.Info})})
 	}
 	s := store.New(db)
 	imp, err := bootstrap.New("../../../data")

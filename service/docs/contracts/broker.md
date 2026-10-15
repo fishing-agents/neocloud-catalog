@@ -31,10 +31,10 @@ The broker MUST answer:
 | Request | State | Answer |
 |---|---|---|
 | no `tenant_id` (the operator's import) | `queued`, then run into the local layer | `202` |
-| `tenant_id`, not `private` (a tenant's request of a public repository) | `requested` until an operator decides | `202` |
+| `tenant_id`, not `private` (a tenant's request of a public repository) | `requested` until an operator decides | `202`; `200` with the open request while the tenant has one of the same `repo` and `revision` |
 | `private` | `queued`, run within the request into the tenant's layer | `201` with the final state (`succeeded` or `failed`) |
 
-Every answer carries the import (`ModelImport`) and `Location: /v1/model-imports/{id}`.
+Every answer carries the import (`ModelImport`) and `Location: /v1/model-imports/{id}`. A tenant's request is idempotent while it is `requested`: the client MAY retry one whose answer it lost, and the broker MUST NOT record a second open request of the same tenant, repository and revision (as given; an absent revision is the empty one).
 
 ### 2.2 States
 
@@ -45,7 +45,7 @@ requested --approve--> queued --> running --> succeeded
 ```
 
 - `POST /v1/model-imports/{id}/approve` moves a `requested` import to `queued`; `POST /v1/model-imports/{id}/reject` with an optional `{"reason": "..."}` moves it to `rejected`. Any other state MUST be `409 conflict`; an unknown id `404`.
-- `succeeded`, `failed` and `rejected` are final. An import left `running` by a broker that stopped MUST end `failed` (the reference fails it after `jobs.rescue_after`).
+- `succeeded`, `failed` and `rejected` are final. An import left `running` by a broker that stopped MUST end `failed` (the reference fails it after `jobs.rescue_after`), and so MUST a `queued` import nothing will start: its job ended or vanished, or a private import's request failed before running it (the reference sweeps these five minutes after queueing, at most `jobs.rescue_after / 2` later).
 - `GET /v1/model-imports` lists imports newest first, filtered by `tenant_id`, `state` and `limit` (1 to 1000, default 100); `GET /v1/model-imports/{id}` returns one. Clients poll the import until a final state.
 - A succeeded import names its model (`model`, the slug) and the commit imported (`commit`); a failed one says why (`error`). `report` lists what generating the model reported (presets fitting no family, no deployment minimum); it does not fail the import.
 
@@ -101,8 +101,8 @@ Request: `POST <url>`, `Content-Type: application/json`, body
 A broker conforms when:
 
 1. Every `/v1` operation needs an operator key or token; writes need write rights; errors use the codes of section 1.
-2. `POST /v1/model-imports` starts the operator's import `queued`, a tenant's public request `requested`, and runs a private import into the tenant's layer, answering 202, 202 and 201; `modelscope` is 422.
-3. Approve and reject act on `requested` imports only (409 otherwise); imports reach exactly one final state; an import left running ends failed.
+2. `POST /v1/model-imports` starts the operator's import `queued`, a tenant's public request `requested` (200 with the open one on a repeat), and runs a private import into the tenant's layer, answering 202, 202 and 201; `modelscope` is 422.
+3. Approve and reject act on `requested` imports only (409 otherwise); imports reach exactly one final state; an import left running, or queued with nothing to start it, ends failed.
 4. An import pins the commit, writes one validated, generated model at the slug `<owner>--<name>` (lower-cased), refuses what it cannot serve with a reason, and never publishes.
 5. A private import's token is never stored, logged or queued.
 6. Tenant models are served per tenant by `GET /v1/tenants/{tenant_id}/models` and appear in no catalog, generator run or release.
