@@ -61,10 +61,19 @@ signing:
   secretName: ""
 
 # Secret with the Hugging Face token for gated repositories, read once at
-# startup. Not mounted in an operator deployment.
+# startup; in an operator deployment the token of model imports.
 huggingface:
   tokenSecretName: ""
   tokenSecretKey: token
+
+# Secret whose key holds the webhook subscribers as TOML, loaded after config:
+#   [[webhooks.subscribers]]
+#   url = "https://neocloud-api.example/v1/catalog/webhooks"
+#   secret = "<HMAC key>"
+# Empty: no webhooks.
+webhooks:
+  secretName: ""
+  secretKey: webhooks.toml
 
 # dockerconfigjson Secret for pushing releases and pulling a private upstream.
 # Empty: anonymous pulls, no push.

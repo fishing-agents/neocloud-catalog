@@ -27,10 +27,11 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | default .Chart.Version }}
 {{- end -}}
 
 {{/*
-The HF token Secret; empty in an operator deployment (no huggingface importer).
+The HF token Secret: the huggingface importer's and, in an operator deployment
+too, model imports' and inspections'.
 */}}
 {{- define "catalog-service.hfTokenSecret" -}}
-{{- if not (.Values.config.upstream | default dict).ref }}{{ .Values.huggingface.tokenSecretName }}{{ end -}}
+{{- .Values.huggingface.tokenSecretName -}}
 {{- end -}}
 
 {{- define "catalog-service.securityContext" -}}

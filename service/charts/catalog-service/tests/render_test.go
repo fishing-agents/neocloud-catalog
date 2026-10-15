@@ -41,6 +41,15 @@ type volume struct {
 		SecretName string `yaml:"secretName"`
 		Items      []keyPath
 	}
+	Projected *struct {
+		Sources []struct {
+			ConfigMap *struct{ Name string } `yaml:"configMap"`
+			Secret    *struct {
+				Name  string
+				Items []keyPath
+			}
+		}
+	}
 	Image *struct{ Reference string }
 }
 
@@ -183,6 +192,22 @@ func (r rendered) file(t *testing.T, o object, p string) string {
 					}
 				}
 				t.Fatalf("%s: Secret volume %s has no item at %s", p, v.Secret.SecretName, rel)
+			case v.Projected != nil:
+				for _, src := range v.Projected.Sources {
+					if src.Secret != nil {
+						for _, it := range src.Secret.Items {
+							if it.Path == rel {
+								return "secret " + src.Secret.Name + " " + it.Key
+							}
+						}
+					}
+					if src.ConfigMap != nil {
+						if _, ok := r.get(t, "ConfigMap", src.ConfigMap.Name).Data[rel]; ok {
+							return "configmap " + src.ConfigMap.Name + " " + rel
+						}
+					}
+				}
+				t.Fatalf("%s: projected volume %s has no %s", p, v.Name, rel)
 			}
 		}
 	}
@@ -346,15 +371,25 @@ func TestHuggingFaceToken(t *testing.T) {
 		t.Errorf("huggingface.token_file from %s", got)
 	}
 
-	// An operator deployment has no huggingface importer: no token mounted.
+	// An operator deployment's model imports read with the token too.
 	r = render(t, append([]string{"-f", "fixtures/operator.yaml"}, token...)...)
-	if f := r.config(t).HuggingFace.TokenFile; f != "" {
-		t.Errorf("operator mode: huggingface.token_file = %q", f)
+	if got := r.file(t, r.get(t, "Deployment", "catalog-service"), r.config(t).HuggingFace.TokenFile); got != "secret hf hf_token" {
+		t.Errorf("operator mode: huggingface.token_file from %s", got)
 	}
-	for _, v := range r.get(t, "Deployment", "catalog-service").Spec.Template.Spec.Volumes {
-		if v.Secret != nil && v.Secret.SecretName == "hf" {
-			t.Errorf("operator mode mounts the Hugging Face token Secret as %s", v.Name)
-		}
+}
+
+// Webhook subscribers, secrets included, come from a Secret next to config.toml, loaded after it.
+func TestWebhookSubscribers(t *testing.T) {
+	r := render(t, "--set", "webhooks.secretName=hooks", "--set", "webhooks.secretKey=subscribers.toml")
+	d := r.get(t, "Deployment", "catalog-service")
+	if got := r.file(t, d, "/etc/catalog-service/webhooks.toml"); got != "secret hooks subscribers.toml" {
+		t.Errorf("webhooks.toml from %s", got)
+	}
+	if got := r.file(t, d, "/etc/catalog-service/config.toml"); got != "configmap catalog-service config.toml" {
+		t.Errorf("config.toml from %s", got)
+	}
+	if strings.Contains(r.get(t, "ConfigMap", "catalog-service").Data["config.toml"], "webhooks") {
+		t.Error("the ConfigMap holds webhook settings")
 	}
 }
 

@@ -86,8 +86,20 @@ spec:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
         - name: config
+          {{- if .Values.webhooks.secretName }}
+          projected:
+            sources:
+              - configMap:
+                  name: {{ include "catalog-service.fullname" . }}
+              - secret:
+                  name: {{ .Values.webhooks.secretName }}
+                  items:
+                    - key: {{ .Values.webhooks.secretKey }}
+                      path: webhooks.toml
+          {{- else }}
           configMap:
             name: {{ include "catalog-service.fullname" . }}
+          {{- end }}
         {{- if .Values.signing.secretName }}
         - name: signing
           secret:
