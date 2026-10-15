@@ -1,4 +1,4 @@
-h1:RwRaTMN4QFC6fcNflFX40wAg0QwWdd4KqjXFQiId/KU=
+h1:Yj4dA1O6kNnTgUvdvkSVdU3B1WcdrDxghtgR5XqnwA0=
 20261009040838_initial.sql h1:5rqvkVf+6vYGhszAsFrjs7PRBglW5PqDsbmfsmAqz8E=
 20261009041802_import_run_source.sql h1:Wggf1i5O1jMWGDjUTKbubfWM/8GkWeUkZlNRVFPIlnw=
 20261009045315_generator_run_snapshot.sql h1:ulCOUx3Il9S6r0V4XNUIBzSnt0bvAXxKS6jqji21YHk=
@@ -8,3 +8,4 @@ h1:RwRaTMN4QFC6fcNflFX40wAg0QwWdd4KqjXFQiId/KU=
 20261009080005_cost_estimate_cheapest.sql h1:VJ94XIlMWN0LkIFbW8c1FhJ6PYIGYEYPxXMBBv+bPsA=
 20261009091348_upstream_release_version.sql h1:iPswzWVHJmJ1SWfPnk8IfKEQmYDj57l3D8klP4MI4y8=
 20261009091351_release_overlay_ref_immutable.sql h1:78EVsVORwGLOQqv4wJt9usL7MixJ83U1LW7EIfTsWyM=
+20261015120449_model_imports.sql h1:u3x5LcoUMTiSLYSeqT6+gVx2l7s2ayTBtwxZQOgRyKA=

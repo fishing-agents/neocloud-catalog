@@ -5,6 +5,7 @@ package httpapi_test
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/elliptic"
 	"encoding/json"
@@ -32,11 +33,14 @@ import (
 
 	"github.com/fishman/neocloud-catalog/service/internal/auth"
 	"github.com/fishman/neocloud-catalog/service/internal/auth/authtest"
+	"github.com/fishman/neocloud-catalog/service/internal/broker"
 	"github.com/fishman/neocloud-catalog/service/internal/dbtest"
 	"github.com/fishman/neocloud-catalog/service/internal/httpapi"
 	"github.com/fishman/neocloud-catalog/service/internal/importers"
 	"github.com/fishman/neocloud-catalog/service/internal/importers/bootstrap"
+	"github.com/fishman/neocloud-catalog/service/internal/importers/huggingface"
 	"github.com/fishman/neocloud-catalog/service/internal/jobs"
+	"github.com/fishman/neocloud-catalog/service/internal/model"
 	"github.com/fishman/neocloud-catalog/service/internal/release"
 	"github.com/fishman/neocloud-catalog/service/internal/store"
 )
@@ -60,9 +64,21 @@ type env struct {
 	header   http.Header // of the last response
 }
 
+// envOptions configure newEnv beyond publishing: the Hub model imports and sources read, and the
+// webhook subscribers with their retry backoff.
+type envOptions struct {
+	hub            string
+	webhooks       []jobs.Subscriber
+	webhookBackoff time.Duration
+}
+
 // newEnv starts the API; withPublish publishes to an in-memory registry with a fresh cosign key.
-func newEnv(t *testing.T, suffix string, withPublish bool) *env {
+func newEnv(t *testing.T, suffix string, withPublish bool, opts ...envOptions) *env {
 	t.Helper()
+	var o envOptions
+	if len(opts) > 0 {
+		o = opts[0]
+	}
 	sqlDB, db := dbtest.Fresh(t, suffix)
 	dbtest.Migrate(t, sqlDB)
 	if err := jobs.Migrate(ctx, sqlDB); err != nil {
@@ -74,7 +90,9 @@ func newEnv(t *testing.T, suffix string, withPublish bool) *env {
 		t.Fatal(err)
 	}
 	reg := importers.NewRegistry(imp)
-	c, err := jobs.New(sqlDB, s, reg, jobs.Config{JobTimeout: time.Minute, RescueAfter: time.Hour})
+	b := broker.New(s, huggingface.New(cmp.Or(o.hub, "http://127.0.0.1:1"), "operator-hub-token"))
+	c, err := jobs.New(sqlDB, s, reg, jobs.Config{JobTimeout: time.Minute, RescueAfter: time.Hour, Broker: b, Webhooks: o.webhooks,
+		WebhookBackoff: o.webhookBackoff})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +109,7 @@ func newEnv(t *testing.T, suffix string, withPublish bool) *env {
 	e := &env{t: t, db: db, s: s, issuer: iss, operator: key,
 		admin: iss.Token(t, iss.Claims(audience, "viewer", auth.RoleAdmin)), reader: iss.Token(t, iss.Claims(audience, "viewer"))}
 	cfg := httpapi.Config{Store: s, Auth: auth.New(db, auth.OIDCConfig{IssuerURL: iss.URL, Audience: audience}), Jobs: c, Importers: reg,
-		PublishTimeout: time.Minute}
+		Broker: b, PublishTimeout: time.Minute}
 	if withPublish {
 		reg := httptest.NewServer(registry.New(registry.Logger(log.New(io.Discard, "", 0))))
 		t.Cleanup(reg.Close)
@@ -577,7 +595,8 @@ func TestRunsAndReleases(t *testing.T) {
 	unconfigured.must(http.StatusServiceUnavailable, http.MethodPost, "/v1/releases/"+newRel.Version+"/publish", unconfigured.operator, nil, nil)
 }
 
-// An abandoned run reads as failed, with empty lists and summary as [] and {}.
+// An abandoned run or model import (a private one runs in its request) reads as failed, with empty
+// lists and summary as [] and {}.
 func TestAbandonedRunsReadFailed(t *testing.T) {
 	e := newEnv(t, "api_abandoned", false)
 	importRun, err := e.s.StartImport(ctx, uuid.New(), "bootstrap-from-json", "upstream", "bootstrap-from-json", "")
@@ -588,13 +607,25 @@ func TestAbandonedRunsReadFailed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, table := range []string{"import_runs", "generator_runs"} {
+	private := model.ModelImport{Source: "huggingface", Repo: "acme/private", TenantID: "acme", Private: true, State: model.ImportQueued}
+	if err := e.s.CreateModelImport(ctx, &private, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.s.StartModelImport(ctx, private.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range []string{"import_runs", "generator_runs", "model_imports"} {
 		if err := e.db.Exec(`UPDATE ` + table + ` SET started_at = now() - interval '2 hours'`).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
-	if n, err := e.s.FailAbandonedRuns(ctx, time.Hour); err != nil || n != 2 {
-		t.Fatalf("FailAbandonedRuns = %d, %v; want 2", n, err)
+	if n, err := e.s.FailAbandonedRuns(ctx, time.Hour); err != nil || n != 3 {
+		t.Fatalf("FailAbandonedRuns = %d, %v; want 3", n, err)
+	}
+	var mi httpapi.ModelImport
+	e.must(http.StatusOK, http.MethodGet, "/v1/model-imports/"+private.ID.String(), e.reader, nil, &mi)
+	if mi.State != httpapi.ImportFailed || mi.Error != store.AbandonedError || mi.FinishedAt == nil || mi.Report == nil {
+		t.Errorf("abandoned model import %+v", mi)
 	}
 
 	var imp httpapi.ImportRun

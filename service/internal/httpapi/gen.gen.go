@@ -82,6 +82,36 @@ func (e Layer) Valid() bool {
 	}
 }
 
+// Defines values for ModelImportState.
+const (
+	ImportFailed    ModelImportState = "failed"
+	ImportQueued    ModelImportState = "queued"
+	ImportRejected  ModelImportState = "rejected"
+	ImportRequested ModelImportState = "requested"
+	ImportRunning   ModelImportState = "running"
+	ImportSucceeded ModelImportState = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the ModelImportState enum.
+func (e ModelImportState) Valid() bool {
+	switch e {
+	case ImportFailed:
+		return true
+	case ImportQueued:
+		return true
+	case ImportRejected:
+		return true
+	case ImportRequested:
+		return true
+	case ImportRunning:
+		return true
+	case ImportSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RunStatus.
 const (
 	Failed    RunStatus = "failed"
@@ -100,6 +130,24 @@ func (e RunStatus) Valid() bool {
 	case Running:
 		return true
 	case Succeeded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SourceKind.
+const (
+	SourceHuggingFace SourceKind = "huggingface"
+	SourceModelScope  SourceKind = "modelscope"
+)
+
+// Valid indicates whether the value is a known member of the SourceKind enum.
+func (e SourceKind) Valid() bool {
+	switch e {
+	case SourceHuggingFace:
+		return true
+	case SourceModelScope:
 		return true
 	default:
 		return false
@@ -159,6 +207,14 @@ type CostEstimateSetup string
 // Deployment defines model for Deployment.
 type Deployment = catalog.Deployment
 
+// DetectedQuantization a checkpoint the repository holds; kind float, fp8 and gguf are importable
+type DetectedQuantization struct {
+	Bytes int64    `json:"bytes"`
+	Files []string `json:"files"`
+	Kind  string   `json:"kind"`
+	Name  string   `json:"name"`
+}
+
 // DraftModel defines model for DraftModel.
 type DraftModel = catalog.DraftModel
 
@@ -177,7 +233,7 @@ type EffectiveCatalog struct {
 
 // Error defines model for Error.
 type Error struct {
-	// Code stable, machine-readable (invalid_request, unauthorized, forbidden, not_found, conflict, not_configured, auth_unavailable, internal_error)
+	// Code stable, machine-readable (invalid_request, unauthorized, forbidden, not_found, conflict, not_configured, auth_unavailable, unsupported_source, rate_limited, upstream_unavailable, internal_error)
 	Code    string `json:"code"`
 	Message string `json:"message"`
 }
@@ -263,6 +319,77 @@ type Layer string
 // ModelFile defines model for ModelFile.
 type ModelFile = catalog.ModelFile
 
+// ModelFit defines model for ModelFit.
+type ModelFit = catalog.ModelFit
+
+// ModelImport defines model for ModelImport.
+type ModelImport struct {
+	// Commit the commit imported; empty until it ran
+	Commit     string     `json:"commit"`
+	CreatedAt  time.Time  `json:"created_at"`
+	DecidedAt  *time.Time `json:"decided_at,omitempty"`
+	Error      string     `json:"error"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+
+	// Id also the id of a local import's import run
+	Id openapi_types.UUID `json:"id"`
+
+	// Model the imported model's slug, <owner>--<name> lower-cased; empty until it succeeded
+	Model string `json:"model"`
+
+	// Private imported into the tenant's layer rather than the local layer
+	Private bool `json:"private"`
+
+	// Reason why an operator rejected it
+	Reason string `json:"reason"`
+	Repo   string `json:"repo"`
+
+	// Report what generating the model reported (presets fitting no family, no deployment minimum)
+	Report []string `json:"report"`
+
+	// Revision as requested; empty for the default branch
+	Revision string `json:"revision"`
+
+	// Source huggingface; modelscope is recognised but not supported yet (422)
+	Source    SourceKind `json:"source"`
+	StartedAt *time.Time `json:"started_at,omitempty"`
+
+	// State requested (a tenant's import of a public repository, until an operator decides), queued, running, succeeded, failed or rejected
+	State ModelImportState `json:"state"`
+
+	// TenantId the requesting tenant; empty for the operator's import
+	TenantId string `json:"tenant_id"`
+}
+
+// ModelImportCreate defines model for ModelImportCreate.
+type ModelImportCreate struct {
+	// Private import the tenant's private repository into its layer (tenant_id and token required)
+	Private *bool `json:"private,omitempty"`
+
+	// Repo the repository id, owner/name
+	Repo string `json:"repo"`
+
+	// Revision branch, tag or commit; the default branch if absent
+	Revision *string `json:"revision,omitempty"`
+
+	// Source huggingface; modelscope is recognised but not supported yet (422)
+	Source SourceKind `json:"source"`
+
+	// TenantId the tenant requesting it; absent for the operator's own import
+	TenantId *string `json:"tenant_id,omitempty"`
+
+	// Token the tenant's source token for a private import; used for this import only, never stored or logged
+	Token *string `json:"token,omitempty"`
+}
+
+// ModelImportReject defines model for ModelImportReject.
+type ModelImportReject struct {
+	Reason *string `json:"reason,omitempty"`
+}
+
+// ModelImportState requested (a tenant's import of a public repository, until an operator decides), queued, running, succeeded, failed or rejected
+type ModelImportState string
+
 // ModelSource defines model for ModelSource.
 type ModelSource = catalog.ModelSource
 
@@ -271,6 +398,9 @@ type ModelTemplate = catalog.ModelTemplate
 
 // NodeType An entry of the closed node vocabulary - a cloud instance id (azure/Standard_ND96isr_H100_v5) or the fallback other/<family>x<gpus>.
 type NodeType = catalog.NodeType
+
+// Performance defines model for Performance.
+type Performance = catalog.Performance
 
 // Preset The model at one quantization served by one backend version, in engine-neutral fields the backend version's flag table renders.
 type Preset = catalog.Preset
@@ -339,8 +469,69 @@ type ReleaseCreate struct {
 // RunStatus queued until a worker starts the run
 type RunStatus string
 
+// SourceFile defines model for SourceFile.
+type SourceFile struct {
+	Path string `json:"path"`
+	Size int64  `json:"size"`
+}
+
+// SourceKind huggingface; modelscope is recognised but not supported yet (422)
+type SourceKind string
+
+// SourceModel defines model for SourceModel.
+type SourceModel struct {
+	Architecture *Architecture `json:"architecture,omitempty"`
+
+	// Card the model card's metadata
+	Card       map[string]interface{} `json:"card"`
+	Commit     string                 `json:"commit"`
+	ContextMax *int                   `json:"context_max,omitempty"`
+	Files      []SourceFile           `json:"files"`
+
+	// Gated downloads need an account that accepted the licence
+	Gated         bool                   `json:"gated"`
+	License       string                 `json:"license,omitempty"`
+	ParamsB       *float64               `json:"params_b,omitempty"`
+	PipelineTag   string                 `json:"pipeline_tag,omitempty"`
+	Quantizations []DetectedQuantization `json:"quantizations"`
+	Repo          string                 `json:"repo"`
+
+	// Source huggingface; modelscope is recognised but not supported yet (422)
+	Source SourceKind `json:"source"`
+	Tags   []string   `json:"tags"`
+
+	// Task the catalog task an import would record; empty if the catalog serves no such task
+	Task       string `json:"task,omitempty"`
+	TotalBytes int64  `json:"total_bytes"`
+
+	// WeightsBytes the weights an engine loads (one format), or the GGUF files
+	WeightsBytes int64 `json:"weights_bytes"`
+}
+
+// SourceSearchResult defines model for SourceSearchResult.
+type SourceSearchResult struct {
+	Downloads   int    `json:"downloads"`
+	LibraryName string `json:"library_name,omitempty"`
+	Likes       int    `json:"likes"`
+	PipelineTag string `json:"pipeline_tag,omitempty"`
+	Repo        string `json:"repo"`
+}
+
 // Speculative defines model for Speculative.
 type Speculative = catalog.Speculative
+
+// TenantModel A model of a tenant's private repository, generated (deployment, kv_bytes_per_token, fits) at its import.
+type TenantModel struct {
+	AsOf        time.Time          `json:"as_of"`
+	Fits        []ModelFit         `json:"fits"`
+	Model       ModelTemplate      `json:"model"`
+	ModelImport openapi_types.UUID `json:"model_import"`
+
+	// Source huggingface; modelscope is recognised but not supported yet (422)
+	Source    SourceKind `json:"source"`
+	SourceUrl string     `json:"source_url"`
+	TenantId  string     `json:"tenant_id"`
+}
 
 // Topology defines model for Topology.
 type Topology = catalog.Topology
@@ -357,11 +548,20 @@ type Forbidden = Error
 // NotFound defines model for NotFound.
 type NotFound = Error
 
+// RateLimited defines model for RateLimited.
+type RateLimited = Error
+
 // ServiceUnavailable defines model for ServiceUnavailable.
 type ServiceUnavailable = Error
 
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = Error
+
+// UnsupportedSource defines model for UnsupportedSource.
+type UnsupportedSource = Error
+
+// UpstreamUnavailable defines model for UpstreamUnavailable.
+type UpstreamUnavailable = Error
 
 // GetCatalogParams defines parameters for GetCatalog.
 type GetCatalogParams struct {
@@ -387,6 +587,27 @@ type ListImportsParams struct {
 // PutLocalPricesJSONBody defines parameters for PutLocalPrices.
 type PutLocalPricesJSONBody = []Price
 
+// ListModelImportsParams defines parameters for ListModelImports.
+type ListModelImportsParams struct {
+	// TenantId only this tenant's imports
+	TenantId *string           `form:"tenant_id,omitempty" json:"tenant_id,omitempty"`
+	State    *ModelImportState `form:"state,omitempty" json:"state,omitempty"`
+	Limit    *int              `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// InspectSourceModelParams defines parameters for InspectSourceModel.
+type InspectSourceModelParams struct {
+	// Revision branch, tag or commit; the default branch if absent
+	Revision *string `form:"revision,omitempty" json:"revision,omitempty"`
+}
+
+// SearchSourcesParams defines parameters for SearchSources.
+type SearchSourcesParams struct {
+	Source SourceKind `form:"source" json:"source"`
+	Q      string     `form:"q" json:"q"`
+	Limit  *int       `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // StartImportJSONRequestBody defines body for StartImport for application/json ContentType.
 type StartImportJSONRequestBody = ImportCreate
 
@@ -401,6 +622,12 @@ type PutLocalNodeTypeJSONRequestBody = NodeType
 
 // PutLocalPricesJSONRequestBody defines body for PutLocalPrices for application/json ContentType.
 type PutLocalPricesJSONRequestBody = PutLocalPricesJSONBody
+
+// CreateModelImportJSONRequestBody defines body for CreateModelImport for application/json ContentType.
+type CreateModelImportJSONRequestBody = ModelImportCreate
+
+// RejectModelImportJSONRequestBody defines body for RejectModelImport for application/json ContentType.
+type RejectModelImportJSONRequestBody = ModelImportReject
 
 // CreateReleaseJSONRequestBody defines body for CreateRelease for application/json ContentType.
 type CreateReleaseJSONRequestBody = ReleaseCreate
@@ -577,6 +804,21 @@ type ServerInterface interface {
 	// PutLocalPrices Replace the local node type prices (internal)
 	// (PUT /v1/local/prices)
 	PutLocalPrices(w http.ResponseWriter, r *http.Request)
+	// ListModelImports Model imports, newest first
+	// (GET /v1/model-imports)
+	ListModelImports(w http.ResponseWriter, r *http.Request, params ListModelImportsParams)
+	// CreateModelImport Import one source repository
+	// (POST /v1/model-imports)
+	CreateModelImport(w http.ResponseWriter, r *http.Request)
+	// GetModelImport The model import id
+	// (GET /v1/model-imports/{id})
+	GetModelImport(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
+	// ApproveModelImport Approve a requested import; it is queued into the local layer
+	// (POST /v1/model-imports/{id}/approve)
+	ApproveModelImport(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
+	// RejectModelImport Reject a requested import
+	// (POST /v1/model-imports/{id}/reject)
+	RejectModelImport(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
 	// ListReleases Releases, newest first
 	// (GET /v1/releases)
 	ListReleases(w http.ResponseWriter, r *http.Request)
@@ -586,6 +828,15 @@ type ServerInterface interface {
 	// PublishRelease Publish a release to release.ref, signed with release.key
 	// (POST /v1/releases/{version}/publish)
 	PublishRelease(w http.ResponseWriter, r *http.Request, version string)
+	// InspectSourceModel A source repository before it is imported
+	// (GET /v1/sources/models/{source}/{owner}/{name})
+	InspectSourceModel(w http.ResponseWriter, r *http.Request, source SourceKind, owner string, name string, params InspectSourceModelParams)
+	// SearchSources Search a model source's public repositories
+	// (GET /v1/sources/search)
+	SearchSources(w http.ResponseWriter, r *http.Request, params SearchSourcesParams)
+	// ListTenantModels The models imported from the tenant's private repositories
+	// (GET /v1/tenants/{tenant_id}/models)
+	ListTenantModels(w http.ResponseWriter, r *http.Request, tenantId string)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -1118,6 +1369,157 @@ func (siw *ServerInterfaceWrapper) PutLocalPrices(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// ListModelImports operation middleware
+func (siw *ServerInterfaceWrapper) ListModelImports(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListModelImportsParams
+
+	// ------------- Optional query parameter "tenant_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "tenant_id", r.URL.Query(), &params.TenantId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "tenant_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tenant_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "state", r.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListModelImports(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateModelImport operation middleware
+func (siw *ServerInterfaceWrapper) CreateModelImport(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateModelImport(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetModelImport operation middleware
+func (siw *ServerInterfaceWrapper) GetModelImport(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetModelImport(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ApproveModelImport operation middleware
+func (siw *ServerInterfaceWrapper) ApproveModelImport(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ApproveModelImport(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RejectModelImport operation middleware
+func (siw *ServerInterfaceWrapper) RejectModelImport(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RejectModelImport(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListReleases operation middleware
 func (siw *ServerInterfaceWrapper) ListReleases(w http.ResponseWriter, r *http.Request) {
 
@@ -1163,6 +1565,151 @@ func (siw *ServerInterfaceWrapper) PublishRelease(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PublishRelease(w, r, version)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// InspectSourceModel operation middleware
+func (siw *ServerInterfaceWrapper) InspectSourceModel(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "source" -------------
+	var source SourceKind
+
+	err = runtime.BindStyledParameterWithOptions("simple", "source", r.PathValue("source"), &source, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "source", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "owner" -------------
+	var owner string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "owner", r.PathValue("owner"), &owner, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "owner", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params InspectSourceModelParams
+
+	// ------------- Optional query parameter "revision" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "revision", r.URL.Query(), &params.Revision, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "revision"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "revision", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.InspectSourceModel(w, r, source, owner, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SearchSources operation middleware
+func (siw *ServerInterfaceWrapper) SearchSources(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SearchSourcesParams
+
+	// ------------- Required query parameter "source" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "source", r.URL.Query(), &params.Source, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "source"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "source", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SearchSources(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListTenantModels operation middleware
+func (siw *ServerInterfaceWrapper) ListTenantModels(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "tenant_id" -------------
+	var tenantId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tenant_id", r.PathValue("tenant_id"), &tenantId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tenant_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTenantModels(w, r, tenantId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1314,6 +1861,14 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/releases", wrapper.CreateRelease)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/releases/{version}/publish", wrapper.PublishRelease)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/cost-estimates", wrapper.ListCostEstimates)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/model-imports", wrapper.ListModelImports)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/model-imports", wrapper.CreateModelImport)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/model-imports/{id}", wrapper.GetModelImport)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/model-imports/{id}/approve", wrapper.ApproveModelImport)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/model-imports/{id}/reject", wrapper.RejectModelImport)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/tenants/{tenant_id}/models", wrapper.ListTenantModels)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/sources/search", wrapper.SearchSources)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/sources/models/{source}/{owner}/{name}", wrapper.InspectSourceModel)
 
 	return m
 }

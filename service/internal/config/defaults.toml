@@ -16,8 +16,9 @@ metrics_addr = "0.0.0.0:8081"
 data_dir = "../data"
 
 [huggingface]
-# Path to the token (a mounted secret), read once at startup. Empty: gated
-# sources are reported as "gated: token missing".
+# Path to the token (a mounted secret), read once at startup; also the
+# operator's token of model imports and inspections, in operator deployments
+# too. Empty: gated sources are reported as "gated: token missing".
 token_file = ""
 
 [azure_prices]
@@ -65,3 +66,11 @@ overlay_identity = ""
 overlay_public_key = ""
 trusted_root = ""
 plain_http = false
+
+[webhooks]
+# Notified with a signed release.published event when a release is published
+# (docs/contracts/broker.md), retried with backoff. Each subscriber is a table:
+#   [[webhooks.subscribers]]
+#   url = "https://neocloud-api.example/v1/catalog/webhooks"
+#   secret = "<HMAC-SHA256 key shared with the subscriber>"
+subscribers = []

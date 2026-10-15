@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -451,7 +452,7 @@ func (h *handlers) PublishRelease(w http.ResponseWriter, r *http.Request, versio
 		return
 	}
 	// Publishing outlasts server.write_timeout; a client that lost the answer may
-	// retry, since republishing is a no-op.
+	// retry, since republishing is a no-op that notifies the webhook subscribers again.
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(h.PublishTimeout + publishAnswerTime))
 	ctx, cancel := context.WithTimeout(r.Context(), h.PublishTimeout)
 	defer cancel()
@@ -465,6 +466,11 @@ func (h *handlers) PublishRelease(w http.ResponseWriter, r *http.Request, versio
 		return
 	}
 	if rel, err = release.Get(ctx, h.Store, version); err != nil {
+		fail(w, r, err)
+		return
+	}
+	_, digest, _ := strings.Cut(rel.ArtifactRef, "@")
+	if err := h.Jobs.NotifyPublished(ctx, h.Publish.Ref, digest, rel.Version); err != nil {
 		fail(w, r, err)
 		return
 	}

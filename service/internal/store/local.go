@@ -73,7 +73,8 @@ func (s *Store) EditLocalModel(ctx context.Context, slug string, edit func(*cata
 		if err := edit(&m); err != nil {
 			return err
 		}
-		return upsert(tx, m)
+		_, _, err = upsert(tx, curation(), m)
+		return err
 	})
 }
 

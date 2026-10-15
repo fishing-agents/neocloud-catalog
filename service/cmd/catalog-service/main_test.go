@@ -118,7 +118,7 @@ func TestWorkLetsForeignJobsFinish(t *testing.T) {
 	open, quick := make(chan struct{}), make(chan struct{})
 	close(quick)
 	cfg, sqlDB, s, reg := workSetup(t, "cli_work", gate{"slow", open}, gate{"quick", quick})
-	serve, err := jobs.New(sqlDB, s, reg, jobsConfig(cfg))
+	serve, err := jobs.New(sqlDB, s, reg, jobsConfig(cfg, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +185,7 @@ func TestServeShutdownGrace(t *testing.T) {
 	cfg, sqlDB, s, reg := workSetup(t, "serve_grace", gate{"finishes", open}, gate{"overruns", make(chan struct{})})
 	serve := func(importer string, grace time.Duration, onSignal func()) model.ImportRun {
 		t.Helper()
-		c, err := jobs.New(sqlDB, s, reg, jobsConfig(cfg))
+		c, err := jobs.New(sqlDB, s, reg, jobsConfig(cfg, nil))
 		if err != nil {
 			t.Fatal(err)
 		}

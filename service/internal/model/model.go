@@ -411,6 +411,55 @@ type APIKey struct {
 	ExpiresAt *time.Time
 }
 
+// Model import states: a tenant's import of a public repository is requested until an operator
+// approves (queued) or rejects it.
+const (
+	ImportRequested = "requested"
+	ImportQueued    = "queued"
+	ImportRunning   = "running"
+	ImportSucceeded = "succeeded"
+	ImportFailed    = "failed"
+	ImportRejected  = "rejected"
+)
+
+// ModelImport imports one source repository into the local layer, as the import run of its id, or
+// with Private into its tenant's layer. Revision is as requested, Commit the one imported. A private
+// import's source token is never stored.
+type ModelImport struct {
+	Base
+	Timestamps
+	Source     string                      `gorm:"not null;check:source IN ('huggingface', 'modelscope')"`
+	Repo       string                      `gorm:"not null"`
+	Revision   string                      `gorm:"not null"`
+	Commit     string                      `gorm:"not null"`
+	TenantID   string                      `gorm:"not null;index"`
+	Private    bool                        `gorm:"not null;check:chk_model_imports_private,NOT private OR tenant_id <> ''"`
+	State      string                      `gorm:"not null;index;check:state IN ('requested', 'queued', 'running', 'succeeded', 'failed', 'rejected')"`
+	ModelSlug  string                      `gorm:"not null"`
+	Reason     string                      `gorm:"not null"`
+	Error      string                      `gorm:"not null"`
+	Report     datatypes.JSONSlice[string] `gorm:"not null"`
+	DecidedAt  *time.Time
+	StartedAt  *time.Time
+	FinishedAt *time.Time
+}
+
+// TenantModel is a model of a tenant's private repository, never in a release: Model is generated
+// (deployment included) and Fits are its fits, as of the import.
+type TenantModel struct {
+	Base
+	Timestamps
+	TenantID      string                `gorm:"not null;uniqueIndex:idx_tenant_models_natural,priority:1"`
+	Slug          string                `gorm:"not null;uniqueIndex:idx_tenant_models_natural,priority:2"`
+	Source        string                `gorm:"not null"`
+	SourceURL     string                `gorm:"column:source_url;not null"`
+	AsOf          time.Time             `gorm:"not null"`
+	ModelImportID uuid.UUID             `gorm:"type:uuid;not null;index"`
+	ModelImport   *ModelImport          `gorm:"foreignKey:ModelImportID"`
+	Model         catalog.ModelTemplate `gorm:"type:jsonb;serializer:json;not null"`
+	Fits          []catalog.ModelFit    `gorm:"type:jsonb;serializer:json;not null"`
+}
+
 // All lists every model, referenced tables first.
 func All() []any {
 	return []any{
@@ -435,5 +484,7 @@ func All() []any {
 		&ExtensionPayload{},
 		&Release{},
 		&APIKey{},
+		&ModelImport{},
+		&TenantModel{},
 	}
 }

@@ -54,15 +54,18 @@ func (s *Store) ImportRuns(ctx context.Context, importer string, limit int) ([]m
 // AbandonedError is the error of a run its worker left running.
 const AbandonedError = "abandoned: worker exited"
 
-// FailAbandonedRuns fails runs still running after olderThan and returns how many: their worker
-// exited and their jobs are never retried.
+// FailAbandonedRuns fails runs and model imports still running after olderThan and returns how many:
+// their worker exited and their jobs are never retried.
 func (s *Store) FailAbandonedRuns(ctx context.Context, olderThan time.Duration) (int64, error) {
 	t := now()
 	var n int64
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for _, table := range []any{&model.ImportRun{}, &model.GeneratorRun{}} {
-			res := tx.Model(table).Where("status = ? AND started_at < ?", model.RunRunning, t.Add(-olderThan)).
-				Updates(map[string]any{"status": model.RunFailed, "finished_at": t, "error": AbandonedError})
+		for _, table := range []struct {
+			row    any
+			status string
+		}{{&model.ImportRun{}, "status"}, {&model.GeneratorRun{}, "status"}, {&model.ModelImport{}, "state"}} {
+			res := tx.Model(table.row).Where(table.status+" = ? AND started_at < ?", model.RunRunning, t.Add(-olderThan)).
+				Updates(map[string]any{table.status: model.RunFailed, "finished_at": t, "error": AbandonedError})
 			if res.Error != nil {
 				return res.Error
 			}

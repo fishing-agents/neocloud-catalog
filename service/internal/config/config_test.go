@@ -66,3 +66,33 @@ func TestLoadRefusesInvalidConfig(t *testing.T) {
 		})
 	}
 }
+
+// Webhook subscribers come as TOML tables from an overlay file; each needs an http(s) URL, once, and a secret.
+func TestWebhookSubscribers(t *testing.T) {
+	for name, c := range map[string]struct{ toml, want string }{
+		"two":          {"[[webhooks.subscribers]]\nurl = \"https://a.example/hook\"\nsecret = \"s1\"\n[[webhooks.subscribers]]\nurl = \"http://b.example/hook\"\nsecret = \"s2\"\n", ""},
+		"no secret":    {"[[webhooks.subscribers]]\nurl = \"https://a.example/hook\"\n", "secret is required"},
+		"not http":     {"[[webhooks.subscribers]]\nurl = \"ftp://a.example\"\nsecret = \"s\"\n", "not an http(s) URL"},
+		"listed twice": {"[[webhooks.subscribers]]\nurl = \"https://a.example\"\nsecret = \"s\"\n[[webhooks.subscribers]]\nurl = \"https://a.example\"\nsecret = \"t\"\n", "listed twice"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "webhooks.toml"), []byte(c.toml), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := Load(dir)
+			if c.want != "" {
+				if err == nil || !strings.Contains(err.Error(), c.want) {
+					t.Fatalf("Load = %v, want an error saying %q", err, c.want)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := []WebhookSubscriber{{"https://a.example/hook", "s1"}, {"http://b.example/hook", "s2"}}; !slices.Equal(cfg.Webhooks.Subscribers, want) {
+				t.Errorf("webhooks.subscribers = %+v, want %+v", cfg.Webhooks.Subscribers, want)
+			}
+		})
+	}
+}

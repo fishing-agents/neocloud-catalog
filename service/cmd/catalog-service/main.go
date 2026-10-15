@@ -25,6 +25,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/fishman/neocloud-catalog/service/internal/auth"
+	"github.com/fishman/neocloud-catalog/service/internal/broker"
 	"github.com/fishman/neocloud-catalog/service/internal/config"
 	"github.com/fishman/neocloud-catalog/service/internal/db"
 	"github.com/fishman/neocloud-catalog/service/internal/httpapi"
@@ -114,7 +115,9 @@ commands:
                     also pushes the release's overlay, pinned to its digest,
                     as the signed overlay artifact (also later, once, for a
                     release published without it); -exports also writes the
-                    adapter exports and a signed SHA256SUMS to dir
+                    adapter exports and a signed SHA256SUMS to dir; the
+                    release.published webhooks of webhooks.subscribers are
+                    queued for serve to deliver
   auth issue [-name <name>] [-prefix <prefix>] [-expires <duration>]
                     mint an API key for the /v1 API (neocatalog_<prefix>_...);
                     it is printed once and stored only as its SHA-256
@@ -153,14 +156,18 @@ func cmdServe() {
 	}
 	s := store.New(gormDB)
 	reg := mustRegistry(cfg)
+	b, err := newBroker(cfg, s)
+	if err != nil {
+		log.Fatal(err)
+	}
 	if err := jobs.Migrate(ctx, sqlDB); err != nil {
 		log.Fatalf("river migrate: %v", err)
 	}
-	c, err := jobs.New(sqlDB, s, reg, jobsConfig(cfg))
+	c, err := jobs.New(sqlDB, s, reg, jobsConfig(cfg, b))
 	if err != nil {
 		log.Fatalf("jobs: %v", err)
 	}
-	api := httpapi.New(httpapi.Config{Store: s, Jobs: c, Importers: reg, Publish: publish, PublishTimeout: cfg.Release.PublishTimeout,
+	api := httpapi.New(httpapi.Config{Store: s, Jobs: c, Importers: reg, Broker: b, Publish: publish, PublishTimeout: cfg.Release.PublishTimeout,
 		Auth: auth.New(gormDB, auth.OIDCConfig{IssuerURL: cfg.Auth.IssuerURL, Audience: cfg.Auth.Audience})})
 	log.Printf("serving on %s (metrics %s)", cfg.Server.Addr, cfg.Telemetry.MetricsAddr)
 	err = runServe(ctx, c, cfg.Server.WriteTimeout, func() error {
@@ -181,8 +188,12 @@ func runServe(ctx context.Context, c *jobs.Client, grace time.Duration, serve fu
 	return errors.Join(serve(), c.Shutdown(grace))
 }
 
-func jobsConfig(cfg *config.Config) jobs.Config {
-	return jobs.Config{JobTimeout: cfg.Jobs.JobTimeout, RescueAfter: cfg.Jobs.RescueAfter}
+func jobsConfig(cfg *config.Config, b *broker.Broker) jobs.Config {
+	c := jobs.Config{JobTimeout: cfg.Jobs.JobTimeout, RescueAfter: cfg.Jobs.RescueAfter, Broker: b}
+	for _, sub := range cfg.Webhooks.Subscribers {
+		c.Webhooks = append(c.Webhooks, jobs.Subscriber{URL: sub.URL, Secret: sub.Secret})
+	}
+	return c
 }
 
 func cmdMigrate() {
@@ -247,19 +258,36 @@ func registry(cfg *config.Config) (importers.Registry, error) {
 	if err != nil {
 		return importers.Registry{}, fmt.Errorf("bootstrap.data_dir: %w", err)
 	}
-	var token string
-	if f := cfg.HuggingFace.TokenFile; f != "" {
-		b, err := os.ReadFile(f)
-		if err != nil {
-			return importers.Registry{}, fmt.Errorf("huggingface.token_file: %w", err)
-		}
-		token = strings.TrimSpace(string(b))
+	token, err := hubToken(cfg)
+	if err != nil {
+		return importers.Registry{}, err
 	}
 	hardware, err := epoch.New(epoch.CSV, filepath.Join(cfg.Bootstrap.DataDir, "families.overlay.json"))
 	if err != nil {
 		return importers.Registry{}, fmt.Errorf("bootstrap.data_dir: %w", err)
 	}
 	return importers.NewRegistry(boot, hardware, huggingface.New(huggingface.Endpoint, token), prices, cross), nil
+}
+
+// hubToken is the operator's Hugging Face token, "" without huggingface.token_file.
+func hubToken(cfg *config.Config) (string, error) {
+	if cfg.HuggingFace.TokenFile == "" {
+		return "", nil
+	}
+	b, err := os.ReadFile(cfg.HuggingFace.TokenFile)
+	if err != nil {
+		return "", fmt.Errorf("huggingface.token_file: %w", err)
+	}
+	return strings.TrimSpace(string(b)), nil
+}
+
+// newBroker serves the sources with the operator's token, in an operator deployment too.
+func newBroker(cfg *config.Config, s *store.Store) (*broker.Broker, error) {
+	token, err := hubToken(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return broker.New(s, huggingface.New(huggingface.Endpoint, token)), nil
 }
 
 // runJob runs args to completion and prints its recorded output.
@@ -285,7 +313,11 @@ func work(ctx context.Context, cfg *config.Config, sqlDB *sql.DB, s *store.Store
 	if err := jobs.Migrate(ctx, sqlDB); err != nil {
 		return nil, fmt.Errorf("river migrate: %w", err)
 	}
-	c, err := jobs.New(sqlDB, s, reg, jobsConfig(cfg))
+	b, err := newBroker(cfg, s)
+	if err != nil {
+		return nil, err
+	}
+	c, err := jobs.New(sqlDB, s, reg, jobsConfig(cfg, b))
 	if err != nil {
 		return nil, err
 	}
@@ -342,7 +374,7 @@ func cmdReleasePublish(args []string) {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	cfg, _, gormDB := open()
+	cfg, sqlDB, gormDB := open()
 	s := store.New(gormDB)
 	rel, err := release.Get(ctx, s, fs.Arg(0))
 	if err != nil {
@@ -360,7 +392,26 @@ func cmdReleasePublish(args []string) {
 	if rel, err = release.Get(ctx, s, rel.Version); err != nil {
 		log.Fatalf("release publish: %v", err)
 	}
+	if err := notifyPublished(ctx, cfg, sqlDB, s, *ref, rel); err != nil {
+		log.Fatalf("release publish: webhooks: %v", err)
+	}
 	printRelease(rel)
+}
+
+// notifyPublished queues the release.published webhooks for serve to deliver.
+func notifyPublished(ctx context.Context, cfg *config.Config, sqlDB *sql.DB, s *store.Store, ref string, rel release.Release) error {
+	if len(cfg.Webhooks.Subscribers) == 0 {
+		return nil
+	}
+	if err := jobs.Migrate(ctx, sqlDB); err != nil {
+		return err
+	}
+	c, err := jobs.New(sqlDB, s, importers.NewRegistry(), jobsConfig(cfg, nil))
+	if err != nil {
+		return err
+	}
+	_, digest, _ := strings.Cut(rel.ArtifactRef, "@")
+	return c.NotifyPublished(ctx, ref, digest, rel.Version)
 }
 
 func cmdAuthIssue(args []string) {

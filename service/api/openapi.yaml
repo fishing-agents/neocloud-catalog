@@ -548,6 +548,298 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/model-imports:
+    get:
+      operationId: listModelImports
+      summary: Model imports, newest first
+      parameters:
+        - name: tenant_id
+          in: query
+          description: only this tenant's imports
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            $ref: "#/components/schemas/ModelImportState"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+      responses:
+        "200":
+          description: model imports
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ModelImport"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    post:
+      operationId: createModelImport
+      summary: Import one source repository
+      description: |
+        Without tenant_id, the operator's import: queued, then run on the catalog queue into the
+        local layer (also in an operator deployment), recorded as the import run of the same id.
+        With tenant_id, a tenant's request of a public repository: requested until an operator
+        approves or rejects it. With private (tenant_id and token required), the import runs within
+        the request with the tenant's token into the tenant's layer and answers in its final state;
+        the token is never stored or logged.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ModelImportCreate"
+      responses:
+        "201":
+          description: the private import, run (succeeded or failed)
+          headers:
+            Location:
+              description: the import
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelImport"
+        "202":
+          description: the queued or requested import
+          headers:
+            Location:
+              description: the import
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelImport"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnsupportedSource"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/model-imports/{id}:
+    get:
+      operationId: getModelImport
+      summary: The model import id
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: the model import
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelImport"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/model-imports/{id}/approve:
+    post:
+      operationId: approveModelImport
+      summary: Approve a requested import; it is queued into the local layer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: the queued import
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelImport"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/model-imports/{id}/reject:
+    post:
+      operationId: rejectModelImport
+      summary: Reject a requested import
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ModelImportReject"
+      responses:
+        "200":
+          description: the rejected import
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelImport"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/tenants/{tenant_id}/models:
+    get:
+      operationId: listTenantModels
+      summary: The models imported from the tenant's private repositories
+      description: A tenant's layer; never part of a release.
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: the tenant's models, by slug
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TenantModel"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/sources/search:
+    get:
+      operationId: searchSources
+      summary: Search a model source's public repositories
+      description: Answers from a cache for 10 minutes; upstream searches are rate limited.
+      parameters:
+        - name: source
+          in: query
+          required: true
+          schema:
+            $ref: "#/components/schemas/SourceKind"
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: matching repositories, most downloaded first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SourceSearchResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnsupportedSource"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/UpstreamUnavailable"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/sources/models/{source}/{owner}/{name}:
+    get:
+      operationId: inspectSourceModel
+      summary: A source repository before it is imported
+      description: The repository {owner}/{name} at revision, read with the operator's source token; private repositories read as not found.
+      parameters:
+        - name: source
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/SourceKind"
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: revision
+          in: query
+          description: branch, tag or commit; the default branch if absent
+          schema:
+            type: string
+      responses:
+        "200":
+          description: the repository
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceModel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnsupportedSource"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/UpstreamUnavailable"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
 components:
   securitySchemes:
     bearerAuth:
@@ -595,6 +887,29 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    UnsupportedSource:
+      description: the source is not supported (modelscope)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    RateLimited:
+      description: the upstream search or read budget is spent; retry after Retry-After
+      headers:
+        Retry-After:
+          description: seconds
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    UpstreamUnavailable:
+      description: the source failed to answer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   schemas:
     Error:
       type: object
@@ -602,7 +917,7 @@ components:
       properties:
         code:
           type: string
-          description: stable, machine-readable (invalid_request, unauthorized, forbidden, not_found, conflict, not_configured, auth_unavailable, internal_error)
+          description: stable, machine-readable (invalid_request, unauthorized, forbidden, not_found, conflict, not_configured, auth_unavailable, unsupported_source, rate_limited, upstream_unavailable, internal_error)
         message:
           type: string
     Layer:
@@ -1446,3 +1761,264 @@ components:
           type: string
         separate_values:
           type: boolean
+    SourceKind:
+      type: string
+      description: huggingface; modelscope is recognised but not supported yet (422)
+      enum: [huggingface, modelscope]
+      x-enum-varnames: [SourceHuggingFace, SourceModelScope]
+    ModelImportState:
+      type: string
+      description: >-
+        requested (a tenant's import of a public repository, until an operator
+        decides), queued, running, succeeded, failed or rejected
+      enum: [requested, queued, running, succeeded, failed, rejected]
+      x-enum-varnames: [ImportRequested, ImportQueued, ImportRunning, ImportSucceeded, ImportFailed, ImportRejected]
+    ModelImportCreate:
+      type: object
+      required: [source, repo]
+      properties:
+        source:
+          $ref: "#/components/schemas/SourceKind"
+        repo:
+          type: string
+          description: the repository id, owner/name
+        revision:
+          type: string
+          description: branch, tag or commit; the default branch if absent
+        tenant_id:
+          type: string
+          description: the tenant requesting it; absent for the operator's own import
+        private:
+          type: boolean
+          description: import the tenant's private repository into its layer (tenant_id and token required)
+        token:
+          type: string
+          writeOnly: true
+          description: the tenant's source token for a private import; used for this import only, never stored or logged
+    ModelImportReject:
+      type: object
+      properties:
+        reason:
+          type: string
+    ModelImport:
+      type: object
+      required: [id, source, repo, revision, commit, tenant_id, private, state, model, reason, error, report, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: also the id of a local import's import run
+        source:
+          $ref: "#/components/schemas/SourceKind"
+        repo:
+          type: string
+        revision:
+          type: string
+          description: as requested; empty for the default branch
+        commit:
+          type: string
+          description: the commit imported; empty until it ran
+        tenant_id:
+          type: string
+          description: the requesting tenant; empty for the operator's import
+        private:
+          type: boolean
+          description: imported into the tenant's layer rather than the local layer
+        state:
+          $ref: "#/components/schemas/ModelImportState"
+        model:
+          type: string
+          description: the imported model's slug, <owner>--<name> lower-cased; empty until it succeeded
+        reason:
+          type: string
+          description: why an operator rejected it
+        error:
+          type: string
+        report:
+          type: array
+          description: what generating the model reported (presets fitting no family, no deployment minimum)
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        decided_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+    TenantModel:
+      type: object
+      required: [tenant_id, model_import, source, source_url, as_of, model, fits]
+      description: A model of a tenant's private repository, generated (deployment, kv_bytes_per_token, fits) at its import.
+      properties:
+        tenant_id:
+          type: string
+        model_import:
+          type: string
+          format: uuid
+        source:
+          $ref: "#/components/schemas/SourceKind"
+        source_url:
+          type: string
+        as_of:
+          type: string
+          format: date-time
+        model:
+          $ref: "#/components/schemas/ModelTemplate"
+        fits:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelFit"
+    ModelFit:
+      x-go-type: catalog.ModelFit
+      x-go-type-import:
+        name: catalog
+        path: github.com/fishman/neocloud-catalog
+      type: object
+      required: [model_slug, device_family, quantization, kv_cache_dtype, mode, gpu_count, nodes, max_context, vram_required_gb]
+      properties:
+        model_slug:
+          type: string
+        device_family:
+          type: string
+        profile:
+          type: string
+        quantization:
+          type: string
+        kv_cache_dtype:
+          type: string
+        mode:
+          type: string
+          enum: [native, emulated]
+        gpu_count:
+          type: integer
+        nodes:
+          type: integer
+        max_context:
+          type: integer
+        vram_required_gb:
+          type: number
+          format: double
+        performance:
+          $ref: "#/components/schemas/Performance"
+        extensions:
+          $ref: "#/components/schemas/Extensions"
+    Performance:
+      x-go-type: catalog.Performance
+      x-go-type-import:
+        name: catalog
+        path: github.com/fishman/neocloud-catalog
+      type: object
+      required: [source, decode_tokens_per_sec, concurrent_sequences, aggregate_tokens_per_sec, context]
+      properties:
+        source:
+          type: string
+        decode_tokens_per_sec:
+          type: number
+          format: double
+        concurrent_sequences:
+          type: integer
+        aggregate_tokens_per_sec:
+          type: number
+          format: double
+        context:
+          type: integer
+    SourceSearchResult:
+      type: object
+      required: [repo, downloads, likes]
+      properties:
+        repo:
+          type: string
+        pipeline_tag:
+          x-go-type-skip-optional-pointer: true
+          type: string
+        library_name:
+          x-go-type-skip-optional-pointer: true
+          type: string
+        downloads:
+          type: integer
+        likes:
+          type: integer
+    SourceModel:
+      type: object
+      required: [source, repo, commit, gated, tags, card, files, total_bytes, weights_bytes, quantizations]
+      properties:
+        source:
+          $ref: "#/components/schemas/SourceKind"
+        repo:
+          type: string
+        commit:
+          type: string
+        license:
+          x-go-type-skip-optional-pointer: true
+          type: string
+        gated:
+          type: boolean
+          description: downloads need an account that accepted the licence
+        pipeline_tag:
+          x-go-type-skip-optional-pointer: true
+          type: string
+        task:
+          x-go-type-skip-optional-pointer: true
+          type: string
+          description: the catalog task an import would record; empty if the catalog serves no such task
+        tags:
+          type: array
+          items:
+            type: string
+        card:
+          type: object
+          description: the model card's metadata
+          additionalProperties: true
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceFile"
+        total_bytes:
+          type: integer
+          format: int64
+        weights_bytes:
+          type: integer
+          format: int64
+          description: the weights an engine loads (one format), or the GGUF files
+        params_b:
+          type: number
+          format: double
+        context_max:
+          type: integer
+        architecture:
+          $ref: "#/components/schemas/Architecture"
+        quantizations:
+          type: array
+          items:
+            $ref: "#/components/schemas/DetectedQuantization"
+    SourceFile:
+      type: object
+      required: [path, size]
+      properties:
+        path:
+          type: string
+        size:
+          type: integer
+          format: int64
+    DetectedQuantization:
+      type: object
+      required: [name, kind, bytes, files]
+      description: a checkpoint the repository holds; kind float, fp8 and gguf are importable
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+        bytes:
+          type: integer
+          format: int64
+        files:
+          type: array
+          items:
+            type: string

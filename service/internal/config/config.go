@@ -9,6 +9,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -38,6 +39,7 @@ type Config struct {
 	Jobs        JobsConfig        `koanf:"jobs"`
 	Release     ReleaseConfig     `koanf:"release"`
 	Upstream    UpstreamConfig    `koanf:"upstream"`
+	Webhooks    WebhooksConfig    `koanf:"webhooks"`
 }
 
 type ServerConfig struct {
@@ -109,6 +111,17 @@ type UpstreamConfig struct {
 	OverlayPublicKey      string `koanf:"overlay_public_key"`
 	TrustedRoot           string `koanf:"trusted_root"`
 	PlainHTTP             bool   `koanf:"plain_http"`
+}
+
+// WebhooksConfig: Subscribers are notified when a release is published.
+type WebhooksConfig struct {
+	Subscribers []WebhookSubscriber `koanf:"subscribers"`
+}
+
+// WebhookSubscriber's deliveries are signed with Secret (HMAC-SHA256).
+type WebhookSubscriber struct {
+	URL    string `koanf:"url"`
+	Secret string `koanf:"secret"`
 }
 
 // applyEnv matches NEOCLOUD_CATALOG_<NAME> to the known key equal to NAME with
@@ -220,6 +233,19 @@ func (c *Config) Validate() error {
 	}
 	if u := c.Upstream; u.Ref == "" && u != (UpstreamConfig{}) {
 		return errors.New("upstream.* is set without upstream.ref: an overlay and the trust settings apply to the upstream release only")
+	}
+	urls := map[string]bool{}
+	for i, sub := range c.Webhooks.Subscribers {
+		u, err := url.Parse(sub.URL)
+		switch {
+		case err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "":
+			return fmt.Errorf("webhooks.subscribers[%d]: url %q is not an http(s) URL", i, sub.URL)
+		case sub.Secret == "":
+			return fmt.Errorf("webhooks.subscribers[%d]: secret is required to sign deliveries", i)
+		case urls[sub.URL]:
+			return fmt.Errorf("webhooks.subscribers[%d]: url %q is listed twice", i, sub.URL)
+		}
+		urls[sub.URL] = true
 	}
 	if len(c.AzurePrices.Regions) == 0 {
 		return errors.New("azure_prices.regions is required")

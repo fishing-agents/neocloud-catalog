@@ -4,7 +4,8 @@
 // Package huggingface imports Hub model info, file trees and config.json at
 // pinned revisions into the upstream layer. Curated values win and differences
 // are listed. A refused source (missing revision, gated 401/403) is listed, not
-// fatal.
+// fatal. Read, Template and Search serve the broker's searches, inspections and
+// one-repository imports.
 package huggingface
 
 import (

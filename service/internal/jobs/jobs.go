@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Reza Jelveh
 // SPDX-License-Identifier: Apache-2.0
 
-// Package jobs runs import and generator runs as River jobs on the catalog queue.
+// Package jobs runs import and generator runs and model imports as River jobs on the catalog queue,
+// and delivers webhooks on the webhooks queue.
 package jobs
 
 import (
@@ -18,6 +19,7 @@ import (
 	"github.com/riverqueue/river/rivermigrate"
 	"github.com/riverqueue/river/rivertype"
 
+	"github.com/fishman/neocloud-catalog/service/internal/broker"
 	"github.com/fishman/neocloud-catalog/service/internal/generator"
 	"github.com/fishman/neocloud-catalog/service/internal/importers"
 	"github.com/fishman/neocloud-catalog/service/internal/store"
@@ -62,6 +64,14 @@ type FailAbandonedArgs struct{}
 
 func (FailAbandonedArgs) Kind() string                 { return "fail_abandoned_runs" }
 func (FailAbandonedArgs) InsertOpts() river.InsertOpts { return insertOpts() }
+
+// ModelImportArgs runs the queued model import Import into the local layer.
+type ModelImportArgs struct {
+	Import uuid.UUID `json:"import"`
+}
+
+func (ModelImportArgs) Kind() string                 { return "model_import" }
+func (ModelImportArgs) InsertOpts() river.InsertOpts { return insertOpts() }
 
 // ImportOutput is what a completed import job records.
 type ImportOutput struct {
@@ -122,28 +132,48 @@ func (w *failAbandonedWorker) Work(ctx context.Context, _ *river.Job[FailAbandon
 	return err
 }
 
-// Config: JobTimeout cancels a job (its run recorded failed); after RescueAfter
-// (> JobTimeout) River rescues a job left by an exited worker and its run is failed.
-type Config struct {
-	JobTimeout, RescueAfter time.Duration
+type modelImportWorker struct {
+	river.WorkerDefaults[ModelImportArgs]
+	b *broker.Broker
 }
 
-// Client works the catalog queue.
+func (w *modelImportWorker) Work(ctx context.Context, job *river.Job[ModelImportArgs]) error {
+	if w.b == nil {
+		return errors.New("model imports are not configured")
+	}
+	return w.b.Run(ctx, job.Args.Import)
+}
+
+// Config: JobTimeout cancels a job (its run recorded failed); after RescueAfter
+// (> JobTimeout) River rescues a job left by an exited worker and its run is failed.
+// Broker runs model imports; Webhooks are notified of published releases, retried
+// after WebhookBackoff doubling per attempt (default 30s).
+type Config struct {
+	JobTimeout, RescueAfter time.Duration
+	Broker                  *broker.Broker
+	Webhooks                []Subscriber
+	WebhookBackoff          time.Duration
+}
+
+// Client works the catalog and webhooks queues.
 type Client struct {
 	*river.Client[*sql.Tx]
 	s           *store.Store
 	rescueAfter time.Duration
+	webhooks    []Subscriber
 }
 
-// New returns a client running import and generate jobs plus a periodic sweep
-// of abandoned runs.
+// New returns a client running import, generate and model import jobs and
+// webhook deliveries, plus a periodic sweep of abandoned runs.
 func New(db *sql.DB, s *store.Store, reg importers.Registry, cfg Config) (*Client, error) {
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &importWorker{s: s, reg: reg})
 	river.AddWorker(workers, &generateWorker{s: s})
+	river.AddWorker(workers, &modelImportWorker{b: cfg.Broker})
+	river.AddWorker(workers, newWebhookWorker(cfg.Webhooks, cfg.WebhookBackoff))
 	river.AddWorker(workers, &failAbandonedWorker{s: s, olderThan: cfg.RescueAfter})
 	c, err := river.NewClient(riverdatabasesql.New(db), &river.Config{
-		Queues:               map[string]river.QueueConfig{Queue: {MaxWorkers: 1}},
+		Queues:               map[string]river.QueueConfig{Queue: {MaxWorkers: 1}, WebhookQueue: {MaxWorkers: webhookWorkers}},
 		Workers:              workers,
 		JobTimeout:           cfg.JobTimeout,
 		RescueStuckJobsAfter: cfg.RescueAfter,
@@ -153,7 +183,7 @@ func New(db *sql.DB, s *store.Store, reg importers.Registry, cfg Config) (*Clien
 	if err != nil {
 		return nil, err
 	}
-	return &Client{Client: c, s: s, rescueAfter: cfg.RescueAfter}, nil
+	return &Client{Client: c, s: s, rescueAfter: cfg.RescueAfter, webhooks: cfg.Webhooks}, nil
 }
 
 // Start fails abandoned runs, then works the queue.

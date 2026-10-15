@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/fishman/neocloud-catalog/service/internal/auth"
+	"github.com/fishman/neocloud-catalog/service/internal/broker"
 	"github.com/fishman/neocloud-catalog/service/internal/importers"
 	"github.com/fishman/neocloud-catalog/service/internal/jobs"
 	"github.com/fishman/neocloud-catalog/service/internal/release"
@@ -26,6 +27,7 @@ type Config struct {
 	Auth      auth.Authenticator
 	Jobs      *jobs.Client
 	Importers importers.Registry
+	Broker    *broker.Broker
 	// Publish nil refuses publishing.
 	Publish        *release.Target
 	PublishTimeout time.Duration

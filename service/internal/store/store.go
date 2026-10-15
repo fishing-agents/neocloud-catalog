@@ -253,10 +253,55 @@ func replace(tx *gorm.DB, st stamp, want rowSet) (Changes, []Conflict, error) {
 // Upsert replaces the local object of object's key, children included. object is a catalog.Family,
 // NodeType, ModelTemplate, DraftModel or Backend; it keeps its key's position, or goes last.
 func (s *Store) Upsert(ctx context.Context, object any) error {
-	return s.write(ctx, func(tx *gorm.DB) error { return upsert(tx, object) })
+	return s.write(ctx, func(tx *gorm.DB) error {
+		_, _, err := upsert(tx, curation(), object)
+		return err
+	})
 }
 
-func upsert(tx *gorm.DB, object any) error {
+// curation is the stamp of a hand-curated local write.
+func curation() stamp {
+	return stamp{layer: model.LayerLocal, source: model.SourceCuration, asOf: time.Now()}
+}
+
+// ImportModel writes m to the local layer as the running local import run run; curated values are kept
+// as with any import. It refuses (ErrConflict) a slug an effective model holds without m's source, and
+// m's source in another effective model.
+func (s *Store) ImportModel(ctx context.Context, run uuid.UUID, m catalog.ModelTemplate) (Changes, []Conflict, error) {
+	if len(m.Quantizations) == 0 || len(m.Quantizations[0].Sources) == 0 {
+		return nil, nil, fmt.Errorf("%w: model %q has no source", ErrInvalid, m.Slug)
+	}
+	src := m.Quantizations[0].Sources[0]
+	var changes Changes
+	var conflicts []Conflict
+	err := s.write(ctx, func(tx *gorm.DB) error {
+		r, err := runningRun(tx, run, model.LayerLocal)
+		if err != nil {
+			return err
+		}
+		in, err := effective(tx)
+		if err != nil {
+			return err
+		}
+		for _, e := range in.Models {
+			held := slices.ContainsFunc(e.Quantizations, func(q catalog.Quantization) bool {
+				return slices.ContainsFunc(q.Sources, func(s catalog.ModelSource) bool { return s.Type == src.Type && strings.EqualFold(s.Repo, src.Repo) })
+			})
+			switch {
+			case e.Slug == m.Slug && !held:
+				return fmt.Errorf("%w: model %q exists and is not of %s %s", ErrConflict, m.Slug, src.Type, src.Repo)
+			case e.Slug != m.Slug && held:
+				return fmt.Errorf("%w: %s %s is in the catalog as model %q", ErrConflict, src.Type, src.Repo, e.Slug)
+			}
+		}
+		changes, conflicts, err = upsert(tx, runStamp(r), m)
+		return err
+	})
+	return changes, conflicts, err
+}
+
+// upsert replaces the local object of object's key, children included, with st's provenance.
+func upsert(tx *gorm.DB, st stamp, object any) (Changes, []Conflict, error) {
 	var in Inputs
 	var sc scope
 	switch o := object.(type) {
@@ -271,11 +316,11 @@ func upsert(tx *gorm.DB, object any) error {
 	case catalog.Backend:
 		in.Backends, sc = []catalog.Backend{o}, scope{KindBackend, o.Name}
 	default:
-		return fmt.Errorf("store: cannot upsert a %T", object)
+		return nil, nil, fmt.Errorf("store: cannot upsert a %T", object)
 	}
 	want, err := toRows(model.LayerLocal, in)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	var pos *int
 	switch sc.kind {
@@ -293,15 +338,14 @@ func upsert(tx *gorm.DB, object any) error {
 		err := tx.Raw(`SELECT COALESCE((SELECT position FROM `+t.table+` WHERE `+t.key+` = ? ORDER BY layer LIMIT 1), `+
 			`(SELECT MAX(position) + 1 FROM `+t.table+`), 0)`, sc.key).Scan(pos).Error
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
 	}
 	have, err := load(tx, model.LayerLocal, sc)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
-	_, _, err = apply(tx, stamp{layer: model.LayerLocal, source: model.SourceCuration, asOf: time.Now()}, have, want)
-	return err
+	return apply(tx, st, have, want)
 }
 
 // Delete removes the local object kind/key with its children, restoring any upstream object of that key.
