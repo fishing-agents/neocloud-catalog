@@ -1,5 +1,5 @@
-# SPDX-FileCopyrightText: 2026 Reza Jelveh
-# SPDX-License-Identifier: Apache-2.0
+{{/* SPDX-FileCopyrightText: 2026 Reza Jelveh */}}
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
 {{- $image := include "catalog-service.image" . -}}
 {{- $hook := dict "helm.sh/hook" "pre-install,pre-upgrade" "helm.sh/hook-delete-policy" "before-hook-creation,hook-succeeded" -}}
 apiVersion: v1

@@ -73,8 +73,9 @@ type podSpec struct {
 }
 
 type object struct {
-	Kind     string
-	Metadata struct {
+	APIVersion string `yaml:"apiVersion"`
+	Kind       string
+	Metadata   struct {
 		Name        string
 		Labels      map[string]string
 		Annotations map[string]string
@@ -130,6 +131,9 @@ func render(t *testing.T, args ...string) rendered {
 			t.Fatal(err)
 		}
 		if o.Kind != "" {
+			if o.APIVersion == "" {
+				t.Fatalf("%s without apiVersion (a template comment glued onto it?):\n%s", o.Kind, out)
+			}
 			r.objects = append(r.objects, o)
 		}
 	}
