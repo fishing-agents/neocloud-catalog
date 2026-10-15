@@ -1,0 +1,18 @@
+# Allowlist: what service/Dockerfile reads, and what neocloud-api's image build
+# takes from this repository as its `catalog` build context (the root module), so
+# docs, charts, tests and tools never invalidate either build or its image tag.
+*
+!go.mod
+!*.go
+!runrecord
+!snapshots
+!adapters
+!data
+!service/go.mod
+!service/go.sum
+!service/cmd
+!service/internal
+!service/migrations
+**/*_test.go
+**/testdata
+**/*.md
