@@ -47,7 +47,7 @@ func bootstrapped(t *testing.T, suffix string) (*store.Store, *gorm.DB, model.Im
 	return s, db, run
 }
 
-// fromFiles generates the snapshot of the committed files, read directly.
+// fromFiles generates the snapshot of the committed files, read directly, templates included.
 func fromFiles(t *testing.T) (catalog.CatalogSnapshot, []string) {
 	t.Helper()
 	var families []catalog.Family
@@ -68,6 +68,20 @@ func fromFiles(t *testing.T) (catalog.CatalogSnapshot, []string) {
 	snap, report, err := catalog.Generate(families, nodeTypes, models, drafts, backends)
 	if err != nil {
 		t.Fatal(err)
+	}
+	paths, err := filepath.Glob(filepath.Join(dataDir, "templates", "*.json"))
+	if err != nil || len(paths) == 0 {
+		t.Fatalf("data/templates: %v, %d files", err, len(paths))
+	}
+	snap.Templates = make([]catalog.Template, len(paths))
+	for i, path := range paths {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(b, &snap.Templates[i]); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return snap, report
 }
@@ -152,6 +166,7 @@ func TestGeneratorRunStoresReport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	snap.Templates = in.Templates
 	if !strings.Contains(strings.Join(report, "\n"), "huge-model: no deployment minimum") {
 		t.Fatalf("report %q lacks the huge model", report)
 	}

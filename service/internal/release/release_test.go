@@ -312,7 +312,7 @@ func TestReleaseImmutable(t *testing.T) {
 	if err := release.Publish(ctx, rel, release.Target{Ref: host + "/elsewhere/catalog:v4", Signer: signer}); err == nil {
 		t.Error("a published release was published again elsewhere")
 	}
-	if err := db.Exec(`UPDATE generator_runs SET snapshot = jsonb_set(snapshot, '{models,0,name}', '"tampered"') WHERE id = ?`, run.ID).Error; err != nil {
+	if err := db.Exec(`UPDATE generator_runs SET snapshot = jsonb_set(snapshot::jsonb, '{models,0,name}', '"tampered"')::json WHERE id = ?`, run.ID).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := release.Publish(ctx, rel, target); err == nil {
@@ -336,7 +336,7 @@ func TestReleaseImmutable(t *testing.T) {
 // A release older than a published one is refused, so the tags never move back.
 func TestPublishRefusesOlderRelease(t *testing.T) {
 	s, db, older := generated(t, "release_older")
-	if err := db.Exec(`UPDATE generator_runs SET snapshot = jsonb_set(snapshot, '{generated_at}', '"2026-01-01T00:00:00Z"') WHERE id = ?`, older.ID).Error; err != nil {
+	if err := db.Exec(`UPDATE generator_runs SET snapshot = jsonb_set(snapshot::jsonb, '{generated_at}', '"2026-01-01T00:00:00Z"')::json WHERE id = ?`, older.ID).Error; err != nil {
 		t.Fatal(err)
 	}
 	newer, err := generator.Run(ctx, s, uuid.New())
@@ -371,7 +371,7 @@ func TestPublishRefusesOlderRelease(t *testing.T) {
 // release's late overlay is refused.
 func TestPublishOverlayLater(t *testing.T) {
 	s, db, older := generated(t, "release_overlay_later")
-	if err := db.Exec(`UPDATE generator_runs SET snapshot = jsonb_set(snapshot, '{generated_at}', '"2026-01-01T00:00:00Z"') WHERE id = ?`, older.ID).Error; err != nil {
+	if err := db.Exec(`UPDATE generator_runs SET snapshot = jsonb_set(snapshot::jsonb, '{generated_at}', '"2026-01-01T00:00:00Z"')::json WHERE id = ?`, older.ID).Error; err != nil {
 		t.Fatal(err)
 	}
 	replaceOverlay(t, s, catalog.Overlay{Models: map[string]catalog.Extensions{older.Snapshot.Models[0].Slug: {"example.com/tier": json.RawMessage(`{"tier":"gold"}`)}}})

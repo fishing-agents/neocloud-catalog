@@ -440,8 +440,21 @@ func (s CatalogSnapshot) validate(reg *registry) error {
 			presets[p.Name] = true
 		}
 	}
+	errs = append(errs, ValidateTemplates(s.Templates))
+	for _, name := range slices.Sorted(maps.Keys(reg.exts)) {
+		if err := reg.exts[name].Validate(s); err != nil {
+			errs = append(errs, fmt.Errorf("extension %s: %w", name, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// ValidateTemplates checks each template's kind, status, chart pin and the fields its kind requires,
+// and that kind, slug and version are unique.
+func ValidateTemplates(ts []Template) error {
+	var errs []error
 	seen := map[[3]string]bool{}
-	for _, t := range s.Templates {
+	for _, t := range ts {
 		key := [3]string{t.Kind, t.Slug, t.Version}
 		if seen[key] {
 			errs = append(errs, fmt.Errorf("template %s %s %q: duplicate", t.Kind, t.Slug, t.Version))
@@ -449,11 +462,6 @@ func (s CatalogSnapshot) validate(reg *registry) error {
 		seen[key] = true
 		if err := t.validate(); err != nil {
 			errs = append(errs, fmt.Errorf("template %s %s %q: %w", t.Kind, t.Slug, t.Version, err))
-		}
-	}
-	for _, name := range slices.Sorted(maps.Keys(reg.exts)) {
-		if err := reg.exts[name].Validate(s); err != nil {
-			errs = append(errs, fmt.Errorf("extension %s: %w", name, err))
 		}
 	}
 	return errors.Join(errs...)

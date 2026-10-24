@@ -57,7 +57,7 @@ func run() error {
 	if snap.Templates, err = loadTemplates(); err != nil {
 		return err
 	}
-	if err := snap.Validate(); err != nil {
+	if err := catalog.ValidateTemplates(snap.Templates); err != nil {
 		return err
 	}
 	for _, line := range report {
