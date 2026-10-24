@@ -77,11 +77,10 @@ func (i *Importer) Run(ctx context.Context, s *store.Store, run uuid.UUID) (impo
 	return sum, err
 }
 
-// inputs are snap's curated objects and templates, without generated fallback node types or
+// inputs are snap's curated objects, without generated fallback node types or
 // derived model fields.
 func inputs(snap catalog.CatalogSnapshot) store.Inputs {
-	in := store.Inputs{Families: snap.Families, Models: snap.Models, Drafts: snap.DraftModels, Backends: snap.Backends,
-		Templates: snap.Templates}
+	in := store.Inputs{Families: snap.Families, Models: snap.Models, Drafts: snap.DraftModels, Backends: snap.Backends}
 	for _, nt := range snap.NodeTypes {
 		if nt != (catalog.NodeType{ID: catalog.FallbackNodeType(nt.Family, nt.GPUs), Family: nt.Family, GPUs: nt.GPUs}) {
 			in.NodeTypes = append(in.NodeTypes, nt)

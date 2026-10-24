@@ -32,11 +32,6 @@ cutover, `data/*.json` stays the bootstrap input and CI releases from it.
 - `overlay` - extension payloads only.
 - tenant (`tenant_models`) - models of tenants' private repositories, per
   tenant, generated at import; never in the catalog, a generator run or a release.
-- templates (`templates`) - the catalog's token factory, app and platform
-  templates, written with the upstream layer (`data/templates/*.json` or our
-  release) and copied into generated snapshots verbatim; not curated. Bodies
-  and `generator_runs.snapshot` are `json`, not `jsonb`, so key order (a
-  tenant form's field order) and the snapshot digest survive.
 
 Rows carry `layer`, `source`, `source_url`, `as_of` and import run; mixed-source
 tables add per-field `field_provenance` (`GET /v1/catalog?provenance=true`).

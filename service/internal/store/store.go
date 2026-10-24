@@ -52,8 +52,8 @@ type Store struct{ db *gorm.DB }
 
 func New(db *gorm.DB) *Store { return &Store{db: db} }
 
-// Inputs are the curated objects catalog.Generate reads plus the overlay payloads and the upstream
-// templates. Derived model fields (KVBytesPerToken, Deployment) are not stored; Generate recomputes them.
+// Inputs are the curated objects catalog.Generate reads plus the overlay payloads. Derived model
+// fields (KVBytesPerToken, Deployment) are not stored; Generate recomputes them.
 type Inputs struct {
 	Families   []catalog.Family
 	NodeTypes  []catalog.NodeType
@@ -61,7 +61,6 @@ type Inputs struct {
 	Drafts     []catalog.DraftModel
 	Backends   []catalog.Backend
 	Extensions catalog.Overlay
-	Templates  []catalog.Template
 }
 
 // ProvenanceEntry is where one layer's row of an object came from. Fields is per-column provenance
@@ -131,8 +130,7 @@ type Changes map[string]Change
 
 // ReplaceLayer makes layer hold exactly in, in one transaction, as the running import run run;
 // positions follow input order and unchanged rows keep their provenance (see fieldProvenance). The
-// overlay layer takes only in.Extensions, whose ids must exist in the effective catalog; only the
-// upstream layer takes in.Templates.
+// overlay layer takes only in.Extensions, whose ids must exist in the effective catalog.
 func (s *Store) ReplaceLayer(ctx context.Context, layer string, run uuid.UUID, in Inputs) (Changes, []Conflict, error) {
 	want, err := toRows(layer, in)
 	if err != nil {
@@ -151,10 +149,7 @@ func (s *Store) ReplaceLayer(ctx context.Context, layer string, run uuid.UUID, i
 			}
 		}
 		changes, conflicts, err = replace(tx, runStamp(r), want)
-		if err != nil || layer != model.LayerUpstream {
-			return err
-		}
-		return replaceTemplates(tx, in.Templates, changes)
+		return err
 	})
 	if err != nil {
 		return nil, nil, err
@@ -162,9 +157,9 @@ func (s *Store) ReplaceLayer(ctx context.Context, layer string, run uuid.UUID, i
 	return changes, conflicts, nil
 }
 
-// ReplaceUpstream writes in's core objects and templates to the upstream layer and exactly in.Extensions
-// to the overlay layer in one transaction, so the overlay never holds another release's payloads. Payload
-// rows take overlayURL as source URL: the only write outside the run's own layer. A version older than one
+// ReplaceUpstream writes in's core objects to the upstream layer and exactly in.Extensions to the overlay
+// layer in one transaction, so the overlay never holds another release's payloads. Payload rows take
+// overlayURL as source URL: the only write outside the run's own layer. A version older than one
 // another run of the importer wrote is ErrConflict; the version is recorded with the write.
 func (s *Store) ReplaceUpstream(ctx context.Context, run uuid.UUID, version time.Time, in Inputs, overlayURL string) (Changes, []Conflict, error) {
 	ov := Inputs{Extensions: in.Extensions}
@@ -197,9 +192,6 @@ func (s *Store) ReplaceUpstream(ctx context.Context, run uuid.UUID, version time
 		}
 		st := runStamp(r)
 		if changes, conflicts, err = replace(tx, st, core); err != nil {
-			return err
-		}
-		if err := replaceTemplates(tx, in.Templates, changes); err != nil {
 			return err
 		}
 		if err := checkPayloadIDs(tx, ov.Extensions); err != nil {
@@ -563,9 +555,6 @@ func toRows(layer string, in Inputs) (rowSet, error) {
 		errs = append(errs, errors.New("the overlay layer holds extension payloads only"))
 	case layer != model.LayerOverlay && len(rs.payloads) > 0:
 		errs = append(errs, fmt.Errorf("extension payloads belong to the overlay layer, not %s", layer))
-	}
-	if layer != model.LayerUpstream && len(in.Templates) > 0 {
-		errs = append(errs, fmt.Errorf("templates belong to the upstream layer, not %s", layer))
 	}
 	if len(errs) > 0 {
 		return rs, fmt.Errorf("%w: %w", ErrInvalid, errors.Join(errs...))

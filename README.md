@@ -14,8 +14,8 @@ it; neocloud only ingests the snapshot.
 ## Layout
 
 - `catalog.go` - core types (`Family`, `NodeType`, `ModelTemplate`,
-  `ModelSource`, `Preset`, `Backend`, `ModelFit`, `Template`,
-  `CatalogSnapshot`), `Fit`, `VRAMRequired`, `Digest`.
+  `ModelSource`, `Preset`, `Backend`, `ModelFit`, `CatalogSnapshot`), `Fit`,
+  `VRAMRequired`, `Digest`.
 - `artifact.go` - OCI artifact contract and `ParseVersion`.
 - `extension.go` - `Extension`, `RegisterExtension`, overlay `Merge`.
 - `nodetype.go` - `NodeTypeVocabulary`, `FallbackNodeType`.
@@ -25,8 +25,7 @@ it; neocloud only ingests the snapshot.
   extensions.
 - `estimate.go` - `Estimate`: memory-bandwidth roofline; tuning constants live here.
 - `data/` - curated sources: `models.json`, `draft_models.json`, `backends.json`,
-  `families.json` + `families.overlay.json`, `node_types.json`, and
-  `templates/` (one template per file, `<kind>-<slug>-<version>.json`).
+  `families.json` + `families.overlay.json`, `node_types.json`.
 - `snapshots/v4/catalog.json` - generated, embedded snapshot (`SnapshotV4()`).
 - `cmd/catalog-generate` - `data/` -> snapshot.
 - `runrecord/` - run-record contract (`schema/run-record.v1.json`).
@@ -66,49 +65,6 @@ Field semantics: see the types in `catalog.go`. Key rules:
   public snapshot has none. Private payloads ship as an overlay
   (`application/vnd.neocloud.catalog-overlay.v4+json`) pinned to the public
   digest.
-- Templates (schema 4.2, optional): curated token factory, app and platform
-  templates neocloud operators add in one click (see below).
-
-## Templates
-
-Each entry of `templates` is a complete template as the neocloud API stores it
-(`neocloud-api/docs/contracts/apps.md`, `token-factories.md`), keyed by `kind`
-(`token_factory`, `app`, `platform`), `slug` and `version`, plus:
-
-- `status`: `tested` (verified end to end on a cluster) or `preview` (listed,
-  shown as preview).
-- `upstream_chart_ref`: `oci://<host>/<repository>:<version>`, `version` its
-  tag; `chart_digest`: the `sha256:` manifest digest there. Operators mirror the
-  chart digest-preserving (`neocloud charts mirror`); the API rewrites the
-  reference to the mirror on add. Both null for a Kubeflow workspace.
-- An app's API `kind` is `app_kind` (`chart`, `kubeflow_workspace`).
-- `pending_publish: true`: the chart is the catalog's own copy (below) and not
-  published yet, so `chart_digest` is null and the template cannot be added.
-
-Generation refuses an unknown kind or status, a malformed reference or digest,
-a version other than the reference's tag, a repeated kind, slug and version, a
-missing field the kind requires, and unknown fields in `data/templates`. Pin
-the digest the registry reports for the tag:
-
-```sh
-helm pull oci://<host>/<repository> --version <version>   # prints Digest: sha256:...
-```
-
-No token factories ship yet: the gateway charts considered (LiteLLM, Kong, vLLM
-router) take their upstream models in their own shape, not the API's
-`[{name, model, url}]` list.
-
-### Chart copies
-
-Charts without an OCI upstream (MLflow from community-charts, bedag's `raw`
-for kagent agents) are pulled verbatim from their Helm repository, checked
-against the tarball sha256 in the release workflow's `charts` matrix, pushed
-once to `ghcr.io/fishing-agents/charts` and signed with the release identity.
-`helm push` stamps the push time into the manifest, so the workflow never
-pushes a published version again. A new copy: add it to the matrix and its
-template with `pending_publish: true`; after the release, copy the digest from
-the job summary into `chart_digest`, drop `pending_publish`, regenerate and
-release again. Make each new GHCR package public once.
 
 ## Platform adapters
 

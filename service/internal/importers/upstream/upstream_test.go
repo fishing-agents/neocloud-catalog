@@ -58,7 +58,7 @@ func releaseAt(t *testing.T, s *store.Store, db *gorm.DB, version string) releas
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec(`UPDATE generator_runs SET snapshot = jsonb_set(snapshot::jsonb, '{generated_at}', ?::jsonb)::json WHERE id = ?`,
+	if err := db.Exec(`UPDATE generator_runs SET snapshot = jsonb_set(snapshot, '{generated_at}', ?::jsonb) WHERE id = ?`,
 		strconv.Quote(version), run.ID).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -235,10 +235,6 @@ func TestUpstreamImportReplacesUpstreamLayer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Templates) == 0 {
-		t.Error("the import kept no templates")
-	}
-	snap.Templates = got.Templates
 	if snap.Version = rel.Version; snap.Digest() != rel.Digest {
 		t.Errorf("the imported catalog generates digest %s, want our release's %s", snap.Digest(), rel.Digest)
 	}

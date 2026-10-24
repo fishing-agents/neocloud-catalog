@@ -17,11 +17,20 @@ import (
 func inDataDir(t *testing.T) {
 	t.Helper()
 	dir := t.TempDir()
-	if err := os.CopyFS(filepath.Join(dir, "data"), os.DirFS("../../data")); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "data"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(dir, "snapshots/v4"), 0o755); err != nil {
 		t.Fatal(err)
+	}
+	for _, f := range []string{"models.json", "draft_models.json", "families.json", "backends.json", "node_types.json"} {
+		b, err := os.ReadFile(filepath.Join("../../data", f))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "data", f), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	t.Chdir(dir)
 }
@@ -78,20 +87,5 @@ func TestRunFailsOnUnreadablePrevious(t *testing.T) {
 	}
 	if err := run(); err == nil {
 		t.Fatal("run succeeded with a directory as the previous snapshot")
-	}
-}
-
-func TestRunRefusesUnknownTemplateField(t *testing.T) {
-	inDataDir(t)
-	path := "data/templates/platform-kagent-0.10.4.json"
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, bytes.Replace(b, []byte(`"app_api_groups"`), []byte(`"app_api_group"`), 1), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := run(); err == nil {
-		t.Fatal("run accepted a misspelt template field")
 	}
 }

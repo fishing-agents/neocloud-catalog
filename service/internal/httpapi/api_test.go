@@ -556,7 +556,7 @@ func TestRunsAndReleases(t *testing.T) {
 	if len(older.InputImportRuns) != 1 || older.InputImportRuns[0] != imported.Id || older.Report == nil {
 		t.Errorf("generator run %+v", older)
 	}
-	if err := e.db.Exec(`UPDATE generator_runs SET snapshot = jsonb_set(snapshot::jsonb, '{generated_at}', '"2026-01-01T00:00:00Z"')::json WHERE id = ?`, older.Id).Error; err != nil {
+	if err := e.db.Exec(`UPDATE generator_runs SET snapshot = jsonb_set(snapshot, '{generated_at}', '"2026-01-01T00:00:00Z"') WHERE id = ?`, older.Id).Error; err != nil {
 		t.Fatal(err)
 	}
 	newer := e.generate()

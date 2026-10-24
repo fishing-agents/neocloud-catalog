@@ -385,8 +385,7 @@ type ImportRun struct {
 }
 
 // GeneratorRun is one generation over the effective catalog; Snapshot's version is left to the
-// release that freezes it. Snapshot is json, not jsonb: template bodies keep their key order, so a
-// release's digest is the generated snapshot's.
+// release that freezes it.
 type GeneratorRun struct {
 	Base
 	Timestamps
@@ -397,7 +396,7 @@ type GeneratorRun struct {
 	InputImportRuns datatypes.JSONSlice[uuid.UUID] `gorm:"not null"`
 	SchemaVersion   string                         `gorm:"not null"`
 	Report          datatypes.JSONSlice[string]    `gorm:"not null"`
-	Snapshot        *catalog.CatalogSnapshot       `gorm:"type:json;serializer:json"`
+	Snapshot        *catalog.CatalogSnapshot       `gorm:"type:jsonb;serializer:json"`
 	Error           string                         `gorm:"not null"`
 }
 
@@ -461,19 +460,6 @@ type TenantModel struct {
 	Fits          []catalog.ModelFit    `gorm:"type:jsonb;serializer:json;not null"`
 }
 
-// Template is a catalog template (catalog.Template) as the upstream layer imported it. Body is json,
-// not jsonb, so its key order (a tenant form's field order) and with it the snapshot digest survive.
-// Templates are not curated.
-type Template struct {
-	Base
-	Timestamps
-	Kind     string `gorm:"not null;uniqueIndex:idx_templates_natural,priority:1"`
-	Slug     string `gorm:"not null;uniqueIndex:idx_templates_natural,priority:2"`
-	Version  string `gorm:"not null;uniqueIndex:idx_templates_natural,priority:3"`
-	Position int    `gorm:"not null"`
-	Body     string `gorm:"type:json;not null"`
-}
-
 // All lists every model, referenced tables first.
 func All() []any {
 	return []any{
@@ -500,6 +486,5 @@ func All() []any {
 		&APIKey{},
 		&ModelImport{},
 		&TenantModel{},
-		&Template{},
 	}
 }
