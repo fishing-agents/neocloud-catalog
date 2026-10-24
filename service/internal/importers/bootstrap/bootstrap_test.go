@@ -97,9 +97,6 @@ func TestImporterIdempotent(t *testing.T) {
 	if c := changes["models"]; c != (store.Change{Inserted: len(in.Models)}) {
 		t.Errorf("first run models change = %+v, want %d inserted", c, len(in.Models))
 	}
-	if c := changes["templates"]; len(in.Templates) == 0 || c != (store.Change{Inserted: len(in.Templates)}) {
-		t.Errorf("first run templates change = %+v, want %d inserted", c, len(in.Templates))
-	}
 	got, err := s.Effective(ctx)
 	if err != nil {
 		t.Fatal(err)

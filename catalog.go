@@ -14,7 +14,7 @@ import (
 
 // SchemaVersion is the snapshot wire format: bump the major on a breaking change,
 // the minor on an addition.
-const SchemaVersion = "4.2.0"
+const SchemaVersion = "4.1.0"
 
 // Extensions holds registered extension payloads by namespaced name. The core
 // preserves them uninterpreted; the digest covers them.
@@ -293,40 +293,6 @@ type NodeType struct {
 	Source string `json:"source,omitempty"`
 }
 
-// Template is a curated token factory, app or platform template: the fields of
-// its kind as the neocloud API stores them, plus the chart's upstream reference
-// and manifest digest. Both are null for a Kubeflow workspace, which has no
-// chart. PendingPublish marks a chart the release workflow copies to the
-// catalog's own repository that is not published yet: ChartDigest stays null
-// until a later catalog release pins the published digest. JSON-valued API
-// fields are raw so they keep their authored key order, which orders the
-// tenant form.
-type Template struct {
-	Kind             string          `json:"kind"`
-	Slug             string          `json:"slug"`
-	Version          string          `json:"version"`
-	Status           string          `json:"status"`
-	Name             string          `json:"name"`
-	Description      string          `json:"description"`
-	Category         string          `json:"category,omitempty"`
-	Icon             string          `json:"icon,omitempty"`
-	UpstreamChartRef *string         `json:"upstream_chart_ref"`
-	ChartDigest      *string         `json:"chart_digest"`
-	PendingPublish   bool            `json:"pending_publish,omitempty"`
-	Service          string          `json:"service,omitempty"`
-	Port             int             `json:"port,omitempty"`
-	ValuesSchema     json.RawMessage `json:"values_schema,omitempty"`
-	UpstreamsPath    string          `json:"upstreams_path,omitempty"`
-	AppKind          string          `json:"app_kind,omitempty"`
-	Requests         json.RawMessage `json:"requests,omitempty"`
-	Requires         []string        `json:"requires,omitempty"`
-	Expose           json.RawMessage `json:"expose,omitempty"`
-	PinnedValues     json.RawMessage `json:"pinned_values,omitempty"`
-	FormSchema       json.RawMessage `json:"form_schema,omitempty"`
-	Namespace        string          `json:"namespace,omitempty"`
-	AppAPIGroups     []string        `json:"app_api_groups,omitempty"`
-}
-
 // CatalogSnapshot is the immutable, versioned payload served to clients.
 type CatalogSnapshot struct {
 	SchemaVersion string          `json:"schema_version"`
@@ -338,7 +304,6 @@ type CatalogSnapshot struct {
 	DraftModels   []DraftModel    `json:"draft_models"`
 	Fits          []ModelFit      `json:"fits"`
 	Backends      []Backend       `json:"backends"`
-	Templates     []Template      `json:"templates,omitempty"`
 }
 
 // VRAMRequired is weights plus KV cache at context; false if quant is unknown.

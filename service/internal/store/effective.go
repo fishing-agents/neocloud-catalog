@@ -20,8 +20,7 @@ import (
 )
 
 // Effective is the effective catalog: per natural key the local object, else the upstream one,
-// ordered as pick orders them (node types by id), and the upstream templates. Extensions.SnapshotDigest
-// stays empty.
+// ordered as pick orders them (node types by id). Extensions.SnapshotDigest stays empty.
 func (s *Store) Effective(ctx context.Context) (Inputs, error) {
 	var in Inputs
 	err := s.read(ctx, func(tx *gorm.DB) error {
@@ -42,12 +41,7 @@ func effective(tx *gorm.DB) (Inputs, error) {
 	if err != nil {
 		return Inputs{}, err
 	}
-	in, err := merge(up, local, payloads)
-	if err != nil {
-		return Inputs{}, err
-	}
-	in.Templates, err = templates(tx)
-	return in, err
+	return merge(up, local, payloads)
 }
 
 func loadEffective(tx *gorm.DB) (up, local rowSet, payloads []model.ExtensionPayload, err error) {

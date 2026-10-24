@@ -108,8 +108,7 @@ func (s *Store) EffectiveWithRuns(ctx context.Context) (Inputs, []uuid.UUID, err
 			return err
 		}
 		runs = importRuns(up, local)
-		in.Templates, err = templates(tx)
-		return err
+		return nil
 	})
 	return in, runs, err
 }
