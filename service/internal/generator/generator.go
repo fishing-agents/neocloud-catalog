@@ -58,6 +58,7 @@ func generate(ctx context.Context, s *store.Store, run *model.GeneratorRun) ([]m
 	if err != nil {
 		return nil, err
 	}
+	snap.Templates = in.Templates
 	prices, err := s.EffectivePrices(ctx)
 	if err != nil {
 		return nil, err
@@ -67,10 +68,10 @@ func generate(ctx context.Context, s *store.Store, run *model.GeneratorRun) ([]m
 	return costs.Estimate(run.ID, &snap, prices), nil
 }
 
-// InputDigest is the sha256 of the inputs Generate reads; Generate is deterministic, so equal
-// digests give equal snapshots.
+// InputDigest is the sha256 of the inputs Generate reads and the templates; Generate is deterministic,
+// so equal digests give equal snapshots.
 func InputDigest(in store.Inputs) string {
 	h := sha256.New()
-	_ = json.NewEncoder(h).Encode([]any{in.Families, in.NodeTypes, in.Models, in.Drafts, in.Backends})
+	_ = json.NewEncoder(h).Encode([]any{in.Families, in.NodeTypes, in.Models, in.Drafts, in.Backends, in.Templates})
 	return hex.EncodeToString(h.Sum(nil))
 }

@@ -1,16 +1,19 @@
 // SPDX-FileCopyrightText: 2026 Reza Jelveh
 // SPDX-License-Identifier: Apache-2.0
 
-// Command catalog-generate validates the curated data/ and writes the snapshot to
-// snapshots/v4/catalog.json. Re-run it after any change to data/.
+// Command catalog-generate validates the curated data/ (data/templates holds
+// one template per file) and writes the snapshot to snapshots/v4/catalog.json.
+// Re-run it after any change to data/.
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -51,6 +54,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	if snap.Templates, err = loadTemplates(); err != nil {
+		return err
+	}
+	if err := catalog.ValidateTemplates(snap.Templates); err != nil {
+		return err
+	}
 	for _, line := range report {
 		fmt.Println(line)
 	}
@@ -75,8 +84,8 @@ func run() error {
 	if err := os.WriteFile(snapshotPath, out, 0o644); err != nil {
 		return err
 	}
-	fmt.Printf("wrote %s (version=%s models=%d fits=%d backends=%d digest=%s)\n",
-		snapshotPath, snap.Version, len(snap.Models), len(snap.Fits), len(snap.Backends), snap.Digest())
+	fmt.Printf("wrote %s (version=%s models=%d fits=%d backends=%d templates=%d digest=%s)\n",
+		snapshotPath, snap.Version, len(snap.Models), len(snap.Fits), len(snap.Backends), len(snap.Templates), snap.Digest())
 	return nil
 }
 
@@ -112,4 +121,26 @@ func loadJSON(path string, v any) error {
 		return err
 	}
 	return json.Unmarshal(b, v)
+}
+
+// loadTemplates refuses unknown fields: most template fields are optional, so a
+// misspelt one would otherwise vanish silently.
+func loadTemplates() ([]catalog.Template, error) {
+	paths, err := filepath.Glob("data/templates/*.json")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]catalog.Template, len(paths))
+	for i, path := range paths {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		dec := json.NewDecoder(bytes.NewReader(b))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&out[i]); err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+	}
+	return out, nil
 }

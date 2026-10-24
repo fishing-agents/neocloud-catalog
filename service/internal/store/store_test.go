@@ -176,8 +176,20 @@ func everyField() store.Inputs {
 				ChatTemplate: "--chat-template", ChatTemplates: map[string]map[string]string{"tools": {"nvidia": "/t.jinja"}},
 				Speculative: "json:--speculative-config", SpeculativeMethods: map[string]string{"eagle3": "eagle3"},
 				Disaggregation: "vllm", KVTransfers: map[string]string{"nixl": "NixlConnector"}, MultiNode: "vllm", SeparateValues: true}}}}},
+		// Keys out of order: the body must keep its key order (json, not jsonb).
+		Templates: []catalog.Template{{Kind: "app", Slug: "t", Version: "1.0.0", Status: "tested", Name: "T", Description: "d",
+			Category: "c", Icon: "https://example.com/t.png", UpstreamChartRef: &chartRef, ChartDigest: &chartDigest, PendingPublish: true,
+			Service: "t", Port: 80, ValuesSchema: json.RawMessage(`[{"key":"z","type":"string"}]`), UpstreamsPath: "u", AppKind: "chart",
+			Requests: json.RawMessage(`{"memory":"1Gi","cpu":"1"}`), Requires: []string{"p"}, Expose: json.RawMessage(`{"service":"t","port":80}`),
+			PinnedValues: json.RawMessage(`{"z":1,"a":2}`), FormSchema: json.RawMessage(`{"properties":{"zz":{},"a":{}}}`), Namespace: "n",
+			AppAPIGroups: []string{"t.example.com"}}},
 	}
 }
+
+var (
+	chartRef    = "oci://ghcr.io/acme/t:1.0.0"
+	chartDigest = "sha256:" + strings.Repeat("ab", 32)
+)
 
 // requireEveryField fails on a zero field in v outside the derived, overlay-only and unset paths,
 // so a new core field must join the fixture.
@@ -253,7 +265,11 @@ func TestReplaceLayerRoundTripsCommittedData(t *testing.T) {
 	if _, _, err := s.ReplaceLayer(ctx, model.LayerUpstream, startRun(t, db, model.LayerUpstream, model.SourceCuration), every); err != nil {
 		t.Fatal(err)
 	}
-	sameCore(t, effective(t, s), every)
+	got = effective(t, s)
+	sameCore(t, got, every)
+	if !reflect.DeepEqual(got.Templates, every.Templates) {
+		t.Errorf("templates = %+v, want %+v", got.Templates, every.Templates)
+	}
 }
 
 func TestEffectiveCatalogLayering(t *testing.T) {

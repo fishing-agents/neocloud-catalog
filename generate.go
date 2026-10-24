@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -348,9 +349,9 @@ func exampleNodeTypes(vocab []NodeType, family string, gpus int) []string {
 	return out
 }
 
-// Validate checks the snapshot's sources, vocabularies, presets, draft models and
-// fit keys, then runs every registered extension's Validate. Payloads of
-// unregistered namespaces are preserved and ignored.
+// Validate checks the snapshot's sources, vocabularies, presets, draft models,
+// fit keys and templates, then runs every registered extension's Validate.
+// Payloads of unregistered namespaces are preserved and ignored.
 func (s CatalogSnapshot) Validate() error { return s.validate(extensions) }
 
 func (s CatalogSnapshot) validate(reg *registry) error {
@@ -439,9 +440,102 @@ func (s CatalogSnapshot) validate(reg *registry) error {
 			presets[p.Name] = true
 		}
 	}
+	errs = append(errs, ValidateTemplates(s.Templates))
 	for _, name := range slices.Sorted(maps.Keys(reg.exts)) {
 		if err := reg.exts[name].Validate(s); err != nil {
 			errs = append(errs, fmt.Errorf("extension %s: %w", name, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// ValidateTemplates checks each template's kind, status, chart pin and the fields its kind requires,
+// and that kind, slug and version are unique.
+func ValidateTemplates(ts []Template) error {
+	var errs []error
+	seen := map[[3]string]bool{}
+	for _, t := range ts {
+		key := [3]string{t.Kind, t.Slug, t.Version}
+		if seen[key] {
+			errs = append(errs, fmt.Errorf("template %s %s %q: duplicate", t.Kind, t.Slug, t.Version))
+		}
+		seen[key] = true
+		if err := t.validate(); err != nil {
+			errs = append(errs, fmt.Errorf("template %s %s %q: %w", t.Kind, t.Slug, t.Version, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+var (
+	templateKinds    = []string{"token_factory", "app", "platform"}
+	templateStatuses = []string{"tested", "preview"}
+	dnsLabel         = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+	// chartRefRE is oci://<host>[:<port>]/<repository>:<tag>; the tag is submatch 4.
+	chartRefRE    = regexp.MustCompile(`^oci://[a-z0-9.-]+(:[0-9]+)?(/[a-z0-9]+([._-][a-z0-9]+)*)+:([A-Za-z0-9_][A-Za-z0-9._-]{0,127})$`)
+	chartDigestRE = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+)
+
+func (t Template) validate() error {
+	var errs []error
+	fail := func(format string, a ...any) { errs = append(errs, fmt.Errorf(format, a...)) }
+	if !slices.Contains(templateKinds, t.Kind) {
+		fail("kind %q, want one of %s", t.Kind, strings.Join(templateKinds, ", "))
+	}
+	if !slices.Contains(templateStatuses, t.Status) {
+		fail("status %q, want one of %s", t.Status, strings.Join(templateStatuses, ", "))
+	}
+	if !dnsLabel.MatchString(t.Slug) {
+		fail("slug %q is not a DNS label", t.Slug)
+	}
+	if strings.TrimSpace(t.Name) == "" {
+		fail("name required")
+	}
+	if t.Kind == "app" && t.AppKind == "kubeflow_workspace" {
+		if t.UpstreamChartRef != nil || t.ChartDigest != nil || t.PendingPublish || t.Version != "" {
+			fail("a kubeflow workspace has no chart: upstream_chart_ref and chart_digest null, version empty")
+		}
+	} else {
+		var ref string
+		if t.UpstreamChartRef != nil {
+			ref = *t.UpstreamChartRef
+		}
+		if m := chartRefRE.FindStringSubmatch(ref); m == nil {
+			fail("upstream_chart_ref %q, want oci://<host>/<repository>:<version>", ref)
+		} else if m[4] != t.Version {
+			fail("version %q, want the upstream_chart_ref tag %q", t.Version, m[4])
+		}
+		switch {
+		case t.PendingPublish && t.ChartDigest != nil:
+			fail("chart_digest set while pending_publish")
+		case !t.PendingPublish && (t.ChartDigest == nil || !chartDigestRE.MatchString(*t.ChartDigest)):
+			fail("chart_digest required: sha256:<64 lower-case hex>, or null with pending_publish")
+		}
+	}
+	switch t.Kind {
+	case "token_factory":
+		if !dnsLabel.MatchString(t.Service) {
+			fail("service %q is not a DNS label", t.Service)
+		}
+		if t.Port < 1 || t.Port > 65535 {
+			fail("port %d, want 1 to 65535", t.Port)
+		}
+		if t.ValuesSchema == nil {
+			fail("values_schema required")
+		}
+		if t.UpstreamsPath == "" {
+			fail("upstreams_path required")
+		}
+	case "app":
+		if t.AppKind != "chart" && t.AppKind != "kubeflow_workspace" {
+			fail("app_kind %q, want chart or kubeflow_workspace", t.AppKind)
+		}
+		if t.AppKind == "chart" && strings.TrimSpace(t.Category) == "" {
+			fail("category required for a chart app")
+		}
+	case "platform":
+		if !dnsLabel.MatchString(t.Namespace) {
+			fail("namespace %q is not a DNS label", t.Namespace)
 		}
 	}
 	return errors.Join(errs...)

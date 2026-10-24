@@ -1,0 +1,19 @@
+{
+  "kind": "platform",
+  "slug": "kagent-crds",
+  "version": "0.10.4",
+  "status": "tested",
+  "name": "kagent CRDs",
+  "description": "The kagent and kmcp custom resource definitions; install before kagent.",
+  "upstream_chart_ref": "oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds:0.10.4",
+  "chart_digest": "sha256:41e0658314e666d916b35987bf2cc15f2a7ff4c041730a7e5e1f475526d43b7c",
+  "namespace": "kagent",
+  "pinned_values": {
+    "kmcp": {
+      "enabled": true
+    },
+    "substrate": {
+      "enabled": false
+    }
+  }
+}

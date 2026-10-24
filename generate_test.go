@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -674,7 +675,7 @@ func TestValidateRejectsDuplicateFits(t *testing.T) {
 	wantValidate(t, "a repeated fit", snap, "fit llama-3.1-8b/H100/-/bf16/auto/2-node: duplicate")
 }
 
-// Regenerating the committed data reproduces the embedded snapshot.
+// Regenerating the committed data reproduces the embedded snapshot, templates included.
 func TestCommittedSnapshotMatchesData(t *testing.T) {
 	var families []Family
 	var nodeTypes []NodeType
@@ -695,6 +696,23 @@ func TestCommittedSnapshotMatchesData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	paths, err := filepath.Glob("data/templates/*.json")
+	if err != nil || len(paths) == 0 {
+		t.Fatalf("data/templates: %v, %d files", err, len(paths))
+	}
+	snap.Templates = make([]Template, len(paths))
+	for i, path := range paths {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(b, &snap.Templates[i]); err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+	}
+	if err := snap.Validate(); err != nil {
+		t.Fatalf("shipped templates: %v", err)
+	}
 	committed, err := SnapshotV4()
 	if err != nil {
 		t.Fatal(err)
@@ -702,5 +720,51 @@ func TestCommittedSnapshotMatchesData(t *testing.T) {
 	snap.Version = committed.Version
 	if snap.Digest() != committed.Digest() {
 		t.Fatal("snapshots/v4/catalog.json is stale: run go run ./cmd/catalog-generate")
+	}
+}
+
+func validTemplates() []Template {
+	ref := func(s string) *string { return &s }
+	digest := "sha256:" + strings.Repeat("ab", 32)
+	return []Template{
+		{Kind: "app", Slug: "mlflow", Version: "1.11.7", Status: "preview", Name: "MLflow", Category: "ML ops", AppKind: "chart",
+			UpstreamChartRef: ref("oci://ghcr.io/acme/charts/mlflow:1.11.7"), ChartDigest: &digest},
+		{Kind: "app", Slug: "raw", Version: "2.0.2", Status: "tested", Name: "raw", Category: "AI agents", AppKind: "chart",
+			UpstreamChartRef: ref("oci://registry.local:5000/charts/raw:2.0.2"), PendingPublish: true},
+		{Kind: "app", Slug: "kubeflow-workspace", Status: "tested", Name: "Kubeflow workspace", AppKind: "kubeflow_workspace"},
+		{Kind: "platform", Slug: "kagent", Version: "0.10.4", Status: "tested", Name: "kagent", Namespace: "kagent",
+			UpstreamChartRef: ref("oci://ghcr.io/kagent-dev/kagent/helm/kagent:0.10.4"), ChartDigest: &digest},
+		{Kind: "token_factory", Slug: "gw", Version: "1.0.0", Status: "preview", Name: "Gateway", Service: "gw", Port: 4000,
+			ValuesSchema: json.RawMessage(`[]`), UpstreamsPath: "upstreams",
+			UpstreamChartRef: ref("oci://ghcr.io/acme/gw:1.0.0"), ChartDigest: &digest},
+	}
+}
+
+func TestValidateTemplates(t *testing.T) {
+	bad := "sha256:" + strings.Repeat("AB", 32)
+	cases := []struct {
+		name string
+		edit func([]Template)
+		want string
+	}{
+		{"valid", func([]Template) {}, ""},
+		{"unknown kind", func(ts []Template) { ts[3].Kind = "operator" }, `kind "operator"`},
+		{"unknown status", func(ts []Template) { ts[0].Status = "beta" }, `status "beta"`},
+		{"upper-case digest", func(ts []Template) { ts[0].ChartDigest = &bad }, "chart_digest required"},
+		{"chart without digest", func(ts []Template) { ts[0].ChartDigest = nil }, "chart_digest required"},
+		{"digest while pending publish", func(ts []Template) { ts[1].ChartDigest = ts[0].ChartDigest }, "chart_digest set while pending_publish"},
+		{"ref without tag", func(ts []Template) { s := "oci://ghcr.io/acme/charts/mlflow"; ts[0].UpstreamChartRef = &s }, "upstream_chart_ref"},
+		{"version other than the tag", func(ts []Template) { ts[3].Version = "0.10.5" }, `want the upstream_chart_ref tag "0.10.4"`},
+		{"workspace with a chart", func(ts []Template) { ts[2].UpstreamChartRef = ts[0].UpstreamChartRef }, "a kubeflow workspace has no chart"},
+		{"unknown app kind", func(ts []Template) { ts[0].AppKind = "operator" }, `app_kind "operator"`},
+		{"platform without namespace", func(ts []Template) { ts[3].Namespace = "" }, "namespace"},
+		{"token factory without upstreams path", func(ts []Template) { ts[4].UpstreamsPath = "" }, "upstreams_path required"},
+		{"duplicate", func(ts []Template) { ts[4] = ts[0] }, `template app mlflow "1.11.7": duplicate`},
+		{"same slug, other kind", func(ts []Template) { ts[3].Slug = "mlflow" }, ""},
+	}
+	for _, c := range cases {
+		ts := validTemplates()
+		c.edit(ts)
+		wantValidate(t, c.name, CatalogSnapshot{Templates: ts}, c.want)
 	}
 }
