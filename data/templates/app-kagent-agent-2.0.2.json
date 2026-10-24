@@ -1,0 +1,87 @@
+{
+  "kind": "app",
+  "slug": "kagent-agent",
+  "version": "2.0.2",
+  "status": "tested",
+  "name": "kagent agent",
+  "description": "A kagent declarative agent in the tenant's namespace, answering with one of the tenant's model deployments through its OpenAI-compatible endpoint. The model base URL is <API URL>/v1/deployments/<deployment id>.",
+  "category": "AI agents",
+  "icon": "https://raw.githubusercontent.com/kagent-dev/kagent/main/img/icon-light.svg",
+  "upstream_chart_ref": "oci://ghcr.io/fishing-agents/charts/raw:2.0.2",
+  "chart_digest": null,
+  "pending_publish": true,
+  "app_kind": "chart",
+  "requests": {
+    "cpu": "100m",
+    "memory": "256Mi",
+    "gpu": null
+  },
+  "requires": [
+    "kagent"
+  ],
+  "expose": null,
+  "pinned_values": {
+    "resources": [],
+    "templates": [
+      "apiVersion: v1\nkind: Secret\nmetadata:\n  name: {{ .Release.Name }}-model\n  namespace: {{ .Release.Namespace }}\ntype: Opaque\nstringData:\n  OPENAI_API_KEY: {{ .Values.model.apiKey | default \"unused\" | quote }}\n",
+      "apiVersion: kagent.dev/v1alpha2\nkind: ModelConfig\nmetadata:\n  name: {{ .Release.Name }}\n  namespace: {{ .Release.Namespace }}\nspec:\n  provider: OpenAI\n  model: {{ required \"model.name is required\" .Values.model.name | quote }}\n  apiKeySecret: {{ .Release.Name }}-model\n  apiKeySecretKey: OPENAI_API_KEY\n  openAI:\n    baseUrl: {{ required \"model.baseUrl is required\" .Values.model.baseUrl | quote }}\n",
+      "apiVersion: kagent.dev/v1alpha2\nkind: Agent\nmetadata:\n  name: {{ .Release.Name }}\n  namespace: {{ .Release.Namespace }}\nspec:\n  type: Declarative\n  description: {{ .Values.agent.description | default \"A kagent agent\" | quote }}\n  declarative:\n    runtime: go\n    modelConfig: {{ .Release.Name }}\n    systemMessage: {{ .Values.agent.systemMessage | default \"You are a helpful assistant.\" | toJson }}\n    deployment:\n      podSecurityContext:\n        runAsNonRoot: true\n        seccompProfile:\n          type: RuntimeDefault\n      securityContext:\n        allowPrivilegeEscalation: false\n        capabilities:\n          drop:\n            - ALL\n"
+    ]
+  },
+  "form_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "model"
+    ],
+    "properties": {
+      "model": {
+        "title": "Model",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "baseUrl",
+          "name"
+        ],
+        "properties": {
+          "baseUrl": {
+            "title": "Endpoint",
+            "description": "Your model deployment through the metered chat proxy: <API URL>/v1/deployments/<deployment id> (model pods admit only metering points)",
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https?://"
+          },
+          "name": {
+            "title": "Model name",
+            "description": "The model name the deployment serves",
+            "type": "string",
+            "minLength": 1
+          },
+          "apiKey": {
+            "title": "API key",
+            "description": "Only when the endpoint asks for one",
+            "type": "string",
+            "writeOnly": true
+          }
+        }
+      },
+      "agent": {
+        "title": "Agent",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "systemMessage": {
+            "title": "System message",
+            "type": "string",
+            "maxLength": 20000
+          }
+        }
+      }
+    }
+  }
+}

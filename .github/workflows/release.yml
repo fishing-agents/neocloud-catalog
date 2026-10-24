@@ -3,8 +3,10 @@
 # Publishes the committed snapshot as a cosign-signed OCI artifact on GHCR, and
 # the platform-adapter exports (GPUStack catalog, AI Runway recipes and
 # deployments) with a cosign-signed SHA256SUMS as release assets and on GitHub
-# Pages. Signing is keyless: the signature binds the content to this workflow's
-# identity, https://github.com/<owner>/neocloud-catalog/.github/workflows/release.yml@refs/tags/<tag>,
+# Pages. Copies the template charts without an OCI upstream to
+# ghcr.io/<owner>/charts. Signing is keyless: the signature binds the content to
+# this workflow's identity,
+# https://github.com/<owner>/neocloud-catalog/.github/workflows/release.yml@refs/tags/<tag>,
 # which is what neocloud's catalog.identity pins.
 name: release
 
@@ -77,6 +79,61 @@ jobs:
       - uses: actions/upload-pages-artifact@v4
         with:
           path: dist
+
+  # The template charts that have no OCI upstream (data/templates entries with
+  # pending_publish), pulled verbatim from their Helm repository, pushed once and
+  # signed like the snapshot. helm push stamps the push time into the manifest,
+  # so a version already published is never pushed again: its digest is what
+  # the catalog pins. The step summary lists each ref@digest; a follow-up commit
+  # sets it as chart_digest and drops pending_publish.
+  charts:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        chart:
+          - name: mlflow
+            version: 1.11.7
+            repo: https://community-charts.github.io/helm-charts
+            sha256: 8aecf5a11bee5b87ec8e76f524ce415e322eb19007acec2657f6b38260723d87
+          - name: raw
+            version: 2.0.2
+            repo: https://bedag.github.io/helm-charts
+            sha256: e6143374bf874fe96987af94201222e64bdd6a303fe13395555721eeb79c52cb
+    env:
+      REPO: ghcr.io/${{ github.repository_owner }}/charts
+      NAME: ${{ matrix.chart.name }}
+      VERSION: ${{ matrix.chart.version }}
+      SOURCE: ${{ matrix.chart.repo }}
+      SHA256: ${{ matrix.chart.sha256 }}
+    steps:
+      - uses: oras-project/setup-oras@v1
+      - uses: sigstore/cosign-installer@v3
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+          echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+          cosign login ghcr.io -u "${{ github.actor }}" -p "${{ secrets.GITHUB_TOKEN }}"
+      - name: Publish once
+        id: publish
+        # Named bash runs with pipefail, so a failed fetch is not read as a digest.
+        shell: bash
+        run: |
+          if ! digest=$(oras manifest fetch --descriptor "$REPO/$NAME:$VERSION" | jq -r .digest); then
+            helm pull "$NAME" --repo "$SOURCE" --version "$VERSION"
+            echo "$SHA256  $NAME-$VERSION.tgz" | sha256sum -c
+            helm push "$NAME-$VERSION.tgz" "oci://$REPO"
+            digest=$(oras manifest fetch --descriptor "$REPO/$NAME:$VERSION" | jq -r .digest)
+          fi
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "oci://$REPO/$NAME:$VERSION chart_digest $digest" >> "$GITHUB_STEP_SUMMARY"
+      - name: Sign unless signed by a release
+        run: |
+          ref="$REPO/$NAME@${{ steps.publish.outputs.digest }}"
+          verify() {
+            cosign verify "$ref" --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              --certificate-identity-regexp "^$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/\.github/workflows/release\.yml@refs/tags/v.*\$" >/dev/null
+          }
+          verify || { cosign sign --yes "$ref" && verify; }
 
   # GitHub Pages serves the latest release's exports as a directory tree, which
   # AI Runway's recipes client needs (models.json plus <org>/<model>.json).

@@ -5,6 +5,7 @@ package catalog
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -82,6 +83,17 @@ func TestDigestStableAndContentSensitive(t *testing.T) {
 	if d4 := snap3.Digest(); d4 == d1 {
 		t.Fatalf("digest should change when a backend image changes")
 	}
+	snap4 := snap
+	snap4.Templates = validTemplates()
+	d5 := snap4.Digest()
+	if d5 == d1 {
+		t.Fatalf("digest should change when templates are added")
+	}
+	other := "sha256:" + strings.Repeat("cd", 32)
+	snap4.Templates[0].ChartDigest = &other
+	if snap4.Digest() == d5 {
+		t.Fatalf("digest should change when a template's chart digest changes")
+	}
 }
 
 func TestVRAMRequiredUsesStoredKVWithoutArchitecture(t *testing.T) {
@@ -91,7 +103,8 @@ func TestVRAMRequiredUsesStoredKVWithoutArchitecture(t *testing.T) {
 	}
 }
 
-// A 4.0.0 snapshot decodes and validates and a 4.0.0 overlay merges: only the major gates.
+// A 4.0.0 snapshot, without templates, decodes and validates and a 4.0.0 overlay
+// merges: only the major gates.
 func TestDecodesSchema40Snapshot(t *testing.T) {
 	const doc = `{"schema_version": "4.0.0", "version": "2026-10-01T00:00:00Z", "generated_at": "2026-10-01T00:00:00Z",
 		"families": [{"name": "L4", "vendor": "nvidia", "architecture": "ada", "compute_capability": "8.9", "dtypes": ["bf16"],
